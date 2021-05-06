@@ -182,7 +182,7 @@ func (ga *GenesisAlloc) flush(db ethdb.Database, triedb *trie.Database, blockhas
 	}
 
 	rawdb.WriteGenesisStateSpec(db, blockhash, blob)
-	return nil
+	return statedb.Cap(root) // XXX check this is still necessary
 }
 
 // CommitGenesisState loads the stored genesis state with the given block
@@ -342,6 +342,7 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *trie.Database, gen
 	// We have the genesis block in database(perhaps in ancient database)
 	// but the corresponding state is missing.
 	header := rawdb.ReadHeader(db, stored, 0)
+
 	if header.Root != types.EmptyRootHash && !rawdb.HasLegacyTrieNode(db, header.Root) {
 		if genesis == nil {
 			genesis = DefaultGenesisBlock()

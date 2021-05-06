@@ -318,7 +318,7 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 	)
 
 	// TODO separate both cases when I can be certain that it won't
-	// find a Verkle trie where is expects a Transitoion trie.
+	// find a Verkle trie where is expects a Transition trie.
 	if db.started || db.ended {
 		var r common.Hash
 		if db.ended {

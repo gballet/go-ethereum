@@ -1785,6 +1785,10 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 		}
 		ptime := time.Since(pstart)
 
+		if statedb.Database().InTransition() || statedb.Database().Transitioned() {
+			bc.AddRootTranslation(block.Root(), statedb.IntermediateRoot(false))
+		}
+
 		vstart := time.Now()
 		if err := bc.validator.ValidateState(block, statedb, receipts, usedGas); err != nil {
 			bc.reportBlock(block, receipts, err)
