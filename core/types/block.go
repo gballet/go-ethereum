@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/gballet/go-verkle"
 )
 
 // A BlockNonce is a 64-bit hash which proves (combined with the
@@ -56,6 +57,18 @@ func (n BlockNonce) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (n *BlockNonce) UnmarshalText(input []byte) error {
 	return hexutil.UnmarshalFixedText("BlockNonce", input, n[:])
+}
+
+type ExecutionWitness struct {
+	StateDiff   verkle.StateDiff    `json:"stateDiff"`
+	VerkleProof *verkle.VerkleProof `json:"verkleProof"`
+}
+
+func (ew *ExecutionWitness) Copy() *ExecutionWitness {
+	return &ExecutionWitness{
+		StateDiff:   ew.StateDiff.Copy(),
+		VerkleProof: ew.VerkleProof.Copy(),
+	}
 }
 
 //go:generate go run github.com/fjl/gencodec -type Header -field-override headerMarshaling -out gen_header_json.go
@@ -90,6 +103,8 @@ type Header struct {
 
 	// ExcessBlobGas was added by EIP-4844 and is ignored in legacy headers.
 	ExcessBlobGas *uint64 `json:"excessBlobGas" rlp:"optional"`
+
+	ExecutionWitness *ExecutionWitness `json:"executionWitness" rlp:"-"`
 }
 
 // field type overrides for gencodec
@@ -297,6 +312,9 @@ func CopyHeader(h *Header) *Header {
 		cpy.BlobGasUsed = new(uint64)
 		*cpy.BlobGasUsed = *h.BlobGasUsed
 	}
+	if h.ExecutionWitness != nil {
+		cpy.ExecutionWitness = h.ExecutionWitness.Copy()
+	}
 	return &cpy
 }
 
@@ -394,6 +412,8 @@ func (b *Block) BlobGasUsed() *uint64 {
 	return blobGasUsed
 }
 
+func (b *Block) ExecutionWitness() *ExecutionWitness { return b.header.ExecutionWitness }
+
 // Size returns the true RLP encoded storage size of the block, either by encoding
 // and returning it, or returning a previously cached value.
 func (b *Block) Size() uint64 {
@@ -410,6 +430,18 @@ func (b *Block) Size() uint64 {
 // stuffed with junk data to add processing overhead
 func (b *Block) SanityCheck() error {
 	return b.header.SanityCheck()
+}
+
+func (b *Block) SetVerkleProof(vp *verkle.VerkleProof, statediff verkle.StateDiff) {
+	b.header.ExecutionWitness = &ExecutionWitness{statediff, vp}
+	if statediff == nil {
+		b.header.ExecutionWitness.StateDiff = []verkle.StemStateDiff{}
+	}
+	if vp == nil {
+		b.header.ExecutionWitness.VerkleProof = &verkle.VerkleProof{
+			IPAProof: &verkle.IPAProof{},
+		}
+	}
 }
 
 type writeCounter uint64

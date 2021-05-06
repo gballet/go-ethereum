@@ -58,6 +58,9 @@ type Contract struct {
 	CodeAddr *common.Address
 	Input    []byte
 
+	// is the execution frame represented by this object a contract deployment
+	IsDeployment bool
+
 	Gas   uint64
 	value *big.Int
 }
@@ -93,12 +96,12 @@ func (c *Contract) validJumpdest(dest *uint256.Int) bool {
 	if OpCode(c.Code[udest]) != JUMPDEST {
 		return false
 	}
-	return c.isCode(udest)
+	return c.IsCode(udest)
 }
 
-// isCode returns true if the provided PC location is an actual opcode, as
+// IsCode returns true if the provided PC location is an actual opcode, as
 // opposed to a data-segment following a PUSHN operation.
-func (c *Contract) isCode(udest uint64) bool {
+func (c *Contract) IsCode(udest uint64) bool {
 	// Do we already have an analysis laying around?
 	if c.analysis != nil {
 		return c.analysis.codeSegment(udest)

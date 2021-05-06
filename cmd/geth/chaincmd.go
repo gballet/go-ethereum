@@ -49,7 +49,7 @@ var (
 		Name:      "init",
 		Usage:     "Bootstrap and initialize a new genesis block",
 		ArgsUsage: "<genesisPath>",
-		Flags:     flags.Merge([]cli.Flag{utils.CachePreimagesFlag}, utils.DatabasePathFlags),
+		Flags:     flags.Merge([]cli.Flag{utils.CachePreimagesFlag, utils.OverridePrague}, utils.DatabasePathFlags),
 		Description: `
 The init command initializes a new genesis block and definition for the network.
 This is a destructive action and changes the network in which you will be
@@ -146,6 +146,17 @@ The export-preimages command exports hash preimages to an RLP encoded stream.
 It's deprecated, please use "geth db export" instead.
 `,
 	}
+	exportOverlayPreimagesCommand = &cli.Command{
+		Action:    exportOverlayPreimages,
+		Name:      "export-overlay-preimages",
+		Usage:     "Export the preimage in overlay tree migration order",
+		ArgsUsage: "<dumpfile>",
+		Flags:     flags.Merge([]cli.Flag{utils.TreeRootFlag}, utils.DatabasePathFlags),
+		Description: `
+The export-overlay-preimages command exports hash preimages to a flat file, in exactly
+the expected order for the overlay tree migration.
+`,
+	}
 	dumpCommand = &cli.Command{
 		Action:    dump,
 		Name:      "dump",
@@ -190,6 +201,12 @@ func initGenesis(ctx *cli.Context) error {
 	stack, _ := makeConfigNode(ctx)
 	defer stack.Close()
 
+	var overrides core.ChainOverrides
+	if ctx.IsSet(utils.OverridePrague.Name) {
+		v := ctx.Uint64(utils.OverridePrague.Name)
+		overrides.OverridePrague = &v
+	}
+
 	for _, name := range []string{"chaindata", "lightchaindata"} {
 		chaindb, err := stack.OpenDatabaseWithFreezer(name, 0, 0, ctx.String(utils.AncientFlag.Name), "", false)
 		if err != nil {
@@ -197,8 +214,9 @@ func initGenesis(ctx *cli.Context) error {
 		}
 		triedb := trie.NewDatabaseWithConfig(chaindb, &trie.Config{
 			Preimages: ctx.Bool(utils.CachePreimagesFlag.Name),
+			Verkle:    true,
 		})
-		_, hash, err := core.SetupGenesisBlock(chaindb, triedb, genesis)
+		_, hash, err := core.SetupGenesisBlockWithOverride(chaindb, triedb, genesis, &overrides)
 		if err != nil {
 			utils.Fatalf("Failed to write genesis block: %v", err)
 		}
@@ -393,6 +411,33 @@ func exportPreimages(ctx *cli.Context) error {
 	start := time.Now()
 
 	if err := utils.ExportPreimages(db, ctx.Args().First()); err != nil {
+		utils.Fatalf("Export error: %v\n", err)
+	}
+	fmt.Printf("Export done in %v\n", time.Since(start))
+	return nil
+}
+
+// exportOverlayPreimages dumps the preimage data to a flat file.
+func exportOverlayPreimages(ctx *cli.Context) error {
+	if ctx.Args().Len() < 1 {
+		utils.Fatalf("This command requires an argument.")
+	}
+	stack, _ := makeConfigNode(ctx)
+	defer stack.Close()
+
+	chain, _ := utils.MakeChain(ctx, stack, true)
+
+	var root common.Hash
+	if ctx.String(utils.TreeRootFlag.Name) != "" {
+		rootBytes := common.FromHex(ctx.String(utils.StartKeyFlag.Name))
+		if len(rootBytes) != common.HashLength {
+			return fmt.Errorf("invalid root hash length")
+		}
+		root = common.BytesToHash(rootBytes)
+	}
+
+	start := time.Now()
+	if err := utils.ExportOverlayPreimages(chain, ctx.Args().First(), root); err != nil {
 		utils.Fatalf("Export error: %v\n", err)
 	}
 	fmt.Printf("Export done in %v\n", time.Since(start))

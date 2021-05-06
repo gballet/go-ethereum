@@ -18,6 +18,7 @@ package trie
 
 import (
 	"errors"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -32,6 +33,7 @@ type Config struct {
 	Cache     int            // Memory allowance (MB) to use for caching trie nodes in memory
 	Preimages bool           // Flag whether the preimage of trie key is recorded
 	PathDB    *pathdb.Config // Configs for experimental path-based scheme, not used yet.
+	Verkle    bool
 
 	// Testing hooks
 	OnCommit func(states *triestate.Set) // Hook invoked when commit is performed
@@ -75,6 +77,10 @@ type Database struct {
 	diskdb    ethdb.Database // Persistent database to store the snapshot
 	preimages *preimageStore // The store for caching preimages
 	backend   backend        // The backend for managing trie nodes
+
+	// Items used for root conversion during the verkle transition
+	addrToRoot     map[common.Address]common.Hash
+	addrToRootLock sync.RWMutex
 }
 
 // prepare initializes the database with provided configs, but the
@@ -239,4 +245,42 @@ func (db *Database) Node(hash common.Hash) ([]byte, error) {
 		return nil, errors.New("not supported")
 	}
 	return hdb.Node(hash)
+}
+
+func (db *Database) HasStorageRootConversion(addr common.Address) bool {
+	db.addrToRootLock.RLock()
+	defer db.addrToRootLock.RUnlock()
+	if db.addrToRoot == nil {
+		return false
+	}
+	_, ok := db.addrToRoot[addr]
+	return ok
+}
+
+func (db *Database) SetStorageRootConversion(addr common.Address, root common.Hash) {
+	db.addrToRootLock.Lock()
+	defer db.addrToRootLock.Unlock()
+	if db.addrToRoot == nil {
+		db.addrToRoot = make(map[common.Address]common.Hash)
+	}
+	db.addrToRoot[addr] = root
+}
+
+func (db *Database) StorageRootConversion(addr common.Address) common.Hash {
+	db.addrToRootLock.RLock()
+	defer db.addrToRootLock.RUnlock()
+	if db.addrToRoot == nil {
+		return common.Hash{}
+	}
+	return db.addrToRoot[addr]
+}
+
+func (db *Database) ClearStorageRootConversion(addr common.Address) {
+	db.addrToRootLock.Lock()
+	defer db.addrToRootLock.Unlock()
+	delete(db.addrToRoot, addr)
+}
+
+func (db *Database) IsVerkle() bool {
+	return db.config != nil && db.config.Verkle
 }

@@ -26,11 +26,13 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/state/snapshot"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/gballet/go-verkle"
 )
 
 // BlockGen creates blocks for testing.
@@ -355,8 +357,88 @@ func GenerateChainWithGenesis(genesis *Genesis, engine consensus.Engine, n int, 
 	if err != nil {
 		panic(err)
 	}
+	if genesis.Config != nil && genesis.Config.IsPrague(genesis.ToBlock().Number(), genesis.ToBlock().Time()) {
+		blocks, receipts, _, _ := GenerateVerkleChain(genesis.Config, genesis.ToBlock(), engine, db, n, gen)
+		return db, blocks, receipts
+	}
 	blocks, receipts := GenerateChain(genesis.Config, genesis.ToBlock(), engine, db, n, gen)
 	return db, blocks, receipts
+}
+
+func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine consensus.Engine, db ethdb.Database, n int, gen func(int, *BlockGen)) ([]*types.Block, []types.Receipts, []*verkle.VerkleProof, []verkle.StateDiff) {
+	if config == nil {
+		config = params.TestChainConfig
+	}
+	proofs := make([]*verkle.VerkleProof, 0, n)
+	keyvals := make([]verkle.StateDiff, 0, n)
+	blocks, receipts := make(types.Blocks, n), make([]types.Receipts, n)
+	chainreader := &generatedLinearChainReader{
+		config: config,
+		// GenerateVerkleChain should only be called with the genesis block
+		// as parent.
+		genesis: parent,
+		chain:   blocks,
+	}
+	genblock := func(i int, parent *types.Block, statedb *state.StateDB) (*types.Block, types.Receipts) {
+		b := &BlockGen{i: i, chain: blocks, parent: parent, statedb: statedb, config: config, engine: engine}
+		b.header = makeHeader(chainreader, parent, statedb, b.engine)
+		preState := statedb.Copy()
+		fmt.Println("prestate", preState.GetTrie().(*trie.VerkleTrie).ToDot())
+
+		// Mutate the state and block according to any hard-fork specs
+		if daoBlock := config.DAOForkBlock; daoBlock != nil {
+			limit := new(big.Int).Add(daoBlock, params.DAOForkExtraRange)
+			if b.header.Number.Cmp(daoBlock) >= 0 && b.header.Number.Cmp(limit) < 0 {
+				if config.DAOForkSupport {
+					b.header.Extra = common.CopyBytes(params.DAOForkBlockExtra)
+				}
+			}
+		}
+		if config.DAOForkSupport && config.DAOForkBlock != nil && config.DAOForkBlock.Cmp(b.header.Number) == 0 {
+			misc.ApplyDAOHardFork(statedb)
+		}
+		// Execute any user modifications to the block
+		if gen != nil {
+			gen(i, b)
+		}
+		if b.engine != nil {
+			// Finalize and seal the block
+			block, err := b.engine.FinalizeAndAssemble(chainreader, b.header, statedb, b.txs, b.uncles, b.receipts, b.withdrawals)
+			if err != nil {
+				panic(err)
+			}
+
+			// Write state changes to db
+			root, err := statedb.Commit(b.header.Number.Uint64(), config.IsEIP158(b.header.Number))
+			if err != nil {
+				panic(fmt.Sprintf("state write error: %v", err))
+			}
+			if err := statedb.Database().TrieDB().Commit(root, false); err != nil {
+				panic(fmt.Sprintf("trie write error: %v", err))
+			}
+
+			proofs = append(proofs, block.ExecutionWitness().VerkleProof)
+			keyvals = append(keyvals, block.ExecutionWitness().StateDiff)
+
+			return block, b.receipts
+		}
+		return nil, nil
+	}
+	var snaps *snapshot.Tree
+	for i := 0; i < n; i++ {
+		triedb := state.NewDatabaseWithConfig(db, nil)
+		triedb.EndVerkleTransition()
+		statedb, err := state.New(parent.Root(), triedb, snaps)
+		if err != nil {
+			panic(fmt.Sprintf("could not find state for block %d: err=%v, parent root=%x", i, err, parent.Root()))
+		}
+		block, receipt := genblock(i, parent, statedb)
+		blocks[i] = block
+		receipts[i] = receipt
+		parent = block
+		snaps = statedb.Snaps()
+	}
+	return blocks, receipts, proofs, keyvals
 }
 
 func makeHeader(chain consensus.ChainReader, parent *types.Block, state *state.StateDB, engine consensus.Engine) *types.Header {
@@ -441,3 +523,59 @@ func (cr *fakeChainReader) GetHeaderByHash(hash common.Hash) *types.Header      
 func (cr *fakeChainReader) GetHeader(hash common.Hash, number uint64) *types.Header { return nil }
 func (cr *fakeChainReader) GetBlock(hash common.Hash, number uint64) *types.Block   { return nil }
 func (cr *fakeChainReader) GetTd(hash common.Hash, number uint64) *big.Int          { return nil }
+
+type generatedLinearChainReader struct {
+	config  *params.ChainConfig
+	genesis *types.Block
+	chain   []*types.Block
+}
+
+func (v *generatedLinearChainReader) Config() *params.ChainConfig {
+	return v.config
+}
+
+func (v *generatedLinearChainReader) CurrentHeader() *types.Header {
+	return nil
+}
+
+func (v *generatedLinearChainReader) GetHeader(_ common.Hash, number uint64) *types.Header {
+	if number == 0 {
+		return v.genesis.Header()
+	}
+	return v.chain[number-1].Header()
+}
+
+func (v *generatedLinearChainReader) GetHeaderByNumber(number uint64) *types.Header {
+	if number == 0 {
+		return v.genesis.Header()
+	}
+	return v.chain[number-1].Header()
+}
+
+func (v *generatedLinearChainReader) GetHeaderByHash(hash common.Hash) *types.Header {
+	if hash == v.genesis.Hash() {
+		return v.genesis.Header()
+	}
+
+	for _, block := range v.chain {
+		if block.Hash() == hash {
+			return block.Header()
+		}
+	}
+
+	return nil
+}
+
+func (v *generatedLinearChainReader) GetBlock(_ common.Hash, number uint64) *types.Block {
+	if number == 0 {
+		return v.genesis
+	}
+	return v.chain[number-1]
+}
+
+func (v *generatedLinearChainReader) GetTd(_ common.Hash, number uint64) *big.Int {
+	if number == 0 {
+		return v.genesis.Difficulty()
+	}
+	return v.chain[number-1].Difficulty()
+}

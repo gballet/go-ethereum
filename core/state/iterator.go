@@ -106,10 +106,11 @@ func (it *nodeIterator) step() error {
 		it.state, it.stateIt = nil, nil
 		return nil
 	}
-	// If the state trie node is an internal entry, leave as is
+	// If the state trie node is an internal entry, leave as is.
 	if !it.stateIt.Leaf() {
 		return nil
 	}
+
 	// Otherwise we've reached an account node, initiate data iteration
 	var account types.StateAccount
 	if err := rlp.Decode(bytes.NewReader(it.stateIt.LeafBlob()), &account); err != nil {
@@ -123,7 +124,7 @@ func (it *nodeIterator) step() error {
 	address := common.BytesToAddress(preimage)
 
 	// Traverse the storage slots belong to the account
-	dataTrie, err := it.state.db.OpenStorageTrie(it.state.originalRoot, address, account.Root)
+	dataTrie, err := it.state.db.OpenStorageTrie(it.state.originalRoot, address, account.Root, nil)
 	if err != nil {
 		return err
 	}

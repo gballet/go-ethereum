@@ -118,6 +118,9 @@ type StateDB struct {
 	// Transient storage
 	transientStorage transientStorage
 
+	// Verkle witness
+	witness *AccessWitness
+
 	// Journal of state modifications. This is the backbone of
 	// Snapshot and RevertToSnapshot.
 	journal        *journal
@@ -170,10 +173,33 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 		transientStorage:     newTransientStorage(),
 		hasher:               crypto.NewKeccakState(),
 	}
-	if sdb.snaps != nil {
-		sdb.snap = sdb.snaps.Snapshot(root)
+	if tr.IsVerkle() {
+		sdb.witness = sdb.NewAccessWitness()
 	}
+	// if sdb.snaps != nil {
+	// 	if sdb.snap = sdb.snaps.Snapshot(root); sdb.snap == nil {
+	// 	}
+	// }
 	return sdb, nil
+}
+
+func (s *StateDB) Snaps() *snapshot.Tree {
+	return s.snaps
+}
+
+func (s *StateDB) NewAccessWitness() *AccessWitness {
+	return NewAccessWitness(s.db.(*cachingDB).addrToPoint)
+}
+
+func (s *StateDB) Witness() *AccessWitness {
+	if s.witness == nil {
+		s.witness = s.NewAccessWitness()
+	}
+	return s.witness
+}
+
+func (s *StateDB) SetWitness(aw *AccessWitness) {
+	s.witness = aw
 }
 
 // StartPrefetcher initializes a new trie prefetcher to pull in nodes from the
@@ -184,7 +210,7 @@ func (s *StateDB) StartPrefetcher(namespace string) {
 		s.prefetcher.close()
 		s.prefetcher = nil
 	}
-	if s.snap != nil {
+	if s.snap != nil && !s.trie.IsVerkle() {
 		s.prefetcher = newTriePrefetcher(s.db, s.originalRoot, namespace)
 	}
 }
@@ -789,6 +815,9 @@ func (s *StateDB) Copy() *StateDB {
 		snaps: s.snaps,
 		snap:  s.snap,
 	}
+	if s.witness != nil {
+		state.witness = s.witness.Copy()
+	}
 	// Copy the dirty states, logs, and preimages
 	for addr := range s.journal.dirties {
 		// As documented [here](https://github.com/ethereum/go-ethereum/pull/16485#issuecomment-380438527),
@@ -971,7 +1000,11 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 	// to pull useful data from disk.
 	for addr := range s.stateObjectsPending {
 		if obj := s.stateObjects[addr]; !obj.deleted {
-			obj.updateRoot()
+			if s.trie.IsVerkle() {
+				obj.updateTrie()
+			} else {
+				obj.updateRoot()
+			}
 		}
 	}
 	// Now we're about to start to write changes to the trie. The trie is so far
@@ -1003,7 +1036,14 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 	if metrics.EnabledExpensive {
 		defer func(start time.Time) { s.AccountHashes += time.Since(start) }(time.Now())
 	}
-	return s.trie.Hash()
+	root := s.trie.Hash()
+
+	// Save the root of the MPT so that it can be used during the transition
+	if !s.Database().InTransition() && !s.Database().Transitioned() {
+		s.Database().SetLastMerkleRoot(root)
+	}
+
+	return root
 }
 
 // SetTxContext sets the current transaction hash and index which are
@@ -1025,8 +1065,14 @@ func (s *StateDB) clearJournalAndRefund() {
 // deleteStorage iterates the storage trie belongs to the account and mark all
 // slots inside as deleted.
 func (s *StateDB) deleteStorage(addr common.Address, addrHash common.Hash, root common.Hash) (bool, map[common.Hash][]byte, *trienode.NodeSet, error) {
+	// verkle: a deletion is akin to overwriting with 0s
+	if s.GetTrie().IsVerkle() {
+		return false, nil, trienode.NewNodeSet(addrHash), nil
+	}
 	start := time.Now()
-	tr, err := s.db.OpenStorageTrie(s.originalRoot, addr, root)
+	tr, err := s.db.OpenStorageTrie(s.originalRoot, addr, root, s.trie)
+	// XXX NOTE: it might just be possible to use an empty trie here, as verkle will not
+	// delete anything in the tree.
 	if err != nil {
 		return false, nil, nil, fmt.Errorf("failed to open storage trie, err: %w", err)
 	}
@@ -1151,6 +1197,11 @@ func (s *StateDB) handleDestruction(nodes *trienode.MergedNodeSet) (map[common.A
 		}
 	}
 	return incomplete, nil
+}
+
+// GetTrie returns the account trie.
+func (s *StateDB) GetTrie() Trie {
+	return s.trie
 }
 
 // Commit writes the state to the underlying in-memory trie database.
