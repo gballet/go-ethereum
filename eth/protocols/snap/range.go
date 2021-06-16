@@ -42,7 +42,7 @@ func newHashRange(start common.Hash, num uint64) *hashRange {
 	step256.SetFromBig(step)
 
 	return &hashRange{
-		current: uint256.NewInt().SetBytes32(start[:]),
+		current: uint256.NewInt(0).SetBytes32(start[:]),
 		step:    step256,
 	}
 }
@@ -50,7 +50,7 @@ func newHashRange(start common.Hash, num uint64) *hashRange {
 // Next pushes the hash range to the next interval.
 func (r *hashRange) Next() bool {
 	next := new(uint256.Int)
-	if overflow := next.AddOverflow(r.current, r.step); overflow {
+	if _, overflow := next.AddOverflow(r.current, r.step); overflow {
 		return false
 	}
 	r.current = next
@@ -66,15 +66,15 @@ func (r *hashRange) Start() common.Hash {
 func (r *hashRange) End() common.Hash {
 	// If the end overflows (non divisible range), return a shorter interval
 	next := new(uint256.Int)
-	if overflow := next.AddOverflow(r.current, r.step); overflow {
+	if _, overflow := next.AddOverflow(r.current, r.step); overflow {
 		return common.HexToHash("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
 	}
-	return new(uint256.Int).Sub(next, uint256.NewInt().SetOne()).Bytes32()
+	return new(uint256.Int).Sub(next, uint256.NewInt(0).SetOne()).Bytes32()
 }
 
 // incHash returns the next hash, in lexicographical order (a.k.a plus one)
 func incHash(h common.Hash) common.Hash {
-	a := uint256.NewInt().SetBytes32(h[:])
-	a.Add(a, uint256.NewInt().SetOne())
+	a := uint256.NewInt(0).SetBytes32(h[:])
+	a.Add(a, uint256.NewInt(0).SetOne())
 	return common.Hash(a.Bytes32())
 }
