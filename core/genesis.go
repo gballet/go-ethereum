@@ -177,10 +177,35 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, genesis *Genesis, override
 		}
 		return genesis.Config, block.Hash(), nil
 	}
+
+	header := rawdb.ReadHeader(db, stored, 0)
+	var cfg *trie.Config = nil
+	if genesis == nil {
+		// hacky: to open the statedb (check for missing genesis state below),
+		// we need to know whether verkle is enabled which requires us to read the chain config
+		storedcfg := rawdb.ReadChainConfig(db, stored)
+		if storedcfg == nil {
+			panic("Found genesis block without chain config")
+		}
+		if storedcfg.CancunBlock != nil {
+			if storedcfg.CancunBlock.Cmp(big.NewInt(0)) != 0 {
+				panic("cancun block must be 0 (for now)")
+			}
+
+			var blockNumber *big.Int
+			if header != nil {
+				blockNumber = new(big.Int).Set(header.Number)
+			} else {
+				blockNumber = big.NewInt(0)
+			}
+
+			cfg = &trie.Config{UseVerkle: storedcfg.IsCancun(blockNumber)}
+		}
+	}
+
 	// We have the genesis block in database(perhaps in ancient database)
 	// but the corresponding state is missing.
-	header := rawdb.ReadHeader(db, stored, 0)
-	if _, err := state.New(header.Root, state.NewDatabaseWithConfig(db, nil), nil); err != nil {
+	if _, err := state.New(header.Root, state.NewDatabaseWithConfig(db, cfg), nil); err != nil {
 		if genesis == nil {
 			genesis = DefaultGenesisBlock()
 		}
