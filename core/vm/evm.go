@@ -201,6 +201,7 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 	p, isPrecompile := evm.precompile(addr)
 
 	if !evm.StateDB.Exist(addr) {
+		// TODO witness gas charging for non-zero call to non-existent precompile?
 		if !isPrecompile && evm.chainRules.IsEIP158 && value.Sign() == 0 {
 			// Calling a non existing account, don't do anything, but ping the tracer
 			if evm.Config.Debug {
@@ -215,6 +216,14 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 			return nil, gas, nil
 		}
 		evm.StateDB.CreateAccount(addr)
+	}
+	if value.Sign() != 0 {
+		if !tryConsumeGas(&gas, evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyBalance(addr[:]), evm.StateDB.GetBalance(addr).Bytes())) {
+			return nil, 0, ErrOutOfGas
+		}
+		if !tryConsumeGas(&gas, evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyBalance(caller.Address().Bytes()[:], evm.StateDB.GetBalance(caller.Address()).Bytes())) {
+			return nil, 0, ErrOutOfGas
+		}
 	}
 	evm.Context.Transfer(evm.StateDB, caller.Address(), addr, value)
 
@@ -237,34 +246,33 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 	if isPrecompile {
 		ret, gas, err = RunPrecompiledContract(p, input, gas)
 	} else {
+		if evm.Accesses != nil {
+			var data [32]byte
+			if !tryConsumeGas(&gas, evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyVersion(addr.Bytes()), data[:])) {
+				evm.StateDB.RevertToSnapshot(snapshot)
+				return nil, 0, ErrOutOfGas
+			}
+			binary.BigEndian.PutUint64(data[:], evm.StateDB.GetNonce(addr))
+			if !tryConsumeGas(&gas, evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyNonce(addr[:]), data[:])) {
+				evm.StateDB.RevertToSnapshot(snapshot)
+				return nil, 0, ErrOutOfGas
+			}
+			binary.BigEndian.PutUint64(data[:], uint64(len(code)))
+			if !tryConsumeGas(&gas, evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyCodeSize(addr[:]), data[:])) {
+				evm.StateDB.RevertToSnapshot(snapshot)
+				return nil, 0, ErrOutOfGas
+			}
+			if !tryConsumeGas(&gas, evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyCodeKeccak(addr[:]), evm.StateDB.GetCodeHash(addr).Bytes())) {
+				evm.StateDB.RevertToSnapshot(snapshot)
+				return nil, 0, ErrOutOfGas
+			}
+		}
 		// Initialise a new contract and set the code that is to be used by the EVM.
 		// The contract is a scoped environment for this execution context only.
 		code := evm.StateDB.GetCode(addr)
 		if len(code) == 0 {
 			ret, err = nil, nil // gas is unchanged
 		} else {
-			if evm.Accesses != nil {
-				// Touch the account data
-				var data [32]byte
-				if !tryConsumeGas(&gas, evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyVersion(addr.Bytes()), data[:])) {
-					return nil, 0, ErrOutOfGas
-				}
-				binary.BigEndian.PutUint64(data[:], evm.StateDB.GetNonce(addr))
-				if !tryConsumeGas(&gas, evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyNonce(addr[:]), data[:])) {
-					return nil, 0, ErrOutOfGas
-				}
-				if !tryConsumeGas(&gas, evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyBalance(addr[:]), evm.StateDB.GetBalance(addr).Bytes())) {
-					return nil, 0, ErrOutOfGas
-				}
-				binary.BigEndian.PutUint64(data[:], uint64(len(code)))
-				if !tryConsumeGas(&gas, evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyCodeSize(addr[:]), data[:])) {
-					return nil, 0, ErrOutOfGas
-				}
-				if !tryConsumeGas(&gas, evm.Accesses.TouchAddressAndChargeGas(utils.GetTreeKeyCodeKeccak(addr[:]), evm.StateDB.GetCodeHash(addr).Bytes())) {
-					return nil, 0, ErrOutOfGas
-				}
-			}
-
 			addrCopy := addr
 			// If the account has no code, we can abort here
 			// The depth-check is already done, and precompiles handled above
