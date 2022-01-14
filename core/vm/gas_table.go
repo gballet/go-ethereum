@@ -120,8 +120,10 @@ func gasCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memory
 		if overflow {
 			uint64Length = 0xffffffffffffffff
 		}
+		
 		_, offset, nonPaddedSize := getDataAndAdjustedBounds(contract.Code, uint64CodeOffset, uint64Length)
-		statelessGas = touchEachChunksAndChargeGas(offset, nonPaddedSize, contract.Address().Bytes()[:], nil, nil, evm.Accesses)
+		// TODO check it's contract.Address() and not contract.CodeHash
+		statelessGas = touchEachChunksAndChargeGas(offset, nonPaddedSize, contract.Address().Bytes()[:], nil, evm.Accesses, evm.StateDB.GetCodePushDataOffsets(contract.Address()))
 	}
 	usedGas, err := gasCodeCopyStateful(evm, contract, stack, mem, memorySize)
 	return usedGas + statelessGas, err
@@ -145,11 +147,17 @@ func gasExtCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, mem
 		}
 		// note:  we must charge witness costs for the specified range regardless of whether it
 		// is in-bounds of the actual target account code.  This is because we must charge the cost
-		// before hitting the db to be able to now what the actual code size is.  This is different
+		// before hitting the db to be able to know what the actual code size is.  This is different
 		// behavior from CODECOPY which only charges witness access costs for the part of the range
 		// which overlaps in the account code.  TODO: clarify this is desired behavior and amend the
 		// spec.
-		statelessGas = touchEachChunksAndChargeGas(uint64CodeOffset, uint64Length, targetAddr[:], nil, nil, evm.Accesses)
+		// XXX there is a problem here, because the DB is hit twice to
+		// get the offsets, once here and then once in the opcode impl.
+		// To make things worse, offsets are not really needed at this
+		// stage, only the address needs to be known. I fell this func
+		// has to be broken down into two: one that needs to know what
+		// the offsets are, and one that doesn't.
+		statelessGas = touchEachChunksAndChargeGas(uint64CodeOffset, uint64Length, targetAddr[:], nil, evm.Accesses, evm.StateDB.GetCodePushDataOffsets(targetAddr))
 	}
 	usedGas, err := gasExtCodeCopyStateful(evm, contract, stack, mem, memorySize)
 	return usedGas + statelessGas, err

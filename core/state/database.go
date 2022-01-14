@@ -38,6 +38,10 @@ const (
 	codeCacheSize = 64 * 1024 * 1024
 )
 
+var (
+	errCodeNotFound = errors.New("no code found")
+)
+
 // Database wraps access to tries and contract code.
 type Database interface {
 	// OpenTrie opens the main account trie.
@@ -181,7 +185,7 @@ func (db *cachingDB) ContractCode(addrHash, codeHash common.Hash) ([]byte, error
 		db.codeSizeCache.Add(codeHash, len(code))
 		return code, nil
 	}
-	return nil, errors.New("not found")
+	return nil, errCodeNotFound
 }
 
 // ContractCodeWithPrefix retrieves a particular contract's code. If the
@@ -265,7 +269,16 @@ func (db *VerkleDB) ContractCode(addrHash, codeHash common.Hash) ([]byte, error)
 		db.codeSizeCache.Add(codeHash, len(code))
 		return code, nil
 	}
-	return nil, errors.New("not found")
+	return nil, errCodeNotFound
+}
+
+func (db *VerkleDB) ContractCodePushData(codeHash common.Hash) ([]byte, error) {
+	pdoffsets := rawdb.ReadPushDataOffsets(db.db.DiskDB(), codeHash)
+	if len(pdoffsets) == 0 {
+		return nil, errCodeNotFound
+	}
+
+	return pdoffsets, nil
 }
 
 // ContractCodeSize retrieves a particular contracts code's size.

@@ -28,13 +28,6 @@ type ContractRef interface {
 	Address() common.Address
 }
 
-// AnalyzedContract is an interface for a piece of contract
-// code that has undegone jumpdest analysis, and whose bytecode
-// can be queried to determine if it is "contract code"
-type AnalyzedContract interface {
-	IsCode(dest uint64) bool
-}
-
 // AccountRef implements ContractRef.
 //
 // Account references are used during EVM initialisation and
@@ -65,7 +58,7 @@ type Contract struct {
 	CodeAddr *common.Address
 	Input    []byte
 
-	// is the execution frame represented by this object a contract deployment 
+	// is the execution frame represented by this object a contract deployment
 	IsDeployment bool
 
 	Gas   uint64
@@ -111,7 +104,7 @@ func (c *Contract) validJumpdest(dest *uint256.Int) bool {
 func (c *Contract) IsCode(udest uint64) bool {
 	// Do we already have an analysis laying around?
 	if c.analysis != nil {
-		return c.analysis.IsCode(udest)
+		return c.analysis.codeSegment(udest)
 	}
 	// Do we have a contract hash already?
 	// If we do have a hash, that means it's a 'regular' contract. For regular
@@ -127,7 +120,7 @@ func (c *Contract) IsCode(udest uint64) bool {
 		}
 		// Also stash it in current contract for faster access
 		c.analysis = analysis
-		return analysis.IsCode(udest)
+		return analysis.codeSegment(udest)
 	}
 	// We don't have the code hash, most likely a piece of initcode not already
 	// in state trie. In that case, we do an analysis, and save it locally, so
@@ -136,7 +129,7 @@ func (c *Contract) IsCode(udest uint64) bool {
 	if c.analysis == nil {
 		c.analysis = codeBitmap(c.Code)
 	}
-	return c.analysis.IsCode(udest)
+	return c.analysis.codeSegment(udest)
 }
 
 // AsDelegate sets the contract to be a delegate call and returns the current

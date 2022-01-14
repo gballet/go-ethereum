@@ -220,6 +220,12 @@ func codeKey(hash common.Hash) []byte {
 	return append(CodePrefix, hash.Bytes()...)
 }
 
+// pdKey = CodePrefix + hash + "pd", so that it's right after the
+// code in the database.
+func pdKey(hash common.Hash) []byte {
+	return append(codeKey(hash), "pd"...)
+}
+
 // IsCodeKey reports whether the given byte slice is the key of contract code,
 // if so return the raw code hash as well.
 func IsCodeKey(key []byte) (bool, []byte) {

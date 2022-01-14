@@ -61,10 +61,22 @@ func ReadCodeWithPrefix(db ethdb.KeyValueReader, hash common.Hash) []byte {
 	return data
 }
 
+func ReadPushDataOffsets(db ethdb.KeyValueReader, hash common.Hash) []byte {
+	data, _ := db.Get(pdKey(hash))
+	return data
+}
+
 // WriteCode writes the provided contract code database.
 func WriteCode(db ethdb.KeyValueWriter, hash common.Hash, code []byte) {
 	if err := db.Put(codeKey(hash), code); err != nil {
 		log.Crit("Failed to store contract code", "err", err)
+	}
+}
+
+// WritePushDataOffsets writes the provided contract code database.
+func WritePushDataOffsets(db ethdb.KeyValueWriter, hash common.Hash, offsets []byte) {
+	if err := db.Put(pdKey(hash), offsets); err != nil {
+		log.Crit("Failed to store pushdata offsets for contract code", "err", err)
 	}
 }
 

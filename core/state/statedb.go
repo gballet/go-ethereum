@@ -326,6 +326,15 @@ func (s *StateDB) GetCodeHash(addr common.Address) common.Hash {
 	return common.BytesToHash(stateObject.CodeHash())
 }
 
+func (s *StateDB) GetCodePushDataOffsets(addr common.Address) []byte {
+	//stateObject := s.getStateObject(addr)
+	//if stateObject != nil {
+	//return stateObject.Code(s.db)
+	//}
+	//return nil
+	panic("not implemented")
+}
+
 // GetState retrieves a value from the given account's storage trie.
 func (s *StateDB) GetState(addr common.Address, hash common.Hash) common.Hash {
 	stateObject := s.getStateObject(addr)
@@ -494,7 +503,9 @@ func (s *StateDB) updateStateObject(obj *stateObject) {
 		}
 
 		if obj.dirtyCode {
-			if chunks, err := trie.ChunkifyCode(addr, obj.code); err == nil {
+			// Since the DB isn't updated with the code, don't update
+			// the offsets either.
+			if _, chunks, err := trie.ChunkifyCode(obj.code); err == nil {
 				for i := range chunks {
 					s.trie.TryUpdate(trieUtils.GetTreeKeyCodeChunk(addr[:], uint256.NewInt(uint64(i))), chunks[i][:])
 				}
@@ -996,10 +1007,12 @@ func (s *StateDB) Commit(deleteEmptyObjects bool) (common.Hash, error) {
 			// Write any contract code associated with the state object
 			if obj.code != nil && obj.dirtyCode {
 				if s.trie.IsVerkle() {
-					if chunks, err := trie.ChunkifyCode(addr, obj.code); err == nil {
+					if offsets, chunks, err := trie.ChunkifyCode(obj.code); err == nil {
 						for i := range chunks {
 							s.trie.TryUpdate(trieUtils.GetTreeKeyCodeChunk(addr[:], uint256.NewInt(uint64(i))), chunks[i][:])
 						}
+
+						rawdb.WritePushDataOffsets(codeWriter, common.BytesToHash(obj.CodeHash()), offsets)
 					} else {
 						s.setError(err)
 					}

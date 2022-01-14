@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/gballet/go-verkle"
@@ -240,7 +241,11 @@ const (
 	PUSH32 = 0x71
 )
 
-func ChunkifyCode(addr common.Address, code []byte) ([][32]byte, error) {
+// ChunkifyCode returns the list of code offsets for the chunks, as well
+// as the generated chunks. The chunks are to be inserted into the tree,
+// and the code offsets are to be saved into the database.
+func ChunkifyCode(code []byte) ([]byte, [][32]byte, error) {
+	var offsets []byte
 	lastOffset := byte(0)
 	chunkCount := len(code) / 31
 	if len(code)%31 != 0 {
@@ -260,7 +265,43 @@ func ChunkifyCode(addr common.Address, code []byte) ([][32]byte, error) {
 			}
 		}
 		chunks[i][0] = lastOffset
+		offsets = append(offsets, lastOffset)
 	}
 
-	return chunks, nil
+	return offsets, chunks, nil
+}
+
+func ChunkFromCodeAndPushDataOffsets(code, offsets []byte, chunknr int) []byte {
+	var value []byte
+
+	if chunknr >= len(offsets) {
+		log.Crit("tried to get a non-existing pushdata offset")
+	}
+
+	if len(code) > 0 {
+		// the offset into the leaf that the first PUSH occurs
+		end := (chunknr + 1) * 31
+		if end > len(code) {
+			end = len(code)
+		}
+		// size of the data to copy into value, 31 bytes max
+		size := end - chunknr*31
+
+		// offsets are assumed to be 0 if the chunk number is
+		// greater than the length of registered numbers. But
+		// it is an invariant that this should not happen, as
+		// this function is only to be called for chunks that
+		// exist, or are the first chunk past the end.
+		if chunknr < len(offsets) {
+			value[0] = offsets[chunknr]
+		}
+
+		copy(value[1:size+1], code[chunknr*31:end])
+		if size < 31 {
+			padding := make([]byte, 31-size, 31-size)
+			copy(value[size+1:], padding)
+		}
+	}
+
+	return value
 }

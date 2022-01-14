@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/trie"
 	trieUtils "github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/holiman/uint256"
 	"golang.org/x/crypto/sha3"
@@ -372,21 +373,23 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 
 	paddedCodeCopy, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(scope.Contract.Code, uint64CodeOffset, length.Uint64())
 	if interpreter.evm.chainConfig.IsCancun(interpreter.evm.Context.BlockNumber) {
-		touchEachChunksAndChargeGas(copyOffset, nonPaddedCopyLength, scope.Contract.Address().Bytes()[:], scope.Contract.Code, scope.Contract, interpreter.evm.Accesses)
+		// XXX cache the offsets in Contract so that I don't have to
+		// load it more than once.
+		touchEachChunksAndChargeGas(copyOffset, nonPaddedCopyLength, scope.Contract.Address().Bytes()[:], scope.Contract, interpreter.evm.Accesses, interpreter.evm.StateDB.GetCodePushDataOffsets(scope.Contract.Address()))
 	}
 	scope.Memory.Set(memOffset.Uint64(), uint64(len(paddedCodeCopy)), paddedCodeCopy)
 	return nil, nil
 }
 
 // touchEachChunksAndChargeGas is a helper function to touch every chunk in a code range and charge witness gas costs
-func touchEachChunksAndChargeGas(offset, size uint64, address []byte, code []byte, contract AnalyzedContract, accesses *types.AccessWitness) uint64 {
+func touchEachChunksAndChargeGas(offset, size uint64, address []byte, contract *Contract, accesses *types.AccessWitness, offsets []byte) uint64 {
 	// note that in the case where the copied code is outside the range of the
 	// contract code but touches the last leaf with contract code in it,
 	// we don't include the last leaf of code in the AccessWitness.  The
 	// reason that we do not need the last leaf is the account's code size
 	// is already in the AccessWitness so a stateless verifier can see that
 	// the code from the last leaf is not needed.
-	if contract != nil && (size == 0 || offset > uint64(len(code))) {
+	if contract != nil && (size == 0 || offset > uint64(len(contract.Code))) {
 		return 0
 	}
 	var (
@@ -396,58 +399,27 @@ func touchEachChunksAndChargeGas(offset, size uint64, address []byte, code []byt
 		startOffset         uint64
 		endOffset           uint64
 		numLeaves           uint64
-		index               [32]byte
 	)
 	// startLeafOffset, endLeafOffset is the evm code offset of the first byte in the first leaf touched
 	// and the evm code offset of the last byte in the last leaf touched
 	startOffset = offset - (offset % 31)
-	if contract != nil && startOffset+size > uint64(len(code)) {
-		endOffset = uint64(len(code))
+	if contract != nil && startOffset+size > uint64(len(contract.Code)) {
+		endOffset = uint64(len(contract.Code))
 	} else {
 		endOffset = startOffset + size
 	}
 	endLeafOffset = endOffset + (endOffset % 31)
 	numLeaves = (endLeafOffset - startLeafOffset) / 31
 	chunkOffset := new(uint256.Int)
-	treeIndex := new(uint256.Int)
 
 	for i := 0; i < int(numLeaves); i++ {
 		chunkOffset.Add(trieUtils.CodeOffset, uint256.NewInt(uint64(i)))
-		treeIndex.Div(chunkOffset, trieUtils.VerkleNodeWidth)
-		var subIndex byte
-		subIndexMod := chunkOffset.Mod(chunkOffset, trieUtils.VerkleNodeWidth).Bytes()
-		if len(subIndexMod) == 0 {
-			subIndex = 0
-		} else {
-			subIndex = subIndexMod[0]
-		}
-		treeKey := trieUtils.GetTreeKey(address, treeIndex, subIndex)
-		copy(index[0:31], treeKey)
-		index[31] = subIndex
+		treeKey := trieUtils.GetTreeKeyCodeChunk(address, chunkOffset)
+		value := trie.ChunkFromCodeAndPushDataOffsets(contract.Code, offsets, i)
 
-		var value []byte
-		if len(code) > 0 {
-			// the offset into the leaf that the first PUSH occurs
-			var firstPushOffset uint64 = 0
-			// Look for the first code byte (i.e. no pushdata)
-			for ; firstPushOffset < 31 && firstPushOffset+uint64(i)*31 < uint64(len(code)) && !contract.IsCode(uint64(i)*31+firstPushOffset); firstPushOffset++ {
-			}
-			curEnd := (uint64(i) + 1) * 31
-			if curEnd > endOffset {
-				curEnd = endOffset
-			}
-			valueSize := curEnd - (uint64(i) * 31)
-			value = make([]byte, 32, 32)
-			value[0] = byte(firstPushOffset)
-
-			copy(value[1:valueSize+1], code[i*31:curEnd])
-			if valueSize < 31 {
-				padding := make([]byte, 31-valueSize, 31-valueSize)
-				copy(value[valueSize+1:], padding)
-			}
-		}
-
-		statelessGasCharged += accesses.TouchAddressAndChargeGas(index[:], value)
+		// XXX is it really needed to set the value here, in every case?
+		// definitely not when this functions is called from the gas code.
+		statelessGasCharged += accesses.TouchAddressAndChargeGas(treeKey[:], value)
 	}
 
 	return statelessGasCharged
@@ -467,10 +439,11 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	}
 	addr := common.Address(a.Bytes20())
 	if interpreter.evm.chainConfig.IsCancun(interpreter.evm.Context.BlockNumber) {
+		// XXX check that when offsets are written, they have the right length
 		code := interpreter.evm.StateDB.GetCode(addr)
+		offsets := interpreter.evm.StateDB.GetCodePushDataOffsets(addr)
 		paddedCodeCopy, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(code, uint64CodeOffset, length.Uint64())
-		cb := codeBitmap(code)
-		touchEachChunksAndChargeGas(copyOffset, nonPaddedCopyLength, addr[:], code, &cb, interpreter.evm.Accesses)
+		touchEachChunksAndChargeGas(copyOffset, nonPaddedCopyLength, addr[:], scope.Contract, interpreter.evm.Accesses, offsets)
 		scope.Memory.Set(memOffset.Uint64(), length.Uint64(), paddedCodeCopy)
 	} else {
 		codeCopy := getData(interpreter.evm.StateDB.GetCode(addr), uint64CodeOffset, length.Uint64())
@@ -976,7 +949,8 @@ func makePush(size uint64, pushByteSize int) executionFunc {
 		}
 
 		if interpreter.evm.chainConfig.IsCancun(interpreter.evm.Context.BlockNumber) {
-			statelessGas := touchEachChunksAndChargeGas(uint64(startMin), uint64(pushByteSize), scope.Contract.Address().Bytes()[:], scope.Contract.Code, scope.Contract, interpreter.evm.Accesses)
+			offsets := interpreter.evm.StateDB.GetCodePushDataOffsets(scope.Contract.Address())
+			statelessGas := touchEachChunksAndChargeGas(uint64(startMin), uint64(pushByteSize), scope.Contract.Address().Bytes()[:], scope.Contract, interpreter.evm.Accesses, offsets)
 			scope.Contract.UseGas(statelessGas)
 		}
 
