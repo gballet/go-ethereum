@@ -270,7 +270,6 @@ func (db *VerkleDB) ContractCode(addrHash, codeHash common.Hash) ([]byte, error)
 
 // ContractCodeSize retrieves a particular contracts code's size.
 func (db *VerkleDB) ContractCodeSize(addrHash, codeHash common.Hash) (int, error) {
-	// TODO disgusting hack, do this the proper way (reading code size from the account fields)
 	if code := db.codeCache.Get(nil, codeHash.Bytes()); len(code) > 0 {
 		return len(code), nil
 	}
@@ -279,8 +278,9 @@ func (db *VerkleDB) ContractCodeSize(addrHash, codeHash common.Hash) (int, error
 		db.codeCache.Set(codeHash.Bytes(), code)
 		db.codeSizeCache.Add(codeHash, len(code))
 		return len(code), nil
+	} else {
+		return 0
 	}
-	return 0, errors.New("not found")
 }
 
 // TrieDB retrieves the low level trie database used for data storage.
