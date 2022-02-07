@@ -279,7 +279,7 @@ func (db *VerkleDB) ContractCodeSize(addrHash, codeHash common.Hash) (int, error
 		db.codeSizeCache.Add(codeHash, len(code))
 		return len(code), nil
 	}
-	return 0
+	return 0, nil
 }
 
 // TrieDB retrieves the low level trie database used for data storage.
