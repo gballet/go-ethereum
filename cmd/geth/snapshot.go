@@ -758,7 +758,12 @@ func convertToVerkle(ctx *cli.Context) error {
 		for i, b := range acc.Balance.Bytes() {
 			balance[len(acc.Balance.Bytes())-1-i] = b
 		}
-		stem := trieUtils.GetTreeKeyVersion(accIt.Hash().Bytes())[:]
+		addr := rawdb.ReadPreimage(chaindb, accIt.Hash())
+		if len(addr) == 0 {
+			return fmt.Errorf("no preimage for %x", accIt.Hash().Bytes())
+		}
+		evalAddr := trieUtils.EvaluateAddressPoint(addr)
+		stem := trieUtils.GetTreeKeyVersion(addr)[:31]
 
 		// Store the account code if present
 		if !bytes.Equal(acc.CodeHash, emptyCode) {
@@ -774,7 +779,7 @@ func convertToVerkle(ctx *cli.Context) error {
 
 			for i := 128; i < len(chunks); {
 				values := make([][]byte, 256)
-				chunkkey := trieUtils.GetTreeKeyCodeChunk(accIt.Hash().Bytes(), uint256.NewInt(uint64(i)))
+				chunkkey := trieUtils.GetTreeKeyCodeChunkWithEvaluatedAddress(evalAddr, uint256.NewInt(uint64(i)))
 				j := i
 				for ; (j-i) < 256 && j < len(chunks); j++ {
 					values[(j-128)%256] = chunks[j][:]
@@ -806,7 +811,11 @@ func convertToVerkle(ctx *cli.Context) error {
 				return err
 			}
 			for storageIt.Next() {
-				slotkey := trieUtils.GetTreeKeyStorageSlot(accIt.Hash().Bytes(), uint256.NewInt(0).SetBytes(storageIt.Slot()))
+				slot := rawdb.ReadPreimage(chaindb, storageIt.Hash())
+				if len(slot) == 0 {
+					return fmt.Errorf("no preimage for %x", storageIt.Hash().Bytes())
+				}
+				slotkey := trieUtils.GetTreeKeyStorageSlotWithEvaluatedAddress(evalAddr, uint256.NewInt(0).SetBytes(slot))
 
 				var value [32]byte
 				copy(value[:len(storageIt.Slot())-1], storageIt.Slot())
@@ -895,7 +904,7 @@ func checkChildren(root verkle.VerkleNode, resolver verkle.NodeResolverFn) error
 			// depth is set to 0, the tree isn't rebuilt so it's not a problem
 			childN, err := verkle.ParseNode(childS, 0, childC[:])
 			if err != nil {
-				return fmt.Errorf("decode error child %x in db: %w", child.ComputeCommitment().Bytes(), err)
+				return fmt.Errorf("decode error child %x in db: %w", childC, err)
 			}
 			checkChildren(childN, resolver)
 		}
