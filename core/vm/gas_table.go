@@ -121,8 +121,10 @@ func gasCodeCopy(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memory
 		if overflow {
 			uint64Length = 0xffffffffffffffff
 		}
-		_, offset, nonPaddedSize := getDataAndAdjustedBounds(contract.Code, uint64CodeOffset, uint64Length)
-		statelessGas = touchEachChunksOnReadAndChargeGas(offset, nonPaddedSize, contract.AddressPoint(), nil, evm.Accesses, contract.IsDeployment)
+		if !contract.IsDeployment {
+			_, offset, nonPaddedSize := getDataAndAdjustedBounds(contract.Code, uint64CodeOffset, uint64Length)
+			statelessGas = touchEachChunksOnReadAndChargeGas(offset, nonPaddedSize, contract.AddressPoint(), nil, evm.Accesses, contract.IsDeployment)
+		}
 	}
 	usedGas, err := gasCodeCopyStateful(evm, contract, stack, mem, memorySize)
 	return usedGas + statelessGas, err

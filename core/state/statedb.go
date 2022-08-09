@@ -461,6 +461,14 @@ func (s *StateDB) SetCode(addr common.Address, code []byte) {
 	}
 }
 
+func (s *StateDB) AddCodeChunksToWitness(addr common.Address) uint64 {
+	stateObject := s.GetOrNewStateObject(addr)
+	if stateObject != nil {
+		return stateObject.AddCodeChunksToWitness()
+	}
+	return 0
+}
+
 func (s *StateDB) SetState(addr common.Address, key, value common.Hash) {
 	stateObject := s.GetOrNewStateObject(addr)
 	if stateObject != nil {
@@ -523,12 +531,8 @@ func (s *StateDB) updateStateObject(obj *stateObject) {
 			}
 
 			if obj.dirtyCode {
-				if chunks, err := trie.ChunkifyCode(obj.code); err == nil {
-					for i := 0; i < len(chunks); i += 32 {
-						s.trie.TryUpdate(trieUtils.GetTreeKeyCodeChunkWithEvaluatedAddress(obj.pointEval, uint256.NewInt(uint64(i)/32)), chunks[i:i+32])
-					}
-				} else {
-					s.setError(err)
+				for i := 0; i < len(obj.code); i += 32 {
+					s.trie.TryUpdate(trieUtils.GetTreeKeyCodeChunkWithEvaluatedAddress(obj.pointEval, uint256.NewInt(uint64(i)/32)), obj.code[i:i+32])
 				}
 			}
 		} else {
@@ -1019,12 +1023,8 @@ func (s *StateDB) Commit(deleteEmptyObjects bool) (common.Hash, error) {
 			// Write any contract code associated with the state object
 			if obj.code != nil && obj.dirtyCode {
 				if s.trie.IsVerkle() {
-					if chunks, err := trie.ChunkifyCode(obj.code); err == nil {
-						for i := 0; i < len(chunks); i += 32 {
-							s.trie.TryUpdate(trieUtils.GetTreeKeyCodeChunkWithEvaluatedAddress(obj.pointEval, uint256.NewInt(uint64(i)/32)), chunks[i:32+i])
-						}
-					} else {
-						s.setError(err)
+					for i := 0; i < len(obj.code); i += 32 {
+						s.trie.TryUpdate(trieUtils.GetTreeKeyCodeChunkWithEvaluatedAddress(obj.pointEval, uint256.NewInt(uint64(i)/32)), obj.code[i:32+i])
 					}
 				}
 				rawdb.WriteCode(codeWriter, common.BytesToHash(obj.CodeHash()), obj.code)

@@ -525,6 +525,11 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 			err = ErrOutOfGas
 		} else {
 			evm.Accesses.SetLeafValuesContractCreateCompleted(address.Bytes()[:], zeroVerkleLeaf[:], zeroVerkleLeaf[:])
+
+			if !contract.UseGas(evm.StateDB.AddCodeChunksToWitness(address)) {
+				evm.StateDB.RevertToSnapshot(snapshot)
+				err = ErrOutOfGas
+			}
 		}
 	}
 

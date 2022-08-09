@@ -38,6 +38,7 @@ type StateDB interface {
 	GetCode(common.Address) []byte
 	SetCode(common.Address, []byte)
 	GetCodeSize(common.Address) int
+	AddCodeChunksToWitness(common.Address) uint64
 
 	AddRefund(uint64)
 	SubRefund(uint64)

@@ -493,7 +493,7 @@ func TestProcessVerkleCodeDeployExec(t *testing.T) {
 			gen.AddTx(tx)
 		} else {
 			// Call the contract's `store` function in block #2
-			tx, _ := types.SignTx(types.NewTransaction(1, contractAddr, big.NewInt(0), 3000000, big.NewInt(875000000), callStoreInput), signer, testKey)
+			tx, _ := types.SignTx(types.NewTransaction(1, contractAddr, big.NewInt(0), 3000000, big.NewInt(910000000), callStoreInput), signer, testKey)
 			gen.AddTx(tx)
 		}
 	})
@@ -510,8 +510,8 @@ func TestProcessVerkleCodeDeployExec(t *testing.T) {
 		t.Fatalf("expected block %d to be present in chain", 1)
 	}
 	var (
-		hascode      bool
-		contractStem [31]byte
+		hascode, hasData bool
+		contractStem     [31]byte
 	)
 
 	// Look for the stem that the contract will be deployed to
@@ -537,7 +537,7 @@ func TestProcessVerkleCodeDeployExec(t *testing.T) {
 		t.Fatalf("expected block %d to be present in chain", 2)
 	}
 
-	hascode = false
+	hascode, hasData = false, false
 	codeCount := 0
 	for _, kv := range b2.Header().VerkleKeyVals {
 		if bytes.Equal(contractStem[:], kv.Key[:31]) && kv.Key[31] >= 128 {
@@ -557,6 +557,13 @@ func TestProcessVerkleCodeDeployExec(t *testing.T) {
 				t.Fatalf("0-filled code chunk %x", kv.Key)
 			}
 		}
+
+		if bytes.Equal(contractStem[:], kv.Key[:31]) && kv.Key[31] == 64 {
+			hasData = true
+			if len(kv.Value) != 0 {
+				t.Fatalf("invalid value in witness, expected nil or [], got %x", kv.Value)
+			}
+		}
 	}
 
 	if !hascode {
@@ -565,5 +572,9 @@ func TestProcessVerkleCodeDeployExec(t *testing.T) {
 
 	if codeCount != 10 {
 		t.Fatalf("got %d code chunks, expected 10", codeCount)
+	}
+
+	if !hasData {
+		t.Fatal("could not find the storage write in the witness of the calling block")
 	}
 }

@@ -20,6 +20,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/gballet/go-verkle"
 	"github.com/holiman/uint256"
@@ -88,15 +89,16 @@ func NewContract(caller ContractRef, object ContractRef, value *big.Int, gas uin
 	return c
 }
 
-func (c *Contract) validJumpdest(dest *uint256.Int) bool {
+func (c *Contract) validJumpdest(dest *uint256.Int, chunked bool) bool {
 	udest, overflow := dest.Uint64WithOverflow()
+	chunks := trie.ChunkedCode(c.Code)
 	// PC cannot go beyond len(code) and certainly can't be bigger than 63bits.
 	// Don't bother checking for JUMPDEST in that case.
-	if overflow || udest >= uint64(len(c.Code)) {
+	if overflow || udest >= uint64(chunks.Len()) {
 		return false
 	}
 	// Only JUMPDESTs allowed for destinations
-	if OpCode(c.Code[udest]) != JUMPDEST {
+	if OpCode(chunks.AtPC(udest)) != JUMPDEST {
 		return false
 	}
 	return c.IsCode(udest)

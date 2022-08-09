@@ -370,17 +370,47 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 		memOffset  = scope.Stack.pop()
 		codeOffset = scope.Stack.pop()
 		length     = scope.Stack.pop()
+		endOffset  = new(uint256.Int).Add(&codeOffset, &length)
+		copied     = uint64(0) // Amount of bytes already copied
+		chunks     = trie.ChunkedCode(scope.Contract.Code)
 	)
 	uint64CodeOffset, overflow := codeOffset.Uint64WithOverflow()
 	if overflow {
 		uint64CodeOffset = 0xffffffffffffffff
 	}
-
-	paddedCodeCopy, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(scope.Contract.Code, uint64CodeOffset, length.Uint64())
-	if interpreter.evm.chainConfig.IsCancun(interpreter.evm.Context.BlockNumber) {
-		touchEachChunksOnReadAndChargeGas(copyOffset, nonPaddedCopyLength, scope.Contract.AddressPoint(), scope.Contract.Code, interpreter.evm.Accesses, scope.Contract.IsDeployment)
+	uint64EndOffset, overflow := endOffset.Uint64WithOverflow()
+	if overflow {
+		uint64EndOffset = 0xffffffffffffffff
 	}
-	scope.Memory.Set(memOffset.Uint64(), uint64(len(paddedCodeCopy)), paddedCodeCopy)
+	uint64Length := uint64EndOffset - uint64CodeOffset
+
+	if interpreter.evm.chainConfig.IsCancun(interpreter.evm.Context.BlockNumber) {
+		chunkedOffset := uint64CodeOffset + 1 + uint64CodeOffset/31 // codeOffset translated into the chunked space
+		chunkedEnd := uint64EndOffset + 1 + uint64EndOffset/31      // endOffset translated into the chunked space
+		touchEachChunksOnReadAndChargeGas(chunkedOffset, chunkedEnd-chunkedOffset, scope.Contract.AddressPoint(), scope.Contract.Code, interpreter.evm.Accesses, scope.Contract.IsDeployment)
+
+		// Copy all full chunks in the middle
+		it := chunks.Iter(uint64CodeOffset/31, uint64EndOffset/31)
+		for {
+			chunk, err := it()
+			if err != nil {
+				break // the only possible error is when the iterator has reached the end
+			}
+			start := (uint64CodeOffset + copied) % 31
+			scope.Memory.Set(memOffset.Uint64()+copied, 31, chunk[1+start:])
+			copied += uint64(len(chunk)) - start - 1
+		}
+
+		// Being chunked, the code will be padded to the next 31-byte boundary.
+		if copied < uint64Length {
+			chunk := chunks.GetChunk(uint64EndOffset / 31)
+			scope.Memory.Set(memOffset.Uint64()+copied, uint64EndOffset%31, chunk[1:1+uint64EndOffset%31])
+		}
+	} else {
+		codeCopy := getData(scope.Contract.Code, uint64CodeOffset, length.Uint64())
+		scope.Memory.Set(memOffset.Uint64(), length.Uint64(), codeCopy)
+	}
+
 	return nil, nil
 }
 
@@ -447,10 +477,6 @@ func touchEachChunksOnReadAndChargeGas(offset, size uint64, addrPoint *verkle.Po
 	} else {
 		endOffset = offset + size
 	}
-	chunks, err := trie.ChunkifyCode(code)
-	if err != nil {
-		panic(err)
-	}
 
 	// endOffset - 1 since if the end offset is aligned on a chunk boundary,
 	// the last chunk should not be included.
@@ -467,7 +493,7 @@ func touchEachChunksOnReadAndChargeGas(offset, size uint64, addrPoint *verkle.Po
 			if deployment {
 				accesses.SetLeafValue(index[:], nil)
 			} else {
-				accesses.SetLeafValue(index[:], chunks[32*i:(i+1)*32])
+				accesses.SetLeafValue(index[:], code[32*i:(i+1)*32])
 			}
 		}
 	}
@@ -482,17 +508,43 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 		memOffset  = stack.pop()
 		codeOffset = stack.pop()
 		length     = stack.pop()
+		copied     = uint64(0)
 	)
 	uint64CodeOffset, overflow := codeOffset.Uint64WithOverflow()
 	if overflow {
 		uint64CodeOffset = 0xffffffffffffffff
 	}
+	uint64EndOffset, overflow := length.Uint64WithOverflow()
+	if overflow {
+		uint64EndOffset = 0xffffffffffffffff
+	}
+	uint64Length := uint64EndOffset - uint64CodeOffset
+
 	addr := common.Address(a.Bytes20())
 	if interpreter.evm.chainConfig.IsCancun(interpreter.evm.Context.BlockNumber) {
-		code := interpreter.evm.StateDB.GetCode(addr)
-		paddedCodeCopy, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(code, uint64CodeOffset, length.Uint64())
-		touchEachChunksOnReadAndChargeGasWithAddress(copyOffset, nonPaddedCopyLength, addr[:], code, interpreter.evm.Accesses, false)
-		scope.Memory.Set(memOffset.Uint64(), length.Uint64(), paddedCodeCopy)
+		chunks := trie.ChunkedCode(interpreter.evm.StateDB.GetCode(addr))
+
+		chunkedOffset := uint64CodeOffset + 1 + uint64CodeOffset/31 // codeOffset translated into the chunked space
+		chunkedEnd := uint64EndOffset + 1 + uint64EndOffset/31      // endOffset translated into the chunked space
+		touchEachChunksOnReadAndChargeGas(chunkedOffset, chunkedEnd-chunkedOffset, scope.Contract.AddressPoint(), scope.Contract.Code, interpreter.evm.Accesses, scope.Contract.IsDeployment)
+
+		// Copy all full chunks in the middle
+		it := chunks.Iter(uint64CodeOffset/31, uint64EndOffset/31)
+		for {
+			chunk, err := it()
+			if err != nil {
+				break // the only possible error is when the iterator has reached the end
+			}
+			start := (uint64CodeOffset + copied) % 31
+			scope.Memory.Set(memOffset.Uint64()+copied, 31, chunk[1+start:])
+			copied += uint64(len(chunk)) - start - 1
+		}
+
+		// Being chunked, the code will be padded to the next 31-byte boundary.
+		if copied < uint64Length {
+			chunk := chunks.GetChunk(uint64EndOffset / 31)
+			scope.Memory.Set(memOffset.Uint64()+copied, uint64EndOffset%31, chunk[1:1+uint64EndOffset%31])
+		}
 	} else {
 		codeCopy := getData(interpreter.evm.StateDB.GetCode(addr), uint64CodeOffset, length.Uint64())
 		scope.Memory.Set(memOffset.Uint64(), length.Uint64(), codeCopy)
@@ -650,7 +702,7 @@ func opJump(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 		return nil, errStopToken
 	}
 	pos := scope.Stack.pop()
-	if !scope.Contract.validJumpdest(&pos) {
+	if !scope.Contract.validJumpdest(&pos, interpreter.evm.ChainConfig().IsCancun(interpreter.evm.Context.BlockNumber)) {
 		return nil, ErrInvalidJump
 	}
 	*pc = pos.Uint64() - 1 // pc will be increased by the interpreter loop
@@ -663,7 +715,7 @@ func opJumpi(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 	}
 	pos, cond := scope.Stack.pop(), scope.Stack.pop()
 	if !cond.IsZero() {
-		if !scope.Contract.validJumpdest(&pos) {
+		if !scope.Contract.validJumpdest(&pos, interpreter.evm.ChainConfig().IsCancun(interpreter.evm.Context.BlockNumber)) {
 			return nil, ErrInvalidJump
 		}
 		*pc = pos.Uint64() - 1 // pc will be increased by the interpreter loop
@@ -1004,13 +1056,18 @@ func opPush1(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 	)
 	*pc += 1
 	if *pc < codeLen {
-		scope.Stack.push(integer.SetUint64(uint64(scope.Contract.Code[*pc])))
 
-		if interpreter.evm.chainConfig.IsCancun(interpreter.evm.Context.BlockNumber) && *pc%31 == 0 {
-			// touch next chunk if PUSH1 is at the boundary. if so, *pc has
-			// advanced past this boundary.
-			statelessGas := touchEachChunksOnReadAndChargeGas(*pc+1, uint64(1), scope.Contract.AddressPoint(), scope.Contract.Code, interpreter.evm.Accesses, scope.Contract.IsDeployment)
-			scope.Contract.UseGas(statelessGas)
+		if interpreter.evm.chainConfig.IsCancun(interpreter.evm.Context.BlockNumber) {
+			chunks := trie.ChunkedCode(scope.Contract.Code)
+			scope.Stack.push(integer.SetUint64(uint64(chunks.AtPC(*pc))))
+			if *pc%31 == 0 && !scope.Contract.IsDeployment {
+				// touch next chunk if PUSH1 is at the boundary. if so, *pc has
+				// advanced past this boundary.
+				statelessGas := touchEachChunksOnReadAndChargeGas(*pc, uint64(1), scope.Contract.AddressPoint(), scope.Contract.Code, interpreter.evm.Accesses, scope.Contract.IsDeployment)
+				scope.Contract.UseGas(statelessGas)
+			}
+		} else {
+			scope.Stack.push(integer.SetUint64(uint64(scope.Contract.Code[*pc])))
 		}
 	} else {
 		scope.Stack.push(integer.Clear())
@@ -1028,12 +1085,16 @@ func makePush(size uint64, pushByteSize int) executionFunc {
 			startMin = int(*pc + 1)
 		}
 
+		if interpreter.evm.ChainConfig().IsCancun(interpreter.evm.Context.BlockNumber) {
+			startMin += 1 + int(*pc/31)
+		}
+
 		endMin := codeLen
 		if startMin+pushByteSize < endMin {
 			endMin = startMin + pushByteSize
 		}
 
-		if interpreter.evm.chainConfig.IsCancun(interpreter.evm.Context.BlockNumber) {
+		if interpreter.evm.chainConfig.IsCancun(interpreter.evm.Context.BlockNumber) && !scope.Contract.IsDeployment {
 			statelessGas := touchEachChunksOnReadAndChargeGas(uint64(startMin), uint64(pushByteSize), scope.Contract.AddressPoint(), scope.Contract.Code, interpreter.evm.Accesses, scope.Contract.IsDeployment)
 			scope.Contract.UseGas(statelessGas)
 		}

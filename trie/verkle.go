@@ -272,6 +272,46 @@ func deserializeVerkleProof(serialized []byte, rootC *verkle.Point, keyvals []ve
 // are actual code, and 1 byte is the pushdata offset).
 type ChunkedCode []byte
 
+// Iter provides an iterator that returns all the chunks starting at chunk
+// number `start` up to (and excluding) chunk number `end`. A value of `0`
+// for `end`, then the iterator will stop at the last chunk.
+func (cc ChunkedCode) Iter(start, end uint64) func() ([]byte, error) {
+	current := start
+	if end <= start {
+		end = (uint64(len(cc)) + 31) / 32
+	}
+	return func() ([]byte, error) {
+		if current*32 > uint64(len(cc)) || current == end {
+			return nil, errIteratorEnd
+		}
+		defer func() { current++ }()
+
+		return cc.GetChunk(current), nil
+	}
+}
+
+// GetChunk gets the chunk number `number`.
+func (cc ChunkedCode) GetChunk(number uint64) []byte {
+	if number*32 > uint64(len(cc)) {
+		var padding [32]byte
+		return padding[:]
+	}
+
+	return cc[32*number : 32*(number+1)]
+}
+
+// Len returns the length of the unchunked bytecode
+func (cc ChunkedCode) Len() int {
+	return (len(cc) * 31) / 32
+}
+
+// AtPC return the byte at offset `pc` in the un-chunked bytecode.
+func (cc ChunkedCode) AtPC(pc uint64) byte {
+	chunknr := pc / 31
+	chunkOffset := pc % 31
+	return cc.GetChunk(chunknr)[chunkOffset+1]
+}
+
 // Copy the values here so as to avoid an import cycle
 const (
 	PUSH1  = byte(0x60)
@@ -284,7 +324,7 @@ const (
 )
 
 // ChunkifyCode generates the chunked version of an array representing EVM bytecode
-func ChunkifyCode(code []byte) (ChunkedCode, error) {
+func ChunkifyCode(code []byte) ChunkedCode {
 	var (
 		chunkOffset = 0 // offset in the chunk
 		chunkCount  = len(code) / 31
@@ -331,5 +371,5 @@ func ChunkifyCode(code []byte) (ChunkedCode, error) {
 		}
 	}
 
-	return chunks, nil
+	return chunks
 }

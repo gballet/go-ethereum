@@ -336,9 +336,7 @@ func (aw *AccessWitness) TouchAndChargeContractCreateInit(addr []byte, createSen
 
 	gas += aw.TouchAddressOnWriteAndComputeGas(versionkey)
 	gas += aw.TouchAddressOnWriteAndComputeGas(noncekey[:])
-	if createSendsValue {
-		gas += aw.TouchAddressOnWriteAndComputeGas(balancekey[:])
-	}
+	gas += aw.TouchAddressOnWriteAndComputeGas(balancekey[:])
 	gas += aw.TouchAddressOnWriteAndComputeGas(ckkey[:])
 	return gas
 }

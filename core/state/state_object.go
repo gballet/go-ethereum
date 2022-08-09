@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/trie"
 	trieUtils "github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/gballet/go-verkle"
 	"github.com/holiman/uint256"
@@ -580,9 +581,33 @@ func (s *stateObject) SetCode(codeHash common.Hash, code []byte) {
 }
 
 func (s *stateObject) setCode(codeHash common.Hash, code []byte) {
-	s.code = code
+	if s.db.trie.IsVerkle() {
+		chunks := trie.ChunkifyCode(code)
+		s.code = []byte(chunks)
+	} else {
+		s.code = code
+	}
 	s.data.CodeHash = codeHash[:]
 	s.dirtyCode = true
+}
+
+func (s *stateObject) AddCodeChunksToWitness() uint64 {
+	var (
+		chunks = trie.ChunkedCode(s.code)
+		it     = chunks.Iter(0, 0)
+		i, gas uint64
+	)
+	for {
+		chunk, err := it()
+		if err != nil {
+			break
+		}
+		addr := trieUtils.GetTreeKeyCodeChunkWithEvaluatedAddress(s.pointEval, uint256.NewInt(i))
+		gas += s.db.Witness().TouchAddressOnWriteAndComputeGas(addr)
+		s.db.Witness().SetLeafValue(addr, chunk)
+		i++
+	}
+	return gas
 }
 
 func (s *stateObject) SetNonce(nonce uint64) {

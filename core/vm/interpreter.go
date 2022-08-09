@@ -181,9 +181,9 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		}()
 	}
 
-	// Evaluate one address per group of 256, 31-byte chunks
-	if in.evm.ChainConfig().IsCancun(in.evm.Context.BlockNumber) && !contract.IsDeployment {
-		chunks, err = trie.ChunkifyCode(contract.Code)
+	// Evaluate one address per group of 256 code pages, 31-byte chunks
+	if in.evm.ChainConfig().IsCancun(in.evm.Context.BlockNumber) {
+		chunks = contract.Code
 
 		totalEvals := len(contract.Code) / 31 / 256
 		if len(contract.Code)%(256*31) != 0 {
@@ -206,7 +206,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			logged, pcCopy, gasCopy = false, pc, contract.Gas
 		}
 
-		if chunks != nil {
+		if chunks != nil && !contract.IsDeployment {
 			// if the PC ends up in a new "chunk" of verkleized code, charge the
 			// associated costs.
 			contract.Gas -= touchChunkOnReadAndChargeGas(chunks, pc, chunkEvals, contract.Code, in.evm.TxContext.Accesses, contract.IsDeployment)
@@ -214,7 +214,12 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 
 		// Get the operation from the jump table and validate the stack to ensure there are
 		// enough stack items available to perform the operation.
-		op = contract.GetOp(pc)
+		if chunks != nil {
+			nextbyte := pc + (pc / 31) /* other chunks */ + 1 /* first chunk */
+			op = contract.GetOp(nextbyte)
+		} else {
+			op = contract.GetOp(pc)
+		}
 		operation := in.cfg.JumpTable[op]
 		cost = operation.constantGas // For tracing
 		// Validate stack

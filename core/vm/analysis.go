@@ -16,6 +16,8 @@
 
 package vm
 
+import "github.com/ethereum/go-ethereum/trie"
+
 const (
 	set2BitsMask = uint16(0b11)
 	set3BitsMask = uint16(0b111)
@@ -62,10 +64,12 @@ func (bits *bitvec) codeSegment(pos uint64) bool {
 
 // codeBitmap collects data locations in code.
 func codeBitmap(code []byte) bitvec {
+	chunks := trie.ChunkedCode(code)
+
 	// The bitmap is 4 bytes longer than necessary, in case the code
 	// ends with a PUSH32, the algorithm will push zeroes onto the
 	// bitvector outside the bounds of the actual code.
-	bits := make(bitvec, len(code)/8+1+4)
+	bits := make(bitvec, chunks.Len()/8+1+4)
 	return codeBitmapInternal(code, bits)
 }
 
@@ -73,8 +77,9 @@ func codeBitmap(code []byte) bitvec {
 // It exists for the purpose of being able to run benchmark tests
 // without dynamic allocations affecting the results.
 func codeBitmapInternal(code, bits bitvec) bitvec {
-	for pc := uint64(0); pc < uint64(len(code)); {
-		op := OpCode(code[pc])
+	chunks := trie.ChunkedCode(code)
+	for pc := uint64(0); pc < uint64(chunks.Len()); {
+		op := OpCode(chunks.AtPC(pc))
 		pc++
 		if int8(op) < int8(PUSH1) { // If not PUSH (the int8(op) > int(PUSH32) is always false).
 			continue
