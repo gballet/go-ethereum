@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/gballet/go-verkle"
 )
 
 var _ = (*executableDataMarshaling)(nil)
@@ -16,20 +17,22 @@ var _ = (*executableDataMarshaling)(nil)
 // MarshalJSON marshals as JSON.
 func (e ExecutableDataV1) MarshalJSON() ([]byte, error) {
 	type ExecutableDataV1 struct {
-		ParentHash    common.Hash     `json:"parentHash"    gencodec:"required"`
-		FeeRecipient  common.Address  `json:"feeRecipient"  gencodec:"required"`
-		StateRoot     common.Hash     `json:"stateRoot"     gencodec:"required"`
-		ReceiptsRoot  common.Hash     `json:"receiptsRoot"  gencodec:"required"`
-		LogsBloom     hexutil.Bytes   `json:"logsBloom"     gencodec:"required"`
-		Random        common.Hash     `json:"prevRandao"    gencodec:"required"`
-		Number        hexutil.Uint64  `json:"blockNumber"   gencodec:"required"`
-		GasLimit      hexutil.Uint64  `json:"gasLimit"      gencodec:"required"`
-		GasUsed       hexutil.Uint64  `json:"gasUsed"       gencodec:"required"`
-		Timestamp     hexutil.Uint64  `json:"timestamp"     gencodec:"required"`
-		ExtraData     hexutil.Bytes   `json:"extraData"     gencodec:"required"`
-		BaseFeePerGas *hexutil.Big    `json:"baseFeePerGas" gencodec:"required"`
-		BlockHash     common.Hash     `json:"blockHash"     gencodec:"required"`
-		Transactions  []hexutil.Bytes `json:"transactions"  gencodec:"required"`
+		ParentHash    common.Hash           `json:"parentHash"    gencodec:"required"`
+		FeeRecipient  common.Address        `json:"feeRecipient"  gencodec:"required"`
+		StateRoot     common.Hash           `json:"stateRoot"     gencodec:"required"`
+		ReceiptsRoot  common.Hash           `json:"receiptsRoot"  gencodec:"required"`
+		LogsBloom     hexutil.Bytes         `json:"logsBloom"     gencodec:"required"`
+		Random        common.Hash           `json:"prevRandao"    gencodec:"required"`
+		Number        hexutil.Uint64        `json:"blockNumber"   gencodec:"required"`
+		GasLimit      hexutil.Uint64        `json:"gasLimit"      gencodec:"required"`
+		GasUsed       hexutil.Uint64        `json:"gasUsed"       gencodec:"required"`
+		Timestamp     hexutil.Uint64        `json:"timestamp"     gencodec:"required"`
+		ExtraData     hexutil.Bytes         `json:"extraData"     gencodec:"required"`
+		BaseFeePerGas *hexutil.Big          `json:"baseFeePerGas" gencodec:"required"`
+		BlockHash     common.Hash           `json:"blockHash"     gencodec:"required"`
+		Transactions  []hexutil.Bytes       `json:"transactions"  gencodec:"required"`
+		VerkleProof   []byte                `json:"verkleProof"`
+		VerkleKeyVals []verkle.KeyValuePair `json:"verkleKeyVals"`
 	}
 	var enc ExecutableDataV1
 	enc.ParentHash = e.ParentHash
@@ -51,26 +54,30 @@ func (e ExecutableDataV1) MarshalJSON() ([]byte, error) {
 			enc.Transactions[k] = v
 		}
 	}
+	enc.VerkleProof = e.VerkleProof
+	enc.VerkleKeyVals = e.VerkleKeyVals
 	return json.Marshal(&enc)
 }
 
 // UnmarshalJSON unmarshals from JSON.
 func (e *ExecutableDataV1) UnmarshalJSON(input []byte) error {
 	type ExecutableDataV1 struct {
-		ParentHash    *common.Hash    `json:"parentHash"    gencodec:"required"`
-		FeeRecipient  *common.Address `json:"feeRecipient"  gencodec:"required"`
-		StateRoot     *common.Hash    `json:"stateRoot"     gencodec:"required"`
-		ReceiptsRoot  *common.Hash    `json:"receiptsRoot"  gencodec:"required"`
-		LogsBloom     *hexutil.Bytes  `json:"logsBloom"     gencodec:"required"`
-		Random        *common.Hash    `json:"prevRandao"    gencodec:"required"`
-		Number        *hexutil.Uint64 `json:"blockNumber"   gencodec:"required"`
-		GasLimit      *hexutil.Uint64 `json:"gasLimit"      gencodec:"required"`
-		GasUsed       *hexutil.Uint64 `json:"gasUsed"       gencodec:"required"`
-		Timestamp     *hexutil.Uint64 `json:"timestamp"     gencodec:"required"`
-		ExtraData     *hexutil.Bytes  `json:"extraData"     gencodec:"required"`
-		BaseFeePerGas *hexutil.Big    `json:"baseFeePerGas" gencodec:"required"`
-		BlockHash     *common.Hash    `json:"blockHash"     gencodec:"required"`
-		Transactions  []hexutil.Bytes `json:"transactions"  gencodec:"required"`
+		ParentHash    *common.Hash          `json:"parentHash"    gencodec:"required"`
+		FeeRecipient  *common.Address       `json:"feeRecipient"  gencodec:"required"`
+		StateRoot     *common.Hash          `json:"stateRoot"     gencodec:"required"`
+		ReceiptsRoot  *common.Hash          `json:"receiptsRoot"  gencodec:"required"`
+		LogsBloom     *hexutil.Bytes        `json:"logsBloom"     gencodec:"required"`
+		Random        *common.Hash          `json:"prevRandao"    gencodec:"required"`
+		Number        *hexutil.Uint64       `json:"blockNumber"   gencodec:"required"`
+		GasLimit      *hexutil.Uint64       `json:"gasLimit"      gencodec:"required"`
+		GasUsed       *hexutil.Uint64       `json:"gasUsed"       gencodec:"required"`
+		Timestamp     *hexutil.Uint64       `json:"timestamp"     gencodec:"required"`
+		ExtraData     *hexutil.Bytes        `json:"extraData"     gencodec:"required"`
+		BaseFeePerGas *hexutil.Big          `json:"baseFeePerGas" gencodec:"required"`
+		BlockHash     *common.Hash          `json:"blockHash"     gencodec:"required"`
+		Transactions  []hexutil.Bytes       `json:"transactions"  gencodec:"required"`
+		VerkleProof   []byte                `json:"verkleProof"`
+		VerkleKeyVals []verkle.KeyValuePair `json:"verkleKeyVals"`
 	}
 	var dec ExecutableDataV1
 	if err := json.Unmarshal(input, &dec); err != nil {
@@ -134,6 +141,12 @@ func (e *ExecutableDataV1) UnmarshalJSON(input []byte) error {
 	e.Transactions = make([][]byte, len(dec.Transactions))
 	for k, v := range dec.Transactions {
 		e.Transactions[k] = v
+	}
+	if dec.VerkleProof != nil {
+		e.VerkleProof = dec.VerkleProof
+	}
+	if dec.VerkleKeyVals != nil {
+		e.VerkleKeyVals = dec.VerkleKeyVals
 	}
 	return nil
 }

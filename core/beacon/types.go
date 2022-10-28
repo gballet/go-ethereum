@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/gballet/go-verkle"
 )
 
 //go:generate go run github.com/fjl/gencodec -type PayloadAttributesV1 -field-override payloadAttributesMarshaling -out gen_blockparams.go
@@ -58,6 +59,9 @@ type ExecutableDataV1 struct {
 	BaseFeePerGas *big.Int       `json:"baseFeePerGas" gencodec:"required"`
 	BlockHash     common.Hash    `json:"blockHash"     gencodec:"required"`
 	Transactions  [][]byte       `json:"transactions"  gencodec:"required"`
+
+	VerkleProof   []byte                `json:"verkleProof"`
+	VerkleKeyVals []verkle.KeyValuePair `json:"verkleKeyVals"`
 }
 
 // JSON type overrides for executableData.
@@ -199,5 +203,7 @@ func BlockToExecutableData(block *types.Block) *ExecutableDataV1 {
 		Transactions:  encodeTransactions(block.Transactions()),
 		Random:        block.MixDigest(),
 		ExtraData:     block.Extra(),
+		VerkleProof:   block.Header().VerkleProof,
+		VerkleKeyVals: block.Header().VerkleKeyVals,
 	}
 }

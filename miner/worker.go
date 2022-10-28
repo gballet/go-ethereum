@@ -1151,6 +1151,31 @@ func (w *worker) commit(env *environment, interval func(), update bool, start ti
 			return err
 		}
 
+		// Open the pre-tree to prove the pre-state against
+		preTrie, err := env.state.Database().OpenTrie(env.preRoot)
+		if err != nil {
+			return err
+		}
+		if vtr, ok := preTrie.(*trie.VerkleTrie); ok {
+			keys := env.state.Witness().Keys()
+			kvs := env.state.Witness().KeyVals()
+			for _, key := range keys {
+				// XXX workaround - there is a problem in the witness creation
+				// so fix the witness creation as well.
+				v, err := vtr.TryGet(key)
+				if err != nil {
+					panic(err)
+				}
+				kvs[string(key)] = v
+			}
+			vtr.Hash()
+			p, k, err := vtr.ProveAndSerialize(env.state.Witness().Keys(), env.state.Witness().KeyVals())
+			if err != nil {
+				return err
+			}
+			block.SetVerkleProof(p, k)
+		}
+
 		// If we're post merge, just ignore
 		if !w.isTTDReached(block.Header()) {
 			select {

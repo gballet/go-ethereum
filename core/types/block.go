@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/gballet/go-verkle"
 )
 
 var (
@@ -92,6 +93,9 @@ type Header struct {
 		// Random was added during the merge and contains the BeaconState randomness
 		Random common.Hash `json:"random" rlp:"optional"`
 	*/
+
+	VerkleProof   []byte                `json:"verkleProof" rlp:"optional"`
+	VerkleKeyVals []verkle.KeyValuePair `json:"verkleKeyVals" rlp:"optional"`
 }
 
 // field type overrides for gencodec
@@ -336,6 +340,11 @@ func (b *Block) Size() common.StorageSize {
 // stuffed with junk data to add processing overhead
 func (b *Block) SanityCheck() error {
 	return b.header.SanityCheck()
+}
+
+func (b *Block) SetVerkleProof(vp []byte, kv []verkle.KeyValuePair) {
+	b.header.VerkleProof = vp
+	b.header.VerkleKeyVals = kv
 }
 
 type writeCounter common.StorageSize
