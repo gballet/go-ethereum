@@ -1088,7 +1088,32 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 	if !params.noTxs {
 		w.fillTransactions(nil, work)
 	}
-	return w.engine.FinalizeAndAssemble(w.chain, work.header, work.state, work.txs, work.unclelist(), work.receipts)
+	block, err := w.engine.FinalizeAndAssemble(w.chain, work.header, work.state, work.txs, work.unclelist(), work.receipts)
+	// Open the pre-tree to prove the pre-state against
+	preTrie, err := work.state.Database().OpenTrie(work.preRoot)
+	if err != nil {
+		return nil, err
+	}
+	if vtr, ok := preTrie.(*trie.VerkleTrie); ok {
+		keys := work.state.Witness().Keys()
+		kvs := work.state.Witness().KeyVals()
+		for _, key := range keys {
+			// XXX workaround - there is a problem in the witness creation
+			// so fix the witness creation as well.
+			v, err := vtr.TryGet(key)
+			if err != nil {
+				panic(err)
+			}
+			kvs[string(key)] = v
+		}
+		vtr.Hash()
+		p, k, err := vtr.ProveAndSerialize(work.state.Witness().Keys(), work.state.Witness().KeyVals())
+		if err != nil {
+			return nil, err
+		}
+		block.SetVerkleProof(p, k)
+	}
+	return block, nil
 }
 
 // commitWork generates several new sealing tasks based on the parent block
