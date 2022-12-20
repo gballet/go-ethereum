@@ -366,7 +366,11 @@ func TestReproduceCondrieuPoAStemConflictWithAnotherStem(t *testing.T) {
 
 func TestEmptyKeySetInProveAndSerialize(t *testing.T) {
 	tree := verkle.New()
-	verkle.MakeVerkleMultiProof(tree, [][]byte{}, map[string][]byte{})
+	_, _, _, _, err := verkle.MakeVerkleMultiProof(tree, [][]byte{}, map[string][]byte{})
+	if err == nil || err.Error() != "no key provided for proof" {
+		t.Fatalf("incorrect error, expected: 'no key provided for proof' got %v", err)
+	}
+
 }
 
 func TestGetTreeKeys(t *testing.T) {

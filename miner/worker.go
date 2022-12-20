@@ -35,6 +35,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/gballet/go-verkle"
 )
 
 const (
@@ -1107,9 +1108,16 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 			kvs[string(key)] = v
 		}
 		vtr.Hash()
-		p, k, err := vtr.ProveAndSerialize(work.state.Witness().Keys(), work.state.Witness().KeyVals())
-		if err != nil {
-			return nil, err
+		var (
+			p []byte
+			k []verkle.KeyValuePair
+		)
+
+		if len(work.state.Witness().Keys()) > 0 {
+			p, k, err = vtr.ProveAndSerialize(work.state.Witness().Keys(), work.state.Witness().KeyVals())
+			if err != nil {
+				return nil, err
+			}
 		}
 		block.SetVerkleProof(p, k)
 	}
@@ -1194,9 +1202,15 @@ func (w *worker) commit(env *environment, interval func(), update bool, start ti
 				kvs[string(key)] = v
 			}
 			vtr.Hash()
-			p, k, err := vtr.ProveAndSerialize(env.state.Witness().Keys(), env.state.Witness().KeyVals())
-			if err != nil {
-				return err
+			var (
+				p []byte
+				k []verkle.KeyValuePair
+			)
+			if len(env.state.Witness().Keys) > 0 {
+				p, k, err := vtr.ProveAndSerialize(env.state.Witness().Keys(), env.state.Witness().KeyVals())
+				if err != nil {
+					return err
+				}
 			}
 			block.SetVerkleProof(p, k)
 		}
