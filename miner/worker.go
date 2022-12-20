@@ -1206,8 +1206,8 @@ func (w *worker) commit(env *environment, interval func(), update bool, start ti
 				p []byte
 				k []verkle.KeyValuePair
 			)
-			if len(env.state.Witness().Keys) > 0 {
-				p, k, err := vtr.ProveAndSerialize(env.state.Witness().Keys(), env.state.Witness().KeyVals())
+			if len(env.state.Witness().Keys()) > 0 {
+				p, k, err = vtr.ProveAndSerialize(env.state.Witness().Keys(), env.state.Witness().KeyVals())
 				if err != nil {
 					return err
 				}
