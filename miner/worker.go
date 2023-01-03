@@ -1114,7 +1114,7 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 		)
 
 		if len(work.state.Witness().Keys()) > 0 {
-			p, k, err = vtr.ProveAndSerialize(work.state.Witness().Keys(), work.state.Witness().KeyVals())
+			p, k, err = vtr.ProveAndSerialize(work.state.Witness().Keys(), kvs)
 			if err != nil {
 				return nil, err
 			}
@@ -1207,7 +1207,7 @@ func (w *worker) commit(env *environment, interval func(), update bool, start ti
 				k verkle.StateDiff
 			)
 			if len(env.state.Witness().Keys()) > 0 {
-				p, k, err = vtr.ProveAndSerialize(env.state.Witness().Keys(), env.state.Witness().KeyVals())
+				p, k, err = vtr.ProveAndSerialize(env.state.Witness().Keys(), kvs)
 				if err != nil {
 					return err
 				}
