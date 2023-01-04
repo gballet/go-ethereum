@@ -160,21 +160,23 @@ func ExecutableDataToBlock(params ExecutableDataV1) (*types.Block, error) {
 		return nil, fmt.Errorf("invalid baseFeePerGas: %v", params.BaseFeePerGas)
 	}
 	header := &types.Header{
-		ParentHash:  params.ParentHash,
-		UncleHash:   types.EmptyUncleHash,
-		Coinbase:    params.FeeRecipient,
-		Root:        params.StateRoot,
-		TxHash:      types.DeriveSha(types.Transactions(txs), trie.NewStackTrie(nil)),
-		ReceiptHash: params.ReceiptsRoot,
-		Bloom:       types.BytesToBloom(params.LogsBloom),
-		Difficulty:  common.Big0,
-		Number:      new(big.Int).SetUint64(params.Number),
-		GasLimit:    params.GasLimit,
-		GasUsed:     params.GasUsed,
-		Time:        params.Timestamp,
-		BaseFee:     params.BaseFeePerGas,
-		Extra:       params.ExtraData,
-		MixDigest:   params.Random,
+		ParentHash:    params.ParentHash,
+		UncleHash:     types.EmptyUncleHash,
+		Coinbase:      params.FeeRecipient,
+		Root:          params.StateRoot,
+		TxHash:        types.DeriveSha(types.Transactions(txs), trie.NewStackTrie(nil)),
+		ReceiptHash:   params.ReceiptsRoot,
+		Bloom:         types.BytesToBloom(params.LogsBloom),
+		Difficulty:    common.Big0,
+		Number:        new(big.Int).SetUint64(params.Number),
+		GasLimit:      params.GasLimit,
+		GasUsed:       params.GasUsed,
+		Time:          params.Timestamp,
+		BaseFee:       params.BaseFeePerGas,
+		Extra:         params.ExtraData,
+		MixDigest:     params.Random,
+		VerkleKeyVals: params.VerkleKeyVals,
+		VerkleProof:   params.VerkleProof,
 	}
 	block := types.NewBlockWithHeader(header).WithBody(txs, nil /* uncles */)
 	if block.Hash() != params.BlockHash {

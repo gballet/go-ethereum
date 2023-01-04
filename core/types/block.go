@@ -396,8 +396,20 @@ func (b *Block) Hash() common.Hash {
 	if hash := b.hash.Load(); hash != nil {
 		return hash.(common.Hash)
 	}
+
+	// Set the verkle stuff to `nil` when computing the block
+	// hash, as the proof elements are not included in the
+	// hash calculation for now.
+	vp := b.header.VerkleProof
+	kvs := b.header.VerkleKeyVals
+	b.header.VerkleKeyVals = nil
+	b.header.VerkleProof = nil
+
 	v := b.header.Hash()
 	b.hash.Store(v)
+
+	b.header.VerkleKeyVals = kvs
+	b.header.VerkleProof = vp
 	return v
 }
 
