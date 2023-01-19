@@ -333,6 +333,34 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 	// The block reward is no longer handled here. It's done by the
 	// external consensus engine.
 	header.Root = state.IntermediateRoot(true)
+	// Open the pre-tree to prove the pre-state against
+	preTrie, err := state.Database().OpenTrie(header.ParentHash)
+	if err != nil {
+		panic(err)
+	}
+	verkleTrie, ok := preTrie.(*trie.VerkleTrie)
+	if !ok {
+		err := fmt.Errorf("'#%v' of type '%T' cannot be converted to '%T'", preTrie, preTrie, trie.VerkleTrie{})
+		panic(err)
+	}
+	keys := state.Witness().Keys()
+	vals := state.Witness().KeyVals()
+	if len(keys) > 0 {
+		for _, key := range keys {
+			// XXX workaround - there is a problem in the witness creation
+			// so fix the witness creation as well.
+			val, err := verkleTrie.TryGet(key)
+			if err != nil {
+				panic(err)
+			}
+			vals[string(key)] = val
+		}
+		verkleTrie.Hash()
+		_, _, err := verkleTrie.ProveAndSerialize(keys, vals)
+		if err != nil {
+			panic(err)
+		}
+	}
 }
 
 // FinalizeAndAssemble implements consensus.Engine, setting the final state and
