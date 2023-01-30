@@ -334,7 +334,8 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 	// external consensus engine.
 	header.Root = state.IntermediateRoot(true)
 	// Open the pre-tree to prove the pre-state against
-	preTrie, err := state.Database().OpenTrie(header.ParentHash)
+	parent := chain.GetHeaderByHash(header.ParentHash)
+	preTrie, err := state.Database().OpenTrie(parent.Root)
 	if err != nil {
 		panic(err)
 	}
