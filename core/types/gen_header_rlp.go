@@ -41,9 +41,7 @@ func (obj *Header) EncodeRLP(_w io.Writer) error {
 	w.WriteBytes(obj.MixDigest[:])
 	w.WriteBytes(obj.Nonce[:])
 	_tmp1 := obj.BaseFee != nil
-	_tmp2 := len(obj.VerkleProof) > 0
-	_tmp3 := len(obj.VerkleKeyVals) > 0
-	if _tmp1 || _tmp2 || _tmp3 {
+	if _tmp1 {
 		if obj.BaseFee == nil {
 			w.Write(rlp.EmptyString)
 		} else {
@@ -52,19 +50,6 @@ func (obj *Header) EncodeRLP(_w io.Writer) error {
 			}
 			w.WriteBigInt(obj.BaseFee)
 		}
-	}
-	if _tmp2 || _tmp3 {
-		w.WriteBytes(obj.VerkleProof)
-	}
-	if _tmp3 {
-		_tmp4 := w.List()
-		for _, _tmp5 := range obj.VerkleKeyVals {
-			_tmp6 := w.List()
-			w.WriteBytes(_tmp5.Key)
-			w.WriteBytes(_tmp5.Value)
-			w.ListEnd(_tmp6)
-		}
-		w.ListEnd(_tmp4)
 	}
 	w.ListEnd(_tmp0)
 	return w.Flush()

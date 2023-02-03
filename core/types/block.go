@@ -64,6 +64,11 @@ func (n *BlockNonce) UnmarshalText(input []byte) error {
 	return hexutil.UnmarshalFixedText("BlockNonce", input, n[:])
 }
 
+type ExecutionWitness struct {
+	StateDiff   verkle.StateDiff    `json:"stateDiff"`
+	VerkleProof *verkle.VerkleProof `json:"verkleProof"`
+}
+
 //go:generate go run github.com/fjl/gencodec -type Header -field-override headerMarshaling -out gen_header_json.go
 //go:generate go run ../../rlp/rlpgen -type Header -out gen_header_rlp.go
 
@@ -94,8 +99,7 @@ type Header struct {
 		Random common.Hash `json:"random" rlp:"optional"`
 	*/
 
-	VerkleProof   []byte                `json:"verkleProof" rlp:"optional"`
-	VerkleKeyVals []verkle.KeyValuePair `json:"verkleKeyVals" rlp:"optional"`
+	ExecutionWitness *ExecutionWitness `json:"executionWitness" rlp:"-"`
 }
 
 // field type overrides for gencodec
@@ -342,9 +346,8 @@ func (b *Block) SanityCheck() error {
 	return b.header.SanityCheck()
 }
 
-func (b *Block) SetVerkleProof(vp []byte, kv []verkle.KeyValuePair) {
-	b.header.VerkleProof = vp
-	b.header.VerkleKeyVals = kv
+func (b *Block) SetVerkleProof(vp *verkle.VerkleProof, statediff verkle.StateDiff) {
+	b.header.ExecutionWitness = &ExecutionWitness{statediff, vp}
 }
 
 type writeCounter common.StorageSize

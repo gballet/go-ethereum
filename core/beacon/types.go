@@ -24,7 +24,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
-	"github.com/gballet/go-verkle"
 )
 
 //go:generate go run github.com/fjl/gencodec -type PayloadAttributesV1 -field-override payloadAttributesMarshaling -out gen_blockparams.go
@@ -60,8 +59,7 @@ type ExecutableDataV1 struct {
 	BlockHash     common.Hash    `json:"blockHash"     gencodec:"required"`
 	Transactions  [][]byte       `json:"transactions"  gencodec:"required"`
 
-	VerkleProof   []byte                `json:"verkleProof"`
-	VerkleKeyVals []verkle.KeyValuePair `json:"verkleKeyVals"`
+	ExecutionWitness *types.ExecutionWitness `json:"executionWitness"`
 }
 
 // JSON type overrides for executableData.
@@ -189,21 +187,20 @@ func ExecutableDataToBlock(params ExecutableDataV1) (*types.Block, error) {
 // fields from the given block. It assumes the given block is post-merge block.
 func BlockToExecutableData(block *types.Block) *ExecutableDataV1 {
 	return &ExecutableDataV1{
-		BlockHash:     block.Hash(),
-		ParentHash:    block.ParentHash(),
-		FeeRecipient:  block.Coinbase(),
-		StateRoot:     block.Root(),
-		Number:        block.NumberU64(),
-		GasLimit:      block.GasLimit(),
-		GasUsed:       block.GasUsed(),
-		BaseFeePerGas: block.BaseFee(),
-		Timestamp:     block.Time(),
-		ReceiptsRoot:  block.ReceiptHash(),
-		LogsBloom:     block.Bloom().Bytes(),
-		Transactions:  encodeTransactions(block.Transactions()),
-		Random:        block.MixDigest(),
-		ExtraData:     block.Extra(),
-		VerkleProof:   block.Header().VerkleProof,
-		VerkleKeyVals: block.Header().VerkleKeyVals,
+		BlockHash:        block.Hash(),
+		ParentHash:       block.ParentHash(),
+		FeeRecipient:     block.Coinbase(),
+		StateRoot:        block.Root(),
+		Number:           block.NumberU64(),
+		GasLimit:         block.GasLimit(),
+		GasUsed:          block.GasUsed(),
+		BaseFeePerGas:    block.BaseFee(),
+		Timestamp:        block.Time(),
+		ReceiptsRoot:     block.ReceiptHash(),
+		LogsBloom:        block.Bloom().Bytes(),
+		Transactions:     encodeTransactions(block.Transactions()),
+		Random:           block.MixDigest(),
+		ExtraData:        block.Extra(),
+		ExecutionWitness: block.Header().ExecutionWitness,
 	}
 }

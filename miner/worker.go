@@ -1109,8 +1109,8 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, error) {
 		}
 		vtr.Hash()
 		var (
-			p []byte
-			k []verkle.KeyValuePair
+			p *verkle.VerkleProof
+			k verkle.StateDiff
 		)
 
 		if len(work.state.Witness().Keys()) > 0 {
@@ -1203,8 +1203,8 @@ func (w *worker) commit(env *environment, interval func(), update bool, start ti
 			}
 			vtr.Hash()
 			var (
-				p []byte
-				k []verkle.KeyValuePair
+				p *verkle.VerkleProof
+				k verkle.StateDiff
 			)
 			if len(env.state.Witness().Keys()) > 0 {
 				p, k, err = vtr.ProveAndSerialize(env.state.Witness().Keys(), env.state.Witness().KeyVals())
