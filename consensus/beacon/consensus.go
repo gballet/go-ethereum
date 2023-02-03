@@ -334,14 +334,17 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 	// external consensus engine.
 	header.Root = state.IntermediateRoot(true)
 	// Open the pre-tree to prove the pre-state against
-	parent := chain.GetHeaderByHash(header.ParentHash)
-	preTrie, err := state.Database().OpenTrie(parent.Root)
+	var parentRoot common.Hash
+	if parent := chain.GetHeaderByHash(header.ParentHash); parent != nil {
+		parentRoot = parent.Root
+	}
+	preTrie, err := state.Database().OpenTrie(parentRoot)
 	if err != nil {
 		panic(err)
 	}
 	verkleTrie, ok := preTrie.(*trie.VerkleTrie)
 	if !ok {
-		err := fmt.Errorf("'#%v' of type '%T' cannot be converted to '%T'", preTrie, preTrie, trie.VerkleTrie{})
+		err := fmt.Errorf("'%#v' of type '%T' cannot be converted to '%T'", preTrie, preTrie, trie.VerkleTrie{})
 		panic(err)
 	}
 	keys := state.Witness().Keys()
@@ -356,8 +359,9 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 			}
 			vals[string(key)] = val
 		}
-		verkleTrie.Hash()
-		_, _, err := verkleTrie.ProveAndSerialize(keys, vals)
+		// Avoid "declared and not used errors"
+		_ /*trieHash*/ = verkleTrie.Hash()
+		_ /*verkleProof*/, _ /*verkleKeyVals*/, err := verkleTrie.ProveAndSerialize(keys, vals)
 		if err != nil {
 			panic(err)
 		}
