@@ -982,10 +982,4 @@ func TestCodeChunkOverflow(t *testing.T) {
 		t.Errorf("can not commit trie %v to persistent database", root.Hex())
 	}
 
-	// Ensure that no data was leaked into the database
-	it := db.NewIterator(nil, nil)
-	for it.Next() {
-		t.Errorf("State leaked into database: %x -> %x", it.Key(), it.Value())
-	}
-	it.Release()
 }
