@@ -981,5 +981,4 @@ func TestCodeChunkOverflow(t *testing.T) {
 	if err := state.Database().TrieDB().Commit(root, false, nil); err != nil {
 		t.Errorf("can not commit trie %v to persistent database", root.Hex())
 	}
-
 }
