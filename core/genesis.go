@@ -470,6 +470,8 @@ func (g *Genesis) configOrDefault(ghash common.Hash) *params.ChainConfig {
 // ToBlock returns the genesis block according to genesis specification.
 func (g *Genesis) ToBlock() *types.Block {
 	root, err := g.Alloc.deriveHash(g.Config)
+	fmt.Print("State Root: ")
+	fmt.Println(root.Hex())
 	if err != nil {
 		panic(err)
 	}

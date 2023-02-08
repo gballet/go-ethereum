@@ -530,7 +530,7 @@ func (s *StateDB) updateStateObject(obj *stateObject) {
 		)
 		for i, chunknr := 0, uint64(0); i < len(chunks); i, chunknr = i+32, chunknr+1 {
 			groupOffset := (chunknr + 128) % 256
-			if groupOffset == 128 {
+			if groupOffset == 0 || groupOffset == 128 {
 				values = make([][]byte, verkle.NodeWidth)
 				key = utils.GetTreeKeyCodeChunkWithEvaluatedAddress(obj.pointEval, uint256.NewInt(chunknr))
 			}
