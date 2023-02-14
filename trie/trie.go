@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -116,7 +117,7 @@ func (t *Trie) NodeIterator(start []byte) NodeIterator {
 // Get returns the value for key stored in the trie.
 // The value bytes must not be modified by the caller.
 func (t *Trie) Get(key []byte) []byte {
-	res, err := t.TryGet(key)
+	res, err := t.TryGet(key, false)
 	if err != nil {
 		log.Error("Unhandled trie error in Trie.Get", "err", err)
 	}
@@ -126,33 +127,36 @@ func (t *Trie) Get(key []byte) []byte {
 // TryGet returns the value for key stored in the trie.
 // The value bytes must not be modified by the caller.
 // If a node was not found in the database, a MissingNodeError is returned.
-func (t *Trie) TryGet(key []byte) ([]byte, error) {
-	value, newroot, didResolve, err := t.tryGet(t.root, keybytesToHex(key), 0)
+func (t *Trie) TryGet(key []byte, isaccount bool) ([]byte, error) {
+	value, newroot, didResolve, err := t.tryGet(t.root, keybytesToHex(key), 0, 0, isaccount)
 	if err == nil && didResolve {
 		t.root = newroot
 	}
 	return value, err
 }
 
-func (t *Trie) tryGet(origNode node, key []byte, pos int) (value []byte, newnode node, didResolve bool, err error) {
+func (t *Trie) tryGet(origNode node, key []byte, pos int, depth int, isaccount bool) (value []byte, newnode node, didResolve bool, err error) {
 	switch n := (origNode).(type) {
 	case nil:
+		writeDepth(depth, false, false, isaccount)
 		return nil, nil, false, nil
 	case valueNode:
+		writeDepth(depth, false, false, isaccount)
 		return n, n, false, nil
 	case *shortNode:
 		if len(key)-pos < len(n.Key) || !bytes.Equal(n.Key, key[pos:pos+len(n.Key)]) {
+			writeDepth(depth, false, false, isaccount)
 			// key not found in trie
 			return nil, n, false, nil
 		}
-		value, newnode, didResolve, err = t.tryGet(n.Val, key, pos+len(n.Key))
+		value, newnode, didResolve, err = t.tryGet(n.Val, key, pos+len(n.Key), depth+1, isaccount)
 		if err == nil && didResolve {
 			n = n.copy()
 			n.Val = newnode
 		}
 		return value, n, didResolve, err
 	case *fullNode:
-		value, newnode, didResolve, err = t.tryGet(n.Children[key[pos]], key, pos+1)
+		value, newnode, didResolve, err = t.tryGet(n.Children[key[pos]], key, pos+1, depth+1, isaccount)
 		if err == nil && didResolve {
 			n = n.copy()
 			n.Children[key[pos]] = newnode
@@ -163,7 +167,7 @@ func (t *Trie) tryGet(origNode node, key []byte, pos int) (value []byte, newnode
 		if err != nil {
 			return nil, n, true, err
 		}
-		value, newnode, _, err := t.tryGet(child, key, pos)
+		value, newnode, _, err := t.tryGet(child, key, pos, depth, isaccount)
 		return value, newnode, true, err
 	default:
 		panic(fmt.Sprintf("%T: invalid node: %v", origNode, origNode))
@@ -254,7 +258,7 @@ func (t *Trie) tryGetNode(origNode node, path []byte, pos int) (item []byte, new
 // The value bytes must not be modified by the caller while they are
 // stored in the trie.
 func (t *Trie) Update(key, value []byte) {
-	if err := t.TryUpdate(key, value); err != nil {
+	if err := t.TryUpdate(key, value, false); err != nil {
 		log.Error("Unhandled trie error in Trie.Update", "err", err)
 	}
 }
@@ -267,23 +271,23 @@ func (t *Trie) Update(key, value []byte) {
 // stored in the trie.
 //
 // If a node was not found in the database, a MissingNodeError is returned.
-func (t *Trie) TryUpdate(key, value []byte) error {
-	return t.tryUpdate(key, value)
+func (t *Trie) TryUpdate(key, value []byte, isaccount bool) error {
+	return t.tryUpdate(key, value, isaccount)
 }
 
 // tryUpdate expects an RLP-encoded value and performs the core function
 // for TryUpdate and TryUpdateAccount.
-func (t *Trie) tryUpdate(key, value []byte) error {
+func (t *Trie) tryUpdate(key, value []byte, isaccount bool) error {
 	t.unhashed++
 	k := keybytesToHex(key)
 	if len(value) != 0 {
-		_, n, err := t.insert(t.root, nil, k, valueNode(value))
+		_, n, err := t.insert(t.root, nil, k, valueNode(value), 0, isaccount)
 		if err != nil {
 			return err
 		}
 		t.root = n
 	} else {
-		_, n, err := t.delete(t.root, nil, k)
+		_, n, err := t.delete(t.root, nil, k, 0, isaccount)
 		if err != nil {
 			return err
 		}
@@ -292,8 +296,21 @@ func (t *Trie) tryUpdate(key, value []byte) error {
 	return nil
 }
 
-func (t *Trie) insert(n node, prefix, key []byte, value node) (bool, node, error) {
+func writeDepth(depth int, write, delete, isaccount bool) {
+	f, err := os.OpenFile("depths.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		panic(err)
+	}
+	defer f.Close()
+	if _, err := f.Write([]byte(fmt.Sprintf("%d,%t,%t,%t\n", depth, write, delete, isaccount))); err != nil {
+		f.Close() // ignore error; Write error takes precedence
+		panic(err)
+	}
+}
+
+func (t *Trie) insert(n node, prefix, key []byte, value node, depth int, isaccount bool) (bool, node, error) {
 	if len(key) == 0 {
+		writeDepth(depth, true, false, isaccount)
 		if v, ok := n.(valueNode); ok {
 			return !bytes.Equal(v, value.(valueNode)), value, nil
 		}
@@ -305,7 +322,7 @@ func (t *Trie) insert(n node, prefix, key []byte, value node) (bool, node, error
 		// If the whole key matches, keep this short node as is
 		// and only update the value.
 		if matchlen == len(n.Key) {
-			dirty, nn, err := t.insert(n.Val, append(prefix, key[:matchlen]...), key[matchlen:], value)
+			dirty, nn, err := t.insert(n.Val, append(prefix, key[:matchlen]...), key[matchlen:], value, depth+1, isaccount)
 			if !dirty || err != nil {
 				return false, n, err
 			}
@@ -314,11 +331,11 @@ func (t *Trie) insert(n node, prefix, key []byte, value node) (bool, node, error
 		// Otherwise branch out at the index where they differ.
 		branch := &fullNode{flags: t.newFlag()}
 		var err error
-		_, branch.Children[n.Key[matchlen]], err = t.insert(nil, append(prefix, n.Key[:matchlen+1]...), n.Key[matchlen+1:], n.Val)
+		_, branch.Children[n.Key[matchlen]], err = t.insert(nil, append(prefix, n.Key[:matchlen+1]...), n.Key[matchlen+1:], n.Val, depth+1, isaccount)
 		if err != nil {
 			return false, nil, err
 		}
-		_, branch.Children[key[matchlen]], err = t.insert(nil, append(prefix, key[:matchlen+1]...), key[matchlen+1:], value)
+		_, branch.Children[key[matchlen]], err = t.insert(nil, append(prefix, key[:matchlen+1]...), key[matchlen+1:], value, depth+1, isaccount)
 		if err != nil {
 			return false, nil, err
 		}
@@ -335,7 +352,7 @@ func (t *Trie) insert(n node, prefix, key []byte, value node) (bool, node, error
 		return true, &shortNode{key[:matchlen], branch, t.newFlag()}, nil
 
 	case *fullNode:
-		dirty, nn, err := t.insert(n.Children[key[0]], append(prefix, key[0]), key[1:], value)
+		dirty, nn, err := t.insert(n.Children[key[0]], append(prefix, key[0]), key[1:], value, depth+1, isaccount)
 		if !dirty || err != nil {
 			return false, n, err
 		}
@@ -345,6 +362,7 @@ func (t *Trie) insert(n node, prefix, key []byte, value node) (bool, node, error
 		return true, n, nil
 
 	case nil:
+		writeDepth(depth, true, false, isaccount)
 		// New short node is created and track it in the tracer. The node identifier
 		// passed is the path from the root node. Note the valueNode won't be tracked
 		// since it's always embedded in its parent.
@@ -360,7 +378,7 @@ func (t *Trie) insert(n node, prefix, key []byte, value node) (bool, node, error
 		if err != nil {
 			return false, nil, err
 		}
-		dirty, nn, err := t.insert(rn, prefix, key, value)
+		dirty, nn, err := t.insert(rn, prefix, key, value, depth, isaccount)
 		if !dirty || err != nil {
 			return false, rn, err
 		}
@@ -373,17 +391,17 @@ func (t *Trie) insert(n node, prefix, key []byte, value node) (bool, node, error
 
 // Delete removes any existing value for key from the trie.
 func (t *Trie) Delete(key []byte) {
-	if err := t.TryDelete(key); err != nil {
+	if err := t.TryDelete(key, false); err != nil {
 		log.Error("Unhandled trie error in Trie.Delete", "err", err)
 	}
 }
 
 // TryDelete removes any existing value for key from the trie.
 // If a node was not found in the database, a MissingNodeError is returned.
-func (t *Trie) TryDelete(key []byte) error {
+func (t *Trie) TryDelete(key []byte, isaccount bool) error {
 	t.unhashed++
 	k := keybytesToHex(key)
-	_, n, err := t.delete(t.root, nil, k)
+	_, n, err := t.delete(t.root, nil, k, 0, isaccount)
 	if err != nil {
 		return err
 	}
@@ -394,11 +412,12 @@ func (t *Trie) TryDelete(key []byte) error {
 // delete returns the new root of the trie with key deleted.
 // It reduces the trie to minimal form by simplifying
 // nodes on the way up after deleting recursively.
-func (t *Trie) delete(n node, prefix, key []byte) (bool, node, error) {
+func (t *Trie) delete(n node, prefix, key []byte, depth int, isaccount bool) (bool, node, error) {
 	switch n := n.(type) {
 	case *shortNode:
 		matchlen := prefixLen(key, n.Key)
 		if matchlen < len(n.Key) {
+			writeDepth(depth, false, true, isaccount)
 			return false, n, nil // don't replace n on mismatch
 		}
 		if matchlen == len(key) {
@@ -406,6 +425,7 @@ func (t *Trie) delete(n node, prefix, key []byte) (bool, node, error) {
 			// it in the deletion set. The same the valueNode doesn't
 			// need to be tracked at all since it's always embedded.
 			t.tracer.onDelete(prefix)
+			writeDepth(depth, false, true, isaccount)
 
 			return true, nil, nil // remove n entirely for whole matches
 		}
@@ -413,7 +433,7 @@ func (t *Trie) delete(n node, prefix, key []byte) (bool, node, error) {
 		// from the subtrie. Child can never be nil here since the
 		// subtrie must contain at least two other values with keys
 		// longer than n.Key.
-		dirty, child, err := t.delete(n.Val, append(prefix, key[:len(n.Key)]...), key[len(n.Key):])
+		dirty, child, err := t.delete(n.Val, append(prefix, key[:len(n.Key)]...), key[len(n.Key):], depth+1, isaccount)
 		if !dirty || err != nil {
 			return false, n, err
 		}
@@ -435,7 +455,7 @@ func (t *Trie) delete(n node, prefix, key []byte) (bool, node, error) {
 		}
 
 	case *fullNode:
-		dirty, nn, err := t.delete(n.Children[key[0]], append(prefix, key[0]), key[1:])
+		dirty, nn, err := t.delete(n.Children[key[0]], append(prefix, key[0]), key[1:], depth+1, isaccount)
 		if !dirty || err != nil {
 			return false, n, err
 		}
@@ -501,9 +521,11 @@ func (t *Trie) delete(n node, prefix, key []byte) (bool, node, error) {
 		return true, n, nil
 
 	case valueNode:
+		writeDepth(depth, false, true, isaccount)
 		return true, nil, nil
 
 	case nil:
+		writeDepth(depth, false, true, isaccount)
 		return false, nil, nil
 
 	case hashNode:
@@ -514,7 +536,7 @@ func (t *Trie) delete(n node, prefix, key []byte) (bool, node, error) {
 		if err != nil {
 			return false, nil, err
 		}
-		dirty, nn, err := t.delete(rn, prefix, key)
+		dirty, nn, err := t.delete(rn, prefix, key, depth, isaccount)
 		if !dirty || err != nil {
 			return false, rn, err
 		}
