@@ -136,21 +136,104 @@ func NewDatabase(db ethdb.Database) Database {
 // large memory cache.
 func NewDatabaseWithConfig(db ethdb.Database, config *trie.Config) Database {
 	csc, _ := lru.New(codeSizeCacheSize)
-	if config != nil && config.UseVerkle {
-		return &VerkleDB{
+	return &ForkingDB{
+		cachingDB: &cachingDB{
 			db:            trie.NewDatabaseWithConfig(db, config),
-			diskdb:        db,
+			disk:          db,
 			codeSizeCache: csc,
 			codeCache:     fastcache.New(codeCacheSize),
-			addrToPoint:   utils.NewPointCache(),
-		}
+		},
+		VerkleDB: &VerkleDB{
+			db:            trie.NewDatabaseWithConfig(db, config),
+			codeSizeCache: csc,
+			codeCache:     fastcache.New(codeCacheSize),
+		},
+		forked: (config != nil && config.UseVerkle),
 	}
-	return &cachingDB{
-		db:            trie.NewDatabaseWithConfig(db, config),
-		disk:          db,
-		codeSizeCache: csc,
-		codeCache:     fastcache.New(codeCacheSize),
+}
+
+// ForkingDB is an adapter object to support forks between
+// cachingDB and VerkleDB.
+type ForkingDB struct {
+	*cachingDB
+	*VerkleDB
+
+	forked          bool
+	translatedRoots map[common.Hash]common.Hash // hash of the translated root, for opening
+}
+
+// ContractCode implements Database
+func (fdb *ForkingDB) ContractCode(addrHash common.Hash, codeHash common.Hash) ([]byte, error) {
+	if fdb.forked {
+		return fdb.VerkleDB.ContractCode(addrHash, codeHash)
 	}
+
+	return fdb.cachingDB.ContractCode(addrHash, codeHash)
+}
+
+// ContractCodeSize implements Database
+func (fdb *ForkingDB) ContractCodeSize(addrHash common.Hash, codeHash common.Hash) (int, error) {
+	if fdb.forked {
+		return fdb.VerkleDB.ContractCodeSize(addrHash, codeHash)
+	}
+
+	return fdb.cachingDB.ContractCodeSize(addrHash, codeHash)
+}
+
+// CopyTrie implements Database
+func (fdb *ForkingDB) CopyTrie(t Trie) Trie {
+	if fdb.forked {
+		return fdb.VerkleDB.CopyTrie(t)
+	}
+
+	return fdb.cachingDB.CopyTrie(t)
+}
+
+// OpenStorageTrie implements Database
+func (fdb *ForkingDB) OpenStorageTrie(stateRoot, addrHash, root common.Hash) (Trie, error) {
+	if fdb.forked {
+		return fdb.VerkleDB.OpenStorageTrie(stateRoot, addrHash, fdb.translatedRoots[root])
+	}
+
+	return fdb.cachingDB.OpenStorageTrie(stateRoot, addrHash, root)
+}
+
+// OpenTrie implements Database
+func (fdb *ForkingDB) OpenTrie(root common.Hash) (Trie, error) {
+	if fdb.forked {
+		// il y a un probleme: ça ne marche que pour le premier block
+		return fdb.VerkleDB.OpenTrie(fdb.translatedRoots[root])
+	}
+
+	return fdb.cachingDB.OpenTrie(root)
+}
+
+// TrieDB implements Database
+func (fdb *ForkingDB) TrieDB() *trie.Database {
+	if fdb.forked {
+		return fdb.VerkleDB.TrieDB()
+	}
+
+	return fdb.cachingDB.TrieDB()
+}
+
+// DiskDB retrieves the low level trie database used for data storage.
+func (fdb *ForkingDB) DiskDB() ethdb.KeyValueStore {
+	if fdb.forked {
+		return fdb.VerkleDB.DiskDB()
+	}
+
+	return fdb.cachingDB.DiskDB()
+}
+
+// Fork implements the fork
+func (fdb *ForkingDB) Fork(originalRoot, translatedRoot common.Hash) {
+	fdb.forked = true
+	fdb.translatedRoots = map[common.Hash]common.Hash{originalRoot: translatedRoot}
+}
+
+func (fdb *ForkingDB) AddTranslation(orig, trans common.Hash) {
+	fdb.translatedRoots[orig] = trans
 }
 
 type cachingDB struct {

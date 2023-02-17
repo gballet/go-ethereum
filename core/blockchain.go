@@ -22,8 +22,10 @@ import (
 	"fmt"
 	"io"
 	"math/big"
+	"os"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1304,6 +1306,9 @@ func (bc *BlockChain) writeBlockWithState(block *types.Block, receipts []*types.
 		return err
 	}
 	triedb := bc.stateCache.TrieDB()
+	if block.NumberU64() < forkBlock && block.NumberU64() >= conversionBlock {
+		bc.AddRootTranslation(block.Root(), root)
+	}
 
 	// If we're running an archive node, always flush
 	if bc.cacheConfig.TrieDirtyDisabled {
@@ -1468,6 +1473,49 @@ func (bc *BlockChain) InsertChain(chain types.Blocks) (int, error) {
 	}
 	defer bc.chainmu.Unlock()
 	return bc.insertChain(chain, true, true)
+}
+
+func (bc *BlockChain) SetVerkleFork(originalRoot, translatedRoot common.Hash) {
+	bc.stateCache.(*state.ForkingDB).Fork(originalRoot, translatedRoot)
+}
+
+func (bc *BlockChain) AddRootTranslation(originalRoot, translatedRoot common.Hash) {
+	bc.stateCache.(*state.ForkingDB).AddTranslation(originalRoot, translatedRoot)
+}
+
+var (
+	conversionParentRoot common.Hash
+	conversionBlock      uint64
+	forkBlock            uint64
+)
+
+func init() {
+	data, err := os.ReadFile("fork.txt")
+	if err != nil {
+		fmt.Println("Error reading file:", err)
+		return
+	}
+
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		values := strings.Split(line, " ")
+		if len(values) != 3 {
+			panic("Expected 3 values separated by a space")
+		}
+		conversionBlock, err = strconv.ParseUint(values[0], 10, 64)
+		if err != nil {
+			fmt.Println("Error converting first value to uint64:", err)
+			panic(err)
+		}
+
+		forkBlock, err = strconv.ParseUint(values[1], 10, 64)
+		if err != nil {
+			fmt.Println("Error converting second value to uint64:", err)
+			panic(err)
+		}
+
+		conversionParentRoot = common.HexToHash(values[2])
+	}
 }
 
 // insertChain is the internal implementation of InsertChain, which assumes that
@@ -1668,6 +1716,10 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 		if parent == nil {
 			parent = bc.GetHeader(block.ParentHash(), block.NumberU64()-1)
 		}
+		// perform the verkle fork if this is the fork block
+		if block.NumberU64() == conversionBlock {
+			bc.SetVerkleFork(parent.Root, conversionParentRoot)
+		}
 		statedb, err := state.New(parent.Root, bc.stateCache, bc.snaps)
 		if err != nil {
 			return it.index, err
@@ -1702,6 +1754,9 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 			bc.reportBlock(block, receipts, err)
 			atomic.StoreUint32(&followupInterrupt, 1)
 			return it.index, err
+		}
+		if block.NumberU64() < forkBlock && block.NumberU64() >= conversionBlock {
+			bc.AddRootTranslation(block.Root(), statedb.IntermediateRoot(false))
 		}
 
 		// Update the metrics touched during block processing
