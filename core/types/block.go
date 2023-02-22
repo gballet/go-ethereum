@@ -260,6 +260,35 @@ func CopyHeader(h *Header) *Header {
 		cpy.Extra = make([]byte, len(h.Extra))
 		copy(cpy.Extra, h.Extra)
 	}
+	if h.ExecutionWitness != nil {
+		cpy.ExecutionWitness = &ExecutionWitness{
+			StateDiff: make([]verkle.StemStateDiff, len(h.ExecutionWitness.StateDiff)),
+			VerkleProof: &verkle.VerkleProof{
+				OtherStems:            make([][31]byte, len(h.ExecutionWitness.VerkleProof.OtherStems)),
+				DepthExtensionPresent: make([]byte, len(h.ExecutionWitness.VerkleProof.DepthExtensionPresent)),
+				CommitmentsByPath:     make([][32]byte, len(h.ExecutionWitness.VerkleProof.CommitmentsByPath)),
+				IPAProof:              &verkle.IPAProof{},
+			},
+		}
+
+		for i := range h.ExecutionWitness.StateDiff {
+			copy(cpy.ExecutionWitness.StateDiff[i].Stem[:], h.ExecutionWitness.StateDiff[i].Stem[:])
+			cpy.ExecutionWitness.StateDiff[i].SuffixDiffs = make([]verkle.SuffixStateDiff, len(h.ExecutionWitness.StateDiff[i].SuffixDiffs))
+			for j := range h.ExecutionWitness.StateDiff[i].SuffixDiffs {
+				cpy.ExecutionWitness.StateDiff[i].SuffixDiffs[j].Suffix = h.ExecutionWitness.StateDiff[i].SuffixDiffs[j].Suffix
+				if h.ExecutionWitness.StateDiff[i].SuffixDiffs[j].CurrentValue != nil {
+					copy((*cpy.ExecutionWitness.StateDiff[i].SuffixDiffs[j].CurrentValue)[:], (*h.ExecutionWitness.StateDiff[i].SuffixDiffs[j].CurrentValue)[:])
+				}
+			}
+		}
+		for i := range h.ExecutionWitness.VerkleProof.OtherStems {
+			copy(cpy.ExecutionWitness.VerkleProof.OtherStems[i][:], h.ExecutionWitness.VerkleProof.OtherStems[i][:])
+		}
+		copy(cpy.ExecutionWitness.VerkleProof.DepthExtensionPresent, h.ExecutionWitness.VerkleProof.DepthExtensionPresent)
+		for i := range h.ExecutionWitness.VerkleProof.CommitmentsByPath {
+			copy(cpy.ExecutionWitness.VerkleProof.CommitmentsByPath[i][:], h.ExecutionWitness.VerkleProof.CommitmentsByPath[i][:])
+		}
+	}
 	return &cpy
 }
 
@@ -397,19 +426,8 @@ func (b *Block) Hash() common.Hash {
 		return hash.(common.Hash)
 	}
 
-	// Set the verkle stuff to `nil` when computing the block
-	// hash, as the proof elements are not included in the
-	// hash calculation for now.
-	vp := b.header.VerkleProof
-	kvs := b.header.VerkleKeyVals
-	b.header.VerkleKeyVals = nil
-	b.header.VerkleProof = nil
-
 	v := b.header.Hash()
 	b.hash.Store(v)
-
-	b.header.VerkleKeyVals = kvs
-	b.header.VerkleProof = vp
 	return v
 }
 
