@@ -202,6 +202,6 @@ func BlockToExecutableData(block *types.Block) *ExecutableDataV1 {
 		Transactions:     encodeTransactions(block.Transactions()),
 		Random:           block.MixDigest(),
 		ExtraData:        block.Extra(),
-		ExecutionWitness: block.Header().ExecutionWitness,
+		ExecutionWitness: block.ExecutionWitness(),
 	}
 }

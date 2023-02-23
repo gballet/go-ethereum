@@ -261,35 +261,52 @@ func CopyHeader(h *Header) *Header {
 		copy(cpy.Extra, h.Extra)
 	}
 	if h.ExecutionWitness != nil {
-		cpy.ExecutionWitness = &ExecutionWitness{
-			StateDiff: make([]verkle.StemStateDiff, len(h.ExecutionWitness.StateDiff)),
-			VerkleProof: &verkle.VerkleProof{
-				OtherStems:            make([][31]byte, len(h.ExecutionWitness.VerkleProof.OtherStems)),
-				DepthExtensionPresent: make([]byte, len(h.ExecutionWitness.VerkleProof.DepthExtensionPresent)),
-				CommitmentsByPath:     make([][32]byte, len(h.ExecutionWitness.VerkleProof.CommitmentsByPath)),
-				IPAProof:              &verkle.IPAProof{},
-			},
-		}
+		cpy.ExecutionWitness = h.ExecutionWitness.Copy()
 
-		for i := range h.ExecutionWitness.StateDiff {
-			copy(cpy.ExecutionWitness.StateDiff[i].Stem[:], h.ExecutionWitness.StateDiff[i].Stem[:])
-			cpy.ExecutionWitness.StateDiff[i].SuffixDiffs = make([]verkle.SuffixStateDiff, len(h.ExecutionWitness.StateDiff[i].SuffixDiffs))
-			for j := range h.ExecutionWitness.StateDiff[i].SuffixDiffs {
-				cpy.ExecutionWitness.StateDiff[i].SuffixDiffs[j].Suffix = h.ExecutionWitness.StateDiff[i].SuffixDiffs[j].Suffix
-				if h.ExecutionWitness.StateDiff[i].SuffixDiffs[j].CurrentValue != nil {
-					copy((*cpy.ExecutionWitness.StateDiff[i].SuffixDiffs[j].CurrentValue)[:], (*h.ExecutionWitness.StateDiff[i].SuffixDiffs[j].CurrentValue)[:])
-				}
-			}
-		}
-		for i := range h.ExecutionWitness.VerkleProof.OtherStems {
-			copy(cpy.ExecutionWitness.VerkleProof.OtherStems[i][:], h.ExecutionWitness.VerkleProof.OtherStems[i][:])
-		}
-		copy(cpy.ExecutionWitness.VerkleProof.DepthExtensionPresent, h.ExecutionWitness.VerkleProof.DepthExtensionPresent)
-		for i := range h.ExecutionWitness.VerkleProof.CommitmentsByPath {
-			copy(cpy.ExecutionWitness.VerkleProof.CommitmentsByPath[i][:], h.ExecutionWitness.VerkleProof.CommitmentsByPath[i][:])
-		}
 	}
 	return &cpy
+}
+
+func (ew *ExecutionWitness) Copy() *ExecutionWitness {
+	ret := &ExecutionWitness{
+		StateDiff:   make([]verkle.StemStateDiff, len(ew.StateDiff)),
+		VerkleProof: &verkle.VerkleProof{},
+	}
+	for i := range ew.StateDiff {
+		copy(ret.StateDiff[i].Stem[:], ew.StateDiff[i].Stem[:])
+		ret.StateDiff[i].SuffixDiffs = make([]verkle.SuffixStateDiff, len(ew.StateDiff[i].SuffixDiffs))
+		for j := range ew.StateDiff[i].SuffixDiffs {
+			ret.StateDiff[i].SuffixDiffs[j].Suffix = ew.StateDiff[i].SuffixDiffs[j].Suffix
+			if ew.StateDiff[i].SuffixDiffs[j].CurrentValue != nil {
+				copy((*ret.StateDiff[i].SuffixDiffs[j].CurrentValue)[:], (*ew.StateDiff[i].SuffixDiffs[j].CurrentValue)[:])
+			}
+		}
+	}
+	if ew.VerkleProof != nil {
+		ret.VerkleProof.OtherStems = make([][31]byte, len(ew.VerkleProof.OtherStems))
+		ret.VerkleProof.DepthExtensionPresent = make([]byte, len(ew.VerkleProof.DepthExtensionPresent))
+		ret.VerkleProof.CommitmentsByPath = make([][32]byte, len(ew.VerkleProof.CommitmentsByPath))
+		ret.VerkleProof.IPAProof = &verkle.IPAProof{}
+
+		for i := range ew.VerkleProof.OtherStems {
+			copy(ret.VerkleProof.OtherStems[i][:], ew.VerkleProof.OtherStems[i][:])
+		}
+
+		copy(ret.VerkleProof.DepthExtensionPresent, ew.VerkleProof.DepthExtensionPresent)
+		for i := range ew.VerkleProof.CommitmentsByPath {
+			copy(ret.VerkleProof.CommitmentsByPath[i][:], ew.VerkleProof.CommitmentsByPath[i][:])
+		}
+		copy(ret.VerkleProof.D[:], ew.VerkleProof.D[:])
+
+		if ew.VerkleProof.IPAProof != nil {
+			for i := range ew.VerkleProof.IPAProof.CL {
+				copy(ret.VerkleProof.IPAProof.CL[i][:], ew.VerkleProof.IPAProof.CL[i][:])
+				copy(ret.VerkleProof.IPAProof.CR[i][:], ew.VerkleProof.IPAProof.CR[i][:])
+			}
+			copy(ret.VerkleProof.IPAProof.FinalEvaluation[:], ew.VerkleProof.IPAProof.FinalEvaluation[:])
+		}
+	}
+	return ret
 }
 
 // DecodeRLP decodes the Ethereum
@@ -353,6 +370,8 @@ func (b *Block) BaseFee() *big.Int {
 }
 
 func (b *Block) Header() *Header { return CopyHeader(b.header) }
+
+func (b *Block) ExecutionWitness() *ExecutionWitness { return b.header.ExecutionWitness }
 
 // Body returns the non-header content of the block.
 func (b *Block) Body() *Body { return &Body{b.transactions, b.uncles} }
