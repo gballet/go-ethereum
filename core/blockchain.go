@@ -1489,6 +1489,10 @@ var (
 	forkBlock            uint64
 )
 
+func IsInsideConversionWindow(num uint64) bool {
+	return conversionBlock < num && num < forkBlock
+}
+
 func init() {
 	data, err := os.ReadFile("fork.txt")
 	if err != nil {
@@ -1497,25 +1501,23 @@ func init() {
 	}
 
 	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
-		values := strings.Split(line, " ")
-		if len(values) != 3 {
-			panic("Expected 3 values separated by a space")
-		}
-		conversionBlock, err = strconv.ParseUint(values[0], 10, 64)
-		if err != nil {
-			fmt.Println("Error converting first value to uint64:", err)
-			panic(err)
-		}
-
-		forkBlock, err = strconv.ParseUint(values[1], 10, 64)
-		if err != nil {
-			fmt.Println("Error converting second value to uint64:", err)
-			panic(err)
-		}
-
-		conversionParentRoot = common.HexToHash(values[2])
+	values := strings.Split(lines[0], " ")
+	if len(values) != 3 {
+		panic("Expected 3 values separated by a space")
 	}
+	conversionBlock, err = strconv.ParseUint(values[0], 10, 64)
+	if err != nil {
+		fmt.Println("Error converting first value to uint64:", err)
+		panic(err)
+	}
+
+	forkBlock, err = strconv.ParseUint(values[1], 10, 64)
+	if err != nil {
+		fmt.Println("Error converting second value to uint64:", err)
+		panic(err)
+	}
+
+	conversionParentRoot = common.HexToHash(values[2])
 }
 
 // insertChain is the internal implementation of InsertChain, which assumes that
@@ -1717,7 +1719,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 			parent = bc.GetHeader(block.ParentHash(), block.NumberU64()-1)
 		}
 		// perform the verkle fork if this is the fork block
-		if block.NumberU64() == conversionBlock {
+		if parent.Number.Uint64() == conversionBlock {
 			bc.SetVerkleFork(parent.Root, conversionParentRoot)
 		}
 		statedb, err := state.New(parent.Root, bc.stateCache, bc.snaps)
