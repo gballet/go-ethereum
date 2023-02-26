@@ -371,7 +371,9 @@ func (b *Block) BaseFee() *big.Int {
 
 func (b *Block) Header() *Header { return CopyHeader(b.header) }
 
-func (b *Block) ExecutionWitness() *ExecutionWitness { return b.header.ExecutionWitness }
+func (b *Block) ExecutionWitness() *ExecutionWitness {
+	return b.header.ExecutionWitness
+}
 
 // Body returns the non-header content of the block.
 func (b *Block) Body() *Body { return &Body{b.transactions, b.uncles} }
@@ -396,6 +398,9 @@ func (b *Block) SanityCheck() error {
 
 func (b *Block) SetVerkleProof(vp *verkle.VerkleProof, statediff verkle.StateDiff) {
 	b.header.ExecutionWitness = &ExecutionWitness{statediff, vp}
+	if vp == nil {
+		b.header.ExecutionWitness.VerkleProof = &verkle.VerkleProof{}
+	}
 }
 
 type writeCounter common.StorageSize
