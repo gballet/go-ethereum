@@ -278,7 +278,7 @@ func (ew *ExecutionWitness) Copy() *ExecutionWitness {
 		for j := range ew.StateDiff[i].SuffixDiffs {
 			ret.StateDiff[i].SuffixDiffs[j].Suffix = ew.StateDiff[i].SuffixDiffs[j].Suffix
 			if ew.StateDiff[i].SuffixDiffs[j].CurrentValue != nil {
-				ew.StateDiff[i].SuffixDiffs[j].CurrentValue = &[32]byte{}
+				ret.StateDiff[i].SuffixDiffs[j].CurrentValue = &[32]byte{}
 				copy((*ret.StateDiff[i].SuffixDiffs[j].CurrentValue)[:], (*ew.StateDiff[i].SuffixDiffs[j].CurrentValue)[:])
 			}
 		}
