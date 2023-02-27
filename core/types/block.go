@@ -399,7 +399,9 @@ func (b *Block) SanityCheck() error {
 func (b *Block) SetVerkleProof(vp *verkle.VerkleProof, statediff verkle.StateDiff) {
 	b.header.ExecutionWitness = &ExecutionWitness{statediff, vp}
 	if vp == nil {
-		b.header.ExecutionWitness.VerkleProof = &verkle.VerkleProof{}
+		b.header.ExecutionWitness.VerkleProof = &verkle.VerkleProof{
+			IPAProof: &verkle.IPAProof{},
+		}
 	}
 }
 
