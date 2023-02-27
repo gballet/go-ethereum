@@ -278,6 +278,7 @@ func (ew *ExecutionWitness) Copy() *ExecutionWitness {
 		for j := range ew.StateDiff[i].SuffixDiffs {
 			ret.StateDiff[i].SuffixDiffs[j].Suffix = ew.StateDiff[i].SuffixDiffs[j].Suffix
 			if ew.StateDiff[i].SuffixDiffs[j].CurrentValue != nil {
+				ew.StateDiff[i].SuffixDiffs[j].CurrentValue = &[32]byte{}
 				copy((*ret.StateDiff[i].SuffixDiffs[j].CurrentValue)[:], (*ew.StateDiff[i].SuffixDiffs[j].CurrentValue)[:])
 			}
 		}
@@ -398,6 +399,9 @@ func (b *Block) SanityCheck() error {
 
 func (b *Block) SetVerkleProof(vp *verkle.VerkleProof, statediff verkle.StateDiff) {
 	b.header.ExecutionWitness = &ExecutionWitness{statediff, vp}
+	if statediff == nil {
+		b.header.ExecutionWitness.StateDiff = []verkle.StemStateDiff{}
+	}
 	if vp == nil {
 		b.header.ExecutionWitness.VerkleProof = &verkle.VerkleProof{
 			IPAProof: &verkle.IPAProof{},
