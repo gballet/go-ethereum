@@ -23,7 +23,7 @@ require (
 	github.com/fjl/gencodec v0.0.0-20220412091415-8bb9e558978c
 	github.com/fjl/memsize v0.0.0-20190710130421-bcb5799ab5e5
 	github.com/gballet/go-libpcsclite v0.0.0-20190607065134-2772fd86a8ff
-	github.com/gballet/go-verkle v0.0.0-20230227135452-196780432408
+	github.com/gballet/go-verkle v0.0.0-20230306161021-0b59b1fd4727
 	github.com/go-stack/stack v1.8.0
 	github.com/golang-jwt/jwt/v4 v4.3.0
 	github.com/golang/protobuf v1.5.2
@@ -61,7 +61,7 @@ require (
 	golang.org/x/crypto v0.4.0
 	golang.org/x/mobile v0.0.0-20190719004257-d2bd2a29d028
 	golang.org/x/sync v0.0.0-20220722155255-886fb9371eb4
-	golang.org/x/sys v0.5.0
+	golang.org/x/sys v0.6.0
 	golang.org/x/term v0.3.0
 	golang.org/x/text v0.5.0
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba
