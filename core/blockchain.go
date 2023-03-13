@@ -1720,6 +1720,12 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 		}
 		// perform the verkle fork if this is the fork block
 		if parent.Number.Uint64() == conversionBlock {
+			chaincfg := bc.Config()
+			if chaincfg.CancunBlock == nil {
+				log.Info("Setting CancunBlock in chain config", "number", forkBlock)
+				chaincfg.CancunBlock = big.NewInt(int64(forkBlock))
+				rawdb.WriteChainConfig(bc.db, bc.Genesis().Hash(), chaincfg)
+			}
 			bc.SetVerkleFork(parent.Root, conversionParentRoot)
 		}
 		statedb, err := state.New(parent.Root, bc.stateCache, bc.snaps)
