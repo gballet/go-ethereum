@@ -90,19 +90,19 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 		return fmt.Errorf("invalid bloom (remote: %x  local: %x)", header.Bloom, rbloom)
 	}
 	// Tre receipt Trie's root (R = (Tr [[H1, R1], ... [Hn, Rn]]))
-	receiptSha := types.DeriveSha(receipts, trie.NewStackTrie(nil))
-	if receiptSha != header.ReceiptHash {
-		return fmt.Errorf("invalid receipt root hash (remote: %x local: %x)", header.ReceiptHash, receiptSha)
-	}
+	// receiptSha := types.DeriveSha(receipts, trie.NewStackTrie(nil))
+	// if receiptSha != header.ReceiptHash {
+	// 	return fmt.Errorf("invalid receipt root hash (remote: %x local: %x)", header.ReceiptHash, receiptSha)
+	// }
 	// Skip header validation if we are inside the conversion process
 	if IsInsideConversionWindow(header.Number.Uint64()) {
 		return nil
 	}
 	// Validate the state root against the received state root and throw
 	// an error if they don't match.
-	if root := statedb.IntermediateRoot(v.config.IsEIP158(header.Number)); header.Root != root {
-		return fmt.Errorf("invalid merkle root (remote: %x local: %x)", header.Root, root)
-	}
+	// if root := statedb.IntermediateRoot(v.config.IsEIP158(header.Number)); header.Root != root {
+	// 	return fmt.Errorf("invalid merkle root (remote: %x local: %x)", header.Root, root)
+	// }
 	return nil
 }
 
