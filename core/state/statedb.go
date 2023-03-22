@@ -532,7 +532,7 @@ func (s *StateDB) updateStateObject(obj *stateObject) {
 			groupOffset := (chunknr + 128) % 256
 			if groupOffset == 0 /* start of new group */ || chunknr == 0 /* first chunk in header group */ {
 				values = make([][]byte, verkle.NodeWidth)
-				key = utils.GetTreeKeyCodeChunkWithEvaluatedAddress(obj.db.db.(*VerkleDB).GetTreeKeyHeader(obj.address[:]), uint256.NewInt(chunknr))
+				key = utils.GetTreeKeyCodeChunkWithEvaluatedAddress(obj.db.db.(*ForkingDB).VerkleDB.GetTreeKeyHeader(obj.address[:]), uint256.NewInt(chunknr))
 			}
 			values[groupOffset] = chunks[i : i+32]
 

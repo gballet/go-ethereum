@@ -148,6 +148,7 @@ func NewDatabaseWithConfig(db ethdb.Database, config *trie.Config) Database {
 			diskdb:        db,
 			codeSizeCache: csc,
 			codeCache:     fastcache.New(codeCacheSize),
+			addrToPoint:   utils.NewPointCache(),
 		},
 		forked: (config != nil && config.UseVerkle),
 	}

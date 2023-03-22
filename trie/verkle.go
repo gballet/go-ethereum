@@ -63,7 +63,7 @@ func (trie *VerkleTrie) GetKey(key []byte) []byte {
 // not be modified by the caller. If a node was not found in the database, a
 // trie.MissingNodeError is returned.
 func (trie *VerkleTrie) TryGet(addr, key []byte) ([]byte, error) {
-	pointEval := trie.pointCache.GetTreeKeyHeader(key)
+	pointEval := trie.pointCache.GetTreeKeyHeader(addr)
 	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(pointEval, new(uint256.Int).SetBytes(key))
 	return trie.root.Get(k, trie.db.diskdb.Get)
 }
@@ -86,14 +86,20 @@ func (t *VerkleTrie) TryGetAccount(key []byte) (*types.StateAccount, error) {
 	if err != nil {
 		return nil, fmt.Errorf("TryGetAccount (%x) error: %v", key, err)
 	}
-
 	if values == nil {
 		return nil, nil
 	}
 	if len(values[utils.NonceLeafKey]) > 0 {
 		acc.Nonce = binary.LittleEndian.Uint64(values[utils.NonceLeafKey])
 	}
-	balance := values[utils.BalanceLeafKey]
+	if acc.Nonce == 0 && len(values) > 10 && len(values[10]) > 0 {
+		// WORKAROUND: detect if this account has been deleted.
+		// It won't work very well but let's see if it gets the
+		// replay covered. Ideally, we need to compare to the empty hash.
+		return nil, nil
+	}
+	var balance [32]byte
+	copy(balance[:], values[utils.BalanceLeafKey])
 	for i := 0; i < len(balance)/2; i++ {
 		balance[len(balance)-i-1], balance[i] = balance[i], balance[len(balance)-i-1]
 	}
@@ -205,7 +211,7 @@ func (t *VerkleTrie) TryDeleteAccount(key []byte) error {
 // TryDelete removes any existing value for key from the trie. If a node was not
 // found in the database, a trie.MissingNodeError is returned.
 func (trie *VerkleTrie) TryDelete(addr, key []byte) error {
-	pointEval := trie.pointCache.GetTreeKeyHeader(key)
+	pointEval := trie.pointCache.GetTreeKeyHeader(addr)
 	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(pointEval, new(uint256.Int).SetBytes(key))
 	return trie.root.Delete(k, func(h []byte) ([]byte, error) {
 		return trie.db.diskdb.Get(h)
