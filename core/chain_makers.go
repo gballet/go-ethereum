@@ -305,12 +305,12 @@ func GenerateChainWithGenesis(genesis *Genesis, engine consensus.Engine, n int, 
 	return db, blocks, receipts
 }
 
-func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine consensus.Engine, db ethdb.Database, n int, gen func(int, *BlockGen)) ([]*types.Block, []types.Receipts, [][]byte, [][]verkle.KeyValuePair) {
+func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine consensus.Engine, db ethdb.Database, n int, gen func(int, *BlockGen)) ([]*types.Block, []types.Receipts, []*verkle.VerkleProof, []verkle.StateDiff) {
 	if config == nil {
 		config = params.TestChainConfig
 	}
-	proofs := make([][]byte, 0, n)
-	keyvals := make([][]verkle.KeyValuePair, 0, n)
+	proofs := make([]*verkle.VerkleProof, 0, n)
+	keyvals := make([]verkle.StateDiff, 0, n)
 	blocks, receipts := make(types.Blocks, n), make([]types.Receipts, n)
 	chainreader := &fakeChainReader{config: config}
 	genblock := func(i int, parent *types.Block, statedb *state.StateDB) (*types.Block, types.Receipts) {
