@@ -19,12 +19,15 @@ package state
 import (
 	"errors"
 	"fmt"
+	"math/big"
+	"sync"
 
 	"github.com/VictoriaMetrics/fastcache"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/gballet/go-verkle"
@@ -45,7 +48,7 @@ type Database interface {
 	OpenTrie(root common.Hash) (Trie, error)
 
 	// OpenStorageTrie opens the storage trie of an account.
-	OpenStorageTrie(stateRoot common.Hash, addrHash, root common.Hash) (Trie, error)
+	OpenStorageTrie(stateRoot common.Hash, addrHash, root common.Hash, main Trie) (Trie, error)
 
 	// CopyTrie returns an independent copy of the given trie.
 	CopyTrie(Trie) Trie
@@ -136,21 +139,207 @@ func NewDatabase(db ethdb.Database) Database {
 // large memory cache.
 func NewDatabaseWithConfig(db ethdb.Database, config *trie.Config) Database {
 	csc, _ := lru.New(codeSizeCacheSize)
-	if config != nil && config.UseVerkle {
-		return &VerkleDB{
+	return &ForkingDB{
+		cachingDB: &cachingDB{
+			db:            trie.NewDatabaseWithConfig(db, config),
+			disk:          db,
+			codeSizeCache: csc,
+			codeCache:     fastcache.New(codeCacheSize),
+		},
+		VerkleDB: &VerkleDB{
 			db:            trie.NewDatabaseWithConfig(db, config),
 			diskdb:        db,
 			codeSizeCache: csc,
 			codeCache:     fastcache.New(codeCacheSize),
 			addrToPoint:   utils.NewPointCache(),
+		},
+		started: (config != nil && config.UseVerkle),
+		ended:   (config != nil && config.UseVerkle),
+	}
+}
+
+// ForkingDB is an adapter object to support forks between
+// cachingDB and VerkleDB.
+type ForkingDB struct {
+	*cachingDB
+	*VerkleDB
+
+	// TODO ensure that this info is in the DB
+	started, ended      bool
+	translatedRoots     [32]common.Hash // hash of the translated root, for opening
+	origRoots           [32]common.Hash
+	translationIndex    int
+	translatedRootsLock sync.RWMutex
+
+	baseRoot           common.Hash // hash of the read-only base tree
+	CurrentAccountHash common.Hash // hash of the last translated account
+	CurrentSlotHash    common.Hash // hash of the last translated storage slot
+
+	// Mark whether the storage for an account has been processed. This is useful if the
+	// maximum number of leaves of the conversion is reached before the whole storage is
+	// processed.
+	StorageProcessed bool
+}
+
+// ContractCode implements Database
+func (fdb *ForkingDB) ContractCode(addrHash common.Hash, codeHash common.Hash) ([]byte, error) {
+	if fdb.started {
+		return fdb.VerkleDB.ContractCode(addrHash, codeHash)
+	}
+
+	return fdb.cachingDB.ContractCode(addrHash, codeHash)
+}
+
+// ContractCodeSize implements Database
+func (fdb *ForkingDB) ContractCodeSize(addrHash common.Hash, codeHash common.Hash) (int, error) {
+	if fdb.started {
+		return fdb.VerkleDB.ContractCodeSize(addrHash, codeHash)
+	}
+
+	return fdb.cachingDB.ContractCodeSize(addrHash, codeHash)
+}
+
+// CopyTrie implements Database
+func (fdb *ForkingDB) CopyTrie(t Trie) Trie {
+	return fdb.cachingDB.CopyTrie(t)
+}
+
+func verkleOrTransitionTree(self Trie) Trie {
+	switch t := self.(type) {
+	case *trie.TransitionTrie:
+		return t.Overlay()
+	case *trie.VerkleTrie:
+		return t
+	default:
+		panic("unexpected trie type")
+	}
+}
+
+// OpenStorageTrie implements Database
+func (fdb *ForkingDB) OpenStorageTrie(stateRoot, addrHash, root common.Hash, self Trie) (Trie, error) {
+	mpt, err := fdb.cachingDB.OpenStorageTrie(stateRoot, addrHash, root, nil)
+	if fdb.started && err == nil {
+		// Return a "storage trie" that is an adapter between the storge MPT
+		// and the unique verkle tree.
+		vkt, err := fdb.VerkleDB.OpenStorageTrie(stateRoot, addrHash, fdb.getTranslation(root), verkleOrTransitionTree(self))
+		if err != nil {
+			return nil, err
+		}
+		return trie.NewTransitionTree(mpt.(*trie.SecureTrie), vkt.(*trie.VerkleTrie), true), nil
+	}
+
+	return mpt, err
+}
+
+// OpenTrie implements Database
+func (fdb *ForkingDB) OpenTrie(root common.Hash) (Trie, error) {
+	var (
+		mpt Trie
+		err error
+	)
+
+	if fdb.started {
+		vkt, err := fdb.VerkleDB.OpenTrie(fdb.getTranslation(root))
+		if err != nil {
+			return nil, err
+		}
+
+		// If the verkle conversion has ended, return a single
+		// verkle trie.
+		if fdb.ended {
+			return vkt, nil
+		}
+
+		// Otherwise, return a transition trie, with a base MPT
+		// trie and an overlay, verkle trie.
+		mpt, err = fdb.cachingDB.OpenTrie(fdb.baseRoot)
+		if err != nil {
+			return nil, err
+		}
+
+		return trie.NewTransitionTree(mpt.(*trie.SecureTrie), vkt.(*trie.VerkleTrie), false), nil
+	} else {
+		mpt, err = fdb.cachingDB.OpenTrie(root)
+		if err != nil {
+			return nil, err
 		}
 	}
-	return &cachingDB{
-		db:            trie.NewDatabaseWithConfig(db, config),
-		disk:          db,
-		codeSizeCache: csc,
-		codeCache:     fastcache.New(codeCacheSize),
+
+	return mpt, nil
+}
+
+// TrieDB implements Database
+func (fdb *ForkingDB) TrieDB() *trie.Database {
+	if fdb.started {
+		return fdb.VerkleDB.TrieDB()
 	}
+
+	return fdb.cachingDB.TrieDB()
+}
+
+// DiskDB retrieves the low level trie database used for data storage.
+func (fdb *ForkingDB) DiskDB() ethdb.KeyValueStore {
+	if fdb.started {
+		return fdb.VerkleDB.DiskDB()
+	}
+
+	return fdb.cachingDB.DiskDB()
+}
+
+func (fdg *ForkingDB) InTransition() bool {
+	return fdg.started && !fdg.ended
+}
+
+func (fdg *ForkingDB) Transitionned() bool {
+	return fdg.ended
+}
+
+// Fork implements the fork
+func (fdb *ForkingDB) StartTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, cancunBlock *big.Int) {
+	fmt.Println(`
+	__________.__                       .__                .__                   __       .__                               .__          ____         
+	\__    ___|  |__   ____        ____ |  |   ____ ______ |  |__ _____    _____/  |_     |  |__ _____    ______    __  _  _|__| ____   / ___\ ______
+	  |    |  |  |  \_/ __ \     _/ __ \|  | _/ __ \\____ \|  |  \\__  \  /    \   __\    |  |  \\__  \  /  ___/    \ \/ \/ |  |/    \ / /_/  /  ___/
+	  |    |  |   Y  \  ___/     \  ___/|  |_\  ___/|  |_> |   Y  \/ __ \|   |  |  |      |   Y  \/ __ \_\___ \      \     /|  |   |  \\___  /\___ \
+	  |____|  |___|  /\___        \___  |____/\___  |   __/|___|  (____  |___|  |__|      |___|  (____  /_____/       \/\_/ |__|___|  /_____//_____/
+                                                    |__|`)
+	fdb.started = true
+	fdb.AddTranslation(originalRoot, translatedRoot)
+	fdb.baseRoot = originalRoot
+	// initialize so that the first storage-less accounts are processed
+	fdb.StorageProcessed = true
+	chainConfig.CancunBlock = cancunBlock
+}
+
+func (fdb *ForkingDB) EndTransition() {
+	fmt.Println(`
+	__________.__                       .__                .__                   __       .__                       .__                    .___         .___
+	\__    ___|  |__   ____        ____ |  |   ____ ______ |  |__ _____    _____/  |_     |  |__ _____    ______    |  | _____    ____   __| _/____   __| _/
+	  |    |  |  |  \_/ __ \     _/ __ \|  | _/ __ \\____ \|  |  \\__  \  /    \   __\    |  |  \\__  \  /  ___/    |  | \__  \  /    \ / __ _/ __ \ / __ |
+	  |    |  |   Y  \  ___/     \  ___/|  |_\  ___/|  |_> |   Y  \/ __ \|   |  |  |      |   Y  \/ __ \_\___ \     |  |__/ __ \|   |  / /_/ \  ___// /_/ |
+	  |____|  |___|  /\___        \___  |____/\___  |   __/|___|  (____  |___|  |__|      |___|  (____  /_____/     |____(____  |___|  \____ |\___  \____ |
+                                                    |__|`)
+	fdb.ended = true
+}
+
+func (fdb *ForkingDB) AddTranslation(orig, trans common.Hash) {
+	// TODO make this persistent
+	fdb.translatedRootsLock.Lock()
+	defer fdb.translatedRootsLock.Unlock()
+	fdb.translatedRoots[fdb.translationIndex] = trans
+	fdb.origRoots[fdb.translationIndex] = orig
+	fdb.translationIndex = (fdb.translationIndex + 1) % len(fdb.translatedRoots)
+}
+
+func (fdb *ForkingDB) getTranslation(orig common.Hash) common.Hash {
+	fdb.translatedRootsLock.RLock()
+	defer fdb.translatedRootsLock.RUnlock()
+	for i, o := range fdb.origRoots {
+		if o == orig {
+			return fdb.translatedRoots[i]
+		}
+	}
+	return common.Hash{}
 }
 
 type cachingDB struct {
@@ -170,7 +359,7 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 }
 
 // OpenStorageTrie opens the storage trie of an account.
-func (db *cachingDB) OpenStorageTrie(stateRoot common.Hash, addrHash, root common.Hash) (Trie, error) {
+func (db *cachingDB) OpenStorageTrie(stateRoot common.Hash, addrHash, root common.Hash, _ Trie) (Trie, error) {
 	tr, err := trie.NewStateTrie(trie.StorageTrieID(stateRoot, addrHash, root), db.db)
 	if err != nil {
 		return nil, err
@@ -182,6 +371,10 @@ func (db *cachingDB) OpenStorageTrie(stateRoot common.Hash, addrHash, root commo
 func (db *cachingDB) CopyTrie(t Trie) Trie {
 	switch t := t.(type) {
 	case *trie.StateTrie:
+		return t.Copy()
+	case *trie.TransitionTrie:
+		return t.Copy()
+	case *trie.VerkleTrie:
 		return t.Copy()
 	default:
 		panic(fmt.Errorf("unknown trie type %T", t))
@@ -254,16 +447,13 @@ func (db *VerkleDB) GetTreeKeyHeader(addr []byte) *verkle.Point {
 }
 
 // OpenTrie opens the main account trie.
-func (db *VerkleDB) OpenTrie(root common.Hash) (Trie, error) {
-	if root == (common.Hash{}) || root == emptyRoot {
+func (db *VerkleDB) OpenTrie(_ common.Hash) (Trie, error) {
+	payload, err := db.DiskDB().Get([]byte("flat-"))
+	if err != nil {
 		return trie.NewVerkleTrie(verkle.New(), db.db, db.addrToPoint), nil
 	}
-	payload, err := db.DiskDB().Get(root[:])
-	if err != nil {
-		return nil, err
-	}
 
-	r, err := verkle.ParseNode(payload, 0, root[:])
+	r, err := verkle.ParseNode(payload, 0)
 	if err != nil {
 		panic(err)
 	}
@@ -271,19 +461,20 @@ func (db *VerkleDB) OpenTrie(root common.Hash) (Trie, error) {
 }
 
 // OpenStorageTrie opens the storage trie of an account.
-func (db *VerkleDB) OpenStorageTrie(stateRoot, addrHash, root common.Hash) (Trie, error) {
-	// alternatively, return accTrie
-	panic("should not be called")
+func (db *VerkleDB) OpenStorageTrie(stateRoot, addrHash, root common.Hash, self Trie) (Trie, error) {
+	return self, nil
 }
 
 // CopyTrie returns an independent copy of the given trie.
 func (db *VerkleDB) CopyTrie(tr Trie) Trie {
-	t, ok := tr.(*trie.VerkleTrie)
-	if ok {
-		return t.Copy(db.db)
+	switch t := tr.(type) {
+	case *trie.VerkleTrie:
+		return t.Copy()
+	case *trie.TransitionTrie:
+		return t.Copy()
+	default:
+		panic(fmt.Sprintf("invalid tree type %T != VerkleTrie", tr))
 	}
-
-	panic("invalid tree type != VerkleTrie")
 }
 
 // ContractCode retrieves a particular contract's code.

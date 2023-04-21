@@ -430,6 +430,7 @@ func TestProcessVerkle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Log("verfied verkle proof")
 
 	_, err = blockchain.InsertChain(chain)
 	if err != nil {

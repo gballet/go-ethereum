@@ -50,6 +50,12 @@ func NewVerkleTrie(root verkle.VerkleNode, db *Database, pointCache *utils.Point
 	}
 }
 
+func (trie *VerkleTrie) InsertMigratedLeaves(leaves []verkle.LeafNode) error {
+	return trie.root.(*verkle.InternalNode).InsertMigratedLeaves(leaves, func(path []byte) ([]byte, error) {
+		return trie.db.diskdb.Get(append([]byte("flat-"), path...))
+	})
+}
+
 var errInvalidProof = errors.New("invalid proof")
 
 // GetKey returns the sha3 preimage of a hashed key that was previously used
@@ -62,22 +68,37 @@ func (trie *VerkleTrie) GetKey(key []byte) []byte {
 // not be modified by the caller. If a node was not found in the database, a
 // trie.MissingNodeError is returned.
 func (trie *VerkleTrie) TryGet(addr, key []byte) ([]byte, error) {
-	pointEval := trie.pointCache.GetTreeKeyHeader(key)
+	resolver := func(path []byte) ([]byte, error) {
+		return trie.db.diskdb.Get(append([]byte("flat-"), path...))
+	}
+	pointEval := trie.pointCache.GetTreeKeyHeader(addr)
 	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(pointEval, key)
-	return trie.root.Get(k, trie.db.diskdb.Get)
+	return trie.root.Get(k, resolver)
 }
 
 // GetWithHashedKey returns the value, assuming that the key has already
 // been hashed.
 func (trie *VerkleTrie) GetWithHashedKey(key []byte) ([]byte, error) {
-	return trie.root.Get(key, trie.db.diskdb.Get)
+	resolver := func(path []byte) ([]byte, error) {
+		return trie.db.diskdb.Get(append([]byte("flat-"), path...))
+	}
+	return trie.root.Get(key, resolver)
 }
+
+// WORKAROUND: this special error is returned if it has been
+// detected that the account was deleted in the verkle tree.
+// This is needed in case an account was translated while it
+// was in the MPT, and was selfdestructed in verkle mode.
+//
+// This is only a problem for replays, and this code is not
+// needed after SELFDESTRUCT has been removed.
+var errDeletedAccount = errors.New("account deleted in VKT")
 
 func (t *VerkleTrie) TryGetAccount(key []byte) (*types.StateAccount, error) {
 	var (
 		acc      *types.StateAccount = &types.StateAccount{}
-		resolver                     = func(hash []byte) ([]byte, error) {
-			return t.db.diskdb.Get(hash)
+		resolver                     = func(path []byte) ([]byte, error) {
+			return t.db.diskdb.Get(append([]byte("flat-"), path...))
 		}
 	)
 	versionkey := t.pointCache.GetTreeKeyVersionCached(key)
@@ -92,11 +113,16 @@ func (t *VerkleTrie) TryGetAccount(key []byte) (*types.StateAccount, error) {
 	if len(values[utils.NonceLeafKey]) > 0 {
 		acc.Nonce = binary.LittleEndian.Uint64(values[utils.NonceLeafKey])
 	}
-	balance := values[utils.BalanceLeafKey]
-	if len(balance) > 0 {
-		for i := 0; i < len(balance)/2; i++ {
-			balance[len(balance)-i-1], balance[i] = balance[i], balance[len(balance)-i-1]
-		}
+	// if the account has been deleted, then values[10] will be 0 and not nil. If it has
+	// been recreated after that, then its code keccak will NOT be 0. So return `nil` if
+	// the nonce, and values[10], and code keccak is 0.
+	if acc.Nonce == 0 && len(values) > 10 && len(values[10]) > 0 && bytes.Equal(values[utils.CodeKeccakLeafKey], zero[:]) {
+		return nil, errDeletedAccount
+	}
+	var balance [32]byte
+	copy(balance[:], values[utils.BalanceLeafKey])
+	for i := 0; i < len(balance)/2; i++ {
+		balance[len(balance)-i-1], balance[i] = balance[i], balance[len(balance)-i-1]
 	}
 	acc.Balance = new(big.Int).SetBytes(balance[:])
 	acc.CodeHash = values[utils.CodeKeccakLeafKey]
@@ -129,15 +155,13 @@ func (t *VerkleTrie) TryUpdateAccount(key []byte, acc *types.StateAccount) error
 		}
 	}
 
-	flusher := func(hash []byte) ([]byte, error) {
-		return t.db.diskdb.Get(hash)
+	resolver := func(path []byte) ([]byte, error) {
+		return t.db.diskdb.Get(append([]byte("flat-"), path...))
 	}
 
 	switch root := t.root.(type) {
 	case *verkle.InternalNode:
-		err = root.InsertStem(stem, values, flusher)
-	case *verkle.StatelessNode:
-		err = root.InsertAtStem(stem, values, flusher, true)
+		err = root.InsertStem(stem, values, resolver)
 	}
 	if err != nil {
 		return fmt.Errorf("TryUpdateAccount (%x) error: %v", key, err)
@@ -148,14 +172,12 @@ func (t *VerkleTrie) TryUpdateAccount(key []byte, acc *types.StateAccount) error
 }
 
 func (trie *VerkleTrie) TryUpdateStem(key []byte, values [][]byte) error {
-	resolver := func(h []byte) ([]byte, error) {
-		return trie.db.diskdb.Get(h)
+	resolver := func(path []byte) ([]byte, error) {
+		return trie.db.diskdb.Get(append([]byte("flat-"), path...))
 	}
 	switch root := trie.root.(type) {
 	case *verkle.InternalNode:
 		return root.InsertStem(key, values, resolver)
-	case *verkle.StatelessNode:
-		return root.InsertAtStem(key, values, resolver, true)
 	default:
 		panic("invalid root type")
 	}
@@ -169,8 +191,8 @@ func (trie *VerkleTrie) TryUpdate(address, key, value []byte) error {
 	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(trie.pointCache.GetTreeKeyHeader(address), key)
 	var v [32]byte
 	copy(v[:], value[:])
-	return trie.root.Insert(k, v[:], func(h []byte) ([]byte, error) {
-		return trie.db.diskdb.Get(h)
+	return trie.root.Insert(k, v[:], func(path []byte) ([]byte, error) {
+		return trie.db.diskdb.Get(append([]byte("flat-"), path...))
 	})
 }
 
@@ -185,15 +207,13 @@ func (t *VerkleTrie) TryDeleteAccount(key []byte) error {
 		values[i] = zero[:]
 	}
 
-	resolver := func(hash []byte) ([]byte, error) {
-		return t.db.diskdb.Get(hash)
+	resolver := func(path []byte) ([]byte, error) {
+		return t.db.diskdb.Get(append([]byte("flat-"), path...))
 	}
 
 	switch root := t.root.(type) {
 	case *verkle.InternalNode:
 		err = root.InsertStem(stem, values, resolver)
-	case *verkle.StatelessNode:
-		err = root.InsertAtStem(stem, values, resolver, true)
 	}
 	if err != nil {
 		return fmt.Errorf("TryDeleteAccount (%x) error: %v", key, err)
@@ -206,10 +226,11 @@ func (t *VerkleTrie) TryDeleteAccount(key []byte) error {
 // TryDelete removes any existing value for key from the trie. If a node was not
 // found in the database, a trie.MissingNodeError is returned.
 func (trie *VerkleTrie) TryDelete(addr, key []byte) error {
-	pointEval := trie.pointCache.GetTreeKeyHeader(key)
+	pointEval := trie.pointCache.GetTreeKeyHeader(addr)
 	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(pointEval, key)
-	return trie.root.Delete(k, func(h []byte) ([]byte, error) {
-		return trie.db.diskdb.Get(h)
+	var zero [32]byte
+	return trie.root.Insert(k, zero[:], func(path []byte) ([]byte, error) {
+		return trie.db.diskdb.Get(append([]byte("flat-"), path...))
 	})
 }
 
@@ -236,13 +257,27 @@ func (trie *VerkleTrie) Commit(_ bool) (common.Hash, *NodeSet, error) {
 		return common.Hash{}, nil, fmt.Errorf("serializing tree nodes: %s", err)
 	}
 
+	batch := trie.db.diskdb.NewBatch()
+	const keyPrefix = "flat-"
+	path := make([]byte, 0, len(keyPrefix)+32)
+	path = append(path, []byte(keyPrefix)...)
 	for _, node := range nodes {
-		if err := trie.db.diskdb.Put(node.CommitmentBytes[:], node.SerializedBytes); err != nil {
+		path := append(path[:len(keyPrefix)], node.Path...)
+
+		if err := batch.Put(path, node.SerializedBytes); err != nil {
 			return common.Hash{}, nil, fmt.Errorf("put node to disk: %s", err)
 		}
-	}
 
-	return nodes[0].CommitmentBytes, NewNodeSet(common.Hash{}), nil
+		if batch.ValueSize() >= ethdb.IdealBatchSize {
+			batch.Write()
+			batch.Reset()
+		}
+	}
+	batch.Write()
+
+	// Serialize root commitment form
+	rootH := root.Hash().BytesLE()
+	return common.BytesToHash(rootH[:]), nil, nil
 }
 
 // NodeIterator returns an iterator that returns nodes of the trie. Iteration
@@ -262,10 +297,10 @@ func (trie *VerkleTrie) Prove(key []byte, fromLevel uint, proofDb ethdb.KeyValue
 	panic("not implemented")
 }
 
-func (trie *VerkleTrie) Copy(db *Database) *VerkleTrie {
+func (trie *VerkleTrie) Copy() *VerkleTrie {
 	return &VerkleTrie{
 		root: trie.root.Copy(),
-		db:   db,
+		db:   trie.db,
 	}
 }
 
@@ -274,7 +309,7 @@ func (trie *VerkleTrie) IsVerkle() bool {
 }
 
 func (trie *VerkleTrie) ProveAndSerialize(keys [][]byte, kv map[string][]byte) (*verkle.VerkleProof, verkle.StateDiff, error) {
-	proof, _, _, _, err := verkle.MakeVerkleMultiProof(trie.root, keys, kv)
+	proof, _, _, _, err := verkle.MakeVerkleMultiProof(trie.root, keys)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -350,9 +385,11 @@ func deserializeVerkleProof(vp *verkle.VerkleProof, rootC *verkle.Point, statedi
 		}
 	}
 
-	pe, _, _ := tree.GetProofItems(proof.Keys)
+	// no need to resolve as the tree has been reconstructed from the proof
+	// and must not contain any unresolved nodes.
+	pe, _, _, err := tree.GetProofItems(proof.Keys)
 
-	return proof, pe.Cis, pe.Zis, pe.Yis, nil
+	return proof, pe.Cis, pe.Zis, pe.Yis, err
 }
 
 // ChunkedCode represents a sequence of 32-bytes chunks of code (31 bytes of which
@@ -419,4 +456,12 @@ func ChunkifyCode(code []byte) ChunkedCode {
 	}
 
 	return chunks
+}
+
+func (t *VerkleTrie) SetStorageRootConversion(key []byte, root common.Hash) {
+	t.db.SetStorageRootConversion(key, root)
+}
+
+func (t *VerkleTrie) ClearStrorageRootConversion(addr []byte) {
+	t.db.ClearStorageRootConversion(addr)
 }
