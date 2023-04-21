@@ -17,17 +17,28 @@
 package core
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/state/snapshot"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/trie"
+	tutils "github.com/ethereum/go-ethereum/trie/utils"
+	"github.com/gballet/go-verkle"
+	"github.com/holiman/uint256"
 )
 
 // StateProcessor is a basic Processor, which takes care of transitioning
@@ -86,8 +97,143 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		receipts = append(receipts, receipt)
 		allLogs = append(allLogs, receipt.Logs...)
 	}
+
+	// verkle transition: if the conversion process is in progress, move
+	// N values from the MPT into the verkle tree.
+	if statedb.Database().InTransition() {
+		var (
+			now = time.Now()
+			tt  = statedb.GetTrie().(*trie.TransitionTrie)
+			mpt = tt.Base()
+			vkt = tt.Overlay()
+		)
+
+		accIt, err := statedb.Snaps().AccountIterator(mpt.Hash(), statedb.Database().GetCurrentAccountHash())
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		defer accIt.Release()
+		accIt.Next()
+
+		const maxMovedCount = 10000
+		// mkv will be assiting in the collection of up to maxMovedCount key values to be migrated to the VKT.
+		// It has internal caches to do efficient MPT->VKT key calculations, which will be discarded after
+		// this function.
+		mkv := &keyValueMigrator{vktLeafData: make(map[string]*verkle.BatchNewLeafNodeData)}
+		// move maxCount accounts into the verkle tree, starting with the
+		// slots from the previous account.
+		count := 0
+
+		// if less than maxCount slots were moved, move to the next account
+		for count < maxMovedCount {
+			statedb.Database().SetCurrentAccountHash(accIt.Hash())
+
+			acc, err := snapshot.FullAccount(accIt.Account())
+			if err != nil {
+				log.Error("Invalid account encountered during traversal", "error", err)
+				return nil, nil, 0, err
+			}
+			addr := rawdb.ReadPreimage(statedb.Database().DiskDB(), accIt.Hash())
+			if len(addr) == 0 {
+				panic(fmt.Sprintf("%x %x %v", addr, accIt.Hash(), acc))
+			}
+			vkt.SetStorageRootConversion(addr, common.BytesToHash(acc.Root))
+
+			// Start with processing the storage, because once the account is
+			// converted, the `stateRoot` field loses its meaning. Which means
+			// that it opens the door to a situation in which the storage isn't
+			// converted, but it can not be found since the account was and so
+			// there is no way to find the MPT storage from the information found
+			// in the verkle account.
+			// Note that this issue can still occur if the account gets written
+			// to during normal block execution. A mitigation strategy has been
+			// introduced with the `*StorageRootConversion` fields in VerkleDB.
+			if acc.HasStorage() {
+				stIt, err := statedb.Snaps().StorageIterator(mpt.Hash(), accIt.Hash(), statedb.Database().GetCurrentSlotHash())
+				if err != nil {
+					return nil, nil, 0, err
+				}
+				stIt.Next()
+
+				// fdb.StorageProcessed will be initialized to `true` if the
+				// entire storage for an account was not entirely processed
+				// by the previous block. This is used as a signal to resume
+				// processing the storage for that account where we left off.
+				// If the entire storage was processed, then the iterator was
+				// created in vain, but it's ok as this will not happen often.
+				for ; !statedb.Database().GetStorageProcessed() && count < maxMovedCount; count++ {
+					var (
+						value     []byte   // slot value after RLP decoding
+						safeValue [32]byte // 32-byte aligned value
+					)
+					if err := rlp.DecodeBytes(stIt.Slot(), &value); err != nil {
+						return nil, nil, 0, fmt.Errorf("error decoding bytes %x: %w", stIt.Slot(), err)
+					}
+					copy(safeValue[32-len(value):], value)
+					slotnr := rawdb.ReadPreimage(statedb.Database().DiskDB(), stIt.Hash())
+
+					mkv.addStorageSlot(addr, slotnr, safeValue[:])
+
+					// advance the storage iterator
+					statedb.Database().SetStorageProcessed(!stIt.Next())
+					if !statedb.Database().GetStorageProcessed() {
+						statedb.Database().SetCurrentSlotHash(stIt.Hash())
+					}
+				}
+				stIt.Release()
+			}
+
+			// If the maximum number of leaves hasn't been reached, then
+			// it means that the storage has finished processing (or none
+			// was available for this account) and that the account itself
+			// can be processed.
+			if count < maxMovedCount {
+				count++ // count increase for the account itself
+
+				mkv.addAccount(addr, acc)
+				vkt.ClearStrorageRootConversion(addr)
+
+				// Store the account code if present
+				if !bytes.Equal(acc.CodeHash, emptyCodeHash[:]) {
+					code := rawdb.ReadCode(statedb.Database().DiskDB(), common.BytesToHash(acc.CodeHash))
+					chunks := trie.ChunkifyCode(code)
+
+					mkv.addAccountCode(addr, uint64(len(code)), chunks)
+				}
+
+				// reset storage iterator marker for next account
+				statedb.Database().SetStorageProcessed(false)
+				statedb.Database().SetCurrentSlotHash(common.Hash{})
+
+				// Move to the next account, if available - or end
+				// the transition otherwise.
+				if accIt.Next() {
+					statedb.Database().SetCurrentAccountHash(accIt.Hash())
+				} else {
+					// case when the account iterator has
+					// reached the end but count < maxCount
+					statedb.Database().EndVerkleTransition()
+					break
+				}
+			}
+		}
+
+		log.Info("Collected and prepared key values from base tree", "count", count, "duration", time.Since(now), "last account", statedb.Database().GetCurrentAccountHash())
+
+		now = time.Now()
+		if err := mkv.migrateCollectedKeyValues(tt.Overlay()); err != nil {
+			return nil, nil, 0, fmt.Errorf("could not migrate key values: %w", err)
+		}
+		log.Info("Inserted key values in overlay tree", "count", count, "duration", time.Since(now))
+	}
+
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.engine.Finalize(p.bc, header, statedb, block.Transactions(), block.Uncles())
+
+	if block.NumberU64()%100 == 0 {
+		stateRoot := statedb.GetTrie().Hash()
+		log.Info("State root", "number", block.NumberU64(), "hash", stateRoot)
+	}
 
 	return receipts, allLogs, *usedGas, nil
 }
@@ -157,4 +303,118 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 	blockContext := NewEVMBlockContext(header, bc, author)
 	vmenv := vm.NewEVM(blockContext, vm.TxContext{}, statedb, config, cfg)
 	return applyTransaction(msg, config, author, gp, statedb, header.Number, header.Hash(), tx, usedGas, vmenv)
+}
+
+// keyValueMigrator is a helper struct that collects key-values from the base tree.
+// The walk is done in account order, so **we assume** the APIs hold this invariant. This is
+// useful to be smart about caching banderwagon.Points to make VKT key calculations faster.
+type keyValueMigrator struct {
+	currAddr      []byte
+	currAddrPoint *verkle.Point
+
+	vktLeafData map[string]*verkle.BatchNewLeafNodeData
+}
+
+func (kvm *keyValueMigrator) addStorageSlot(addr []byte, slotNumber []byte, slotValue []byte) {
+	addrPoint := kvm.getAddrPoint(addr)
+
+	vktKey := tutils.GetTreeKeyStorageSlotWithEvaluatedAddress(addrPoint, slotNumber)
+	leafNodeData := kvm.getOrInitLeafNodeData(vktKey)
+
+	leafNodeData.Values[vktKey[verkle.StemSize]] = slotValue
+}
+
+func (kvm *keyValueMigrator) addAccount(addr []byte, acc snapshot.Account) {
+	addrPoint := kvm.getAddrPoint(addr)
+
+	vktKey := tutils.GetTreeKeyVersionWithEvaluatedAddress(addrPoint)
+	leafNodeData := kvm.getOrInitLeafNodeData(vktKey)
+
+	var version [verkle.LeafValueSize]byte
+	leafNodeData.Values[tutils.VersionLeafKey] = version[:]
+
+	var balance [verkle.LeafValueSize]byte
+	for i, b := range acc.Balance.Bytes() {
+		balance[len(acc.Balance.Bytes())-1-i] = b
+	}
+	leafNodeData.Values[tutils.BalanceLeafKey] = balance[:]
+
+	var nonce [verkle.LeafValueSize]byte
+	binary.LittleEndian.PutUint64(nonce[:8], acc.Nonce)
+	leafNodeData.Values[tutils.NonceLeafKey] = nonce[:]
+
+	leafNodeData.Values[tutils.CodeKeccakLeafKey] = acc.CodeHash[:]
+
+	// Code size is ignored here. If this isn't an EOA, the tree-walk will call
+	// addAccountCode with this information.
+}
+
+func (kvm *keyValueMigrator) addAccountCode(addr []byte, codeSize uint64, chunks []byte) {
+	addrPoint := kvm.getAddrPoint(addr)
+
+	vktKey := tutils.GetTreeKeyVersionWithEvaluatedAddress(addrPoint)
+	leafNodeData := kvm.getOrInitLeafNodeData(vktKey)
+
+	// Save the code size.
+	var codeSizeBytes [verkle.LeafValueSize]byte
+	binary.LittleEndian.PutUint64(codeSizeBytes[:8], codeSize)
+	leafNodeData.Values[tutils.CodeSizeLeafKey] = codeSizeBytes[:]
+
+	// The first 128 chunks are stored in the account header leaf.
+	for i := 0; i < 128 && i < len(chunks)/32; i++ {
+		leafNodeData.Values[byte(128+i)] = chunks[32*i : 32*(i+1)]
+	}
+
+	// Potential further chunks, have their own leaf nodes.
+	for i := 128; i < len(chunks)/32; {
+		vktKey := tutils.GetTreeKeyCodeChunkWithEvaluatedAddress(addrPoint, uint256.NewInt(uint64(i)))
+		leafNodeData := kvm.getOrInitLeafNodeData(vktKey)
+
+		j := i
+		for ; (j-i) < 256 && j < len(chunks)/32; j++ {
+			leafNodeData.Values[byte((j-128)%256)] = chunks[32*j : 32*(j+1)]
+		}
+		i = j
+	}
+}
+
+func (kvm *keyValueMigrator) getAddrPoint(addr []byte) *verkle.Point {
+	if bytes.Equal(addr, kvm.currAddr) {
+		return kvm.currAddrPoint
+	}
+	kvm.currAddr = addr
+	kvm.currAddrPoint = tutils.EvaluateAddressPoint(addr)
+	return kvm.currAddrPoint
+}
+
+func (kvm *keyValueMigrator) getOrInitLeafNodeData(stem []byte) *verkle.BatchNewLeafNodeData {
+	stemStr := string(stem)
+	if _, ok := kvm.vktLeafData[stemStr]; !ok {
+		kvm.vktLeafData[stemStr] = &verkle.BatchNewLeafNodeData{
+			Stem:   stem[:verkle.StemSize],
+			Values: make(map[byte][]byte),
+		}
+	}
+	return kvm.vktLeafData[stemStr]
+}
+
+func (kvm *keyValueMigrator) migrateCollectedKeyValues(tree *trie.VerkleTrie) error {
+	// Transform the map into a slice.
+	nodeValues := make([]verkle.BatchNewLeafNodeData, 0, len(kvm.vktLeafData))
+	for _, vld := range kvm.vktLeafData {
+		nodeValues = append(nodeValues, *vld)
+	}
+
+	// Create all leaves in batch mode so we can optimize cryptography operations.
+	newLeaves, err := verkle.BatchNewLeafNode(nodeValues)
+	if err != nil {
+		return fmt.Errorf("failed to batch-create new leaf nodes")
+	}
+
+	// Insert into the tree.
+	if err := tree.InsertMigratedLeaves(newLeaves); err != nil {
+		return fmt.Errorf("failed to insert migrated leaves: %w", err)
+	}
+
+	return nil
 }

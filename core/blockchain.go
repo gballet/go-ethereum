@@ -18,12 +18,15 @@
 package core
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
 	"io"
 	"math/big"
+	"os"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1486,6 +1489,21 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 		return 0, nil
 	}
 
+	f, err := os.Open("conversion.txt")
+	if err != nil {
+		log.Error("Failed to open conversion.txt", "err", err)
+		return 0, err
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	scanner.Scan()
+	conversionBlock, err := strconv.ParseUint(scanner.Text(), 10, 64)
+	if err != nil {
+		log.Error("Failed to parse conversionBlock", "err", err)
+		return 0, err
+	}
+	log.Info("Found conversion block info", "conversionBlock", conversionBlock)
+
 	// Start a parallel signature recovery (signer will fluke on fork transition, minimal perf loss)
 	senderCacher.recoverFromBlocks(types.MakeSigner(bc.chainConfig, chain[0].Number()), chain)
 
@@ -1670,6 +1688,10 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 		if parent == nil {
 			parent = bc.GetHeader(block.ParentHash(), block.NumberU64()-1)
 		}
+
+		if parent.Number.Uint64() == conversionBlock {
+			bc.StartVerkleTransition(parent.Root, emptyVerkleRoot, bc.Config(), parent.Number)
+		}
 		statedb, err := state.New(parent.Root, bc.stateCache, bc.snaps)
 		if err != nil {
 			return it.index, err
@@ -1704,6 +1726,10 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 			bc.reportBlock(block, receipts, err)
 			atomic.StoreUint32(&followupInterrupt, 1)
 			return it.index, err
+		}
+
+		if statedb.Database().InTransition() || statedb.Database().Transitionned() {
+			bc.AddRootTranslation(block.Root(), statedb.IntermediateRoot(false))
 		}
 
 		// Update the metrics touched during block processing
@@ -2287,6 +2313,8 @@ func (bc *BlockChain) skipBlock(err error, it *insertIterator) bool {
 	return false
 }
 
+var emptyVerkleRoot common.Hash
+
 // indexBlocks reindexes or unindexes transactions depending on user configuration
 func (bc *BlockChain) indexBlocks(tail *uint64, head uint64, done chan struct{}) {
 	defer func() { close(done) }()
@@ -2430,4 +2458,12 @@ func (bc *BlockChain) InsertHeaderChain(chain []*types.Header, checkFreq int) (i
 func (bc *BlockChain) SetBlockValidatorAndProcessorForTesting(v Validator, p Processor) {
 	bc.validator = v
 	bc.processor = p
+}
+
+func (bc *BlockChain) StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, cancunBlock *big.Int) {
+	bc.stateCache.StartVerkleTransition(originalRoot, translatedRoot, chainConfig, cancunBlock)
+}
+
+func (bc *BlockChain) AddRootTranslation(originalRoot, translatedRoot common.Hash) {
+	bc.stateCache.AddRootTranslation(originalRoot, translatedRoot)
 }

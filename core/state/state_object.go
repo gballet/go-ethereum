@@ -373,7 +373,7 @@ func (s *stateObject) updateTrie(db Database) Trie {
 	if len(s.pendingStorage) > 0 {
 		s.pendingStorage = make(Storage)
 	}
-	return tr
+	return s.trie
 }
 
 // UpdateRoot sets the trie root to the current root hash of
