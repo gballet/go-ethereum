@@ -68,7 +68,7 @@ func (trie *VerkleTrie) GetKey(key []byte) []byte {
 // not be modified by the caller. If a node was not found in the database, a
 // trie.MissingNodeError is returned.
 func (trie *VerkleTrie) TryGet(addr, key []byte) ([]byte, error) {
-	pointEval := trie.pointCache.GetTreeKeyHeader(key)
+	pointEval := trie.pointCache.GetTreeKeyHeader(addr)
 	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(pointEval, key)
 	return trie.root.Get(k, trie.db.diskdb.Get)
 }
@@ -98,11 +98,17 @@ func (t *VerkleTrie) TryGetAccount(key []byte) (*types.StateAccount, error) {
 	if len(values[utils.NonceLeafKey]) > 0 {
 		acc.Nonce = binary.LittleEndian.Uint64(values[utils.NonceLeafKey])
 	}
-	balance := values[utils.BalanceLeafKey]
-	if len(balance) > 0 {
-		for i := 0; i < len(balance)/2; i++ {
-			balance[len(balance)-i-1], balance[i] = balance[i], balance[len(balance)-i-1]
-		}
+	if acc.Nonce == 0 && len(values) > 10 && len(values[10]) > 0 && bytes.Equal(values[utils.CodeKeccakLeafKey], zero[:]) {
+		// WORKAROUND: if the account has been deleted, then values[10]
+		// will be set to 0 and will no longer be `nil`. If it has been
+		// recreated after that, then its code keccak will NOT be 0. So
+		// return `nil` if the nonce, values[10], and code keccak are 0
+		return nil, nil
+	}
+	var balance [32]byte
+	copy(balance[:], values[utils.BalanceLeafKey])
+	for i := 0; i < len(balance)/2; i++ {
+		balance[len(balance)-i-1], balance[i] = balance[i], balance[len(balance)-i-1]
 	}
 	acc.Balance = new(big.Int).SetBytes(balance[:])
 	acc.CodeHash = values[utils.CodeKeccakLeafKey]
@@ -142,8 +148,6 @@ func (t *VerkleTrie) TryUpdateAccount(key []byte, acc *types.StateAccount) error
 	switch root := t.root.(type) {
 	case *verkle.InternalNode:
 		err = root.InsertStem(stem, values, flusher)
-	case *verkle.StatelessNode:
-		err = root.InsertAtStem(stem, values, flusher, true)
 	}
 	if err != nil {
 		return fmt.Errorf("TryUpdateAccount (%x) error: %v", key, err)
@@ -196,8 +200,6 @@ func (t *VerkleTrie) TryDeleteAccount(key []byte) error {
 	switch root := t.root.(type) {
 	case *verkle.InternalNode:
 		err = root.InsertStem(stem, values, resolver)
-	case *verkle.StatelessNode:
-		err = root.InsertAtStem(stem, values, resolver, true)
 	}
 	if err != nil {
 		return fmt.Errorf("TryDeleteAccount (%x) error: %v", key, err)
@@ -210,9 +212,10 @@ func (t *VerkleTrie) TryDeleteAccount(key []byte) error {
 // TryDelete removes any existing value for key from the trie. If a node was not
 // found in the database, a trie.MissingNodeError is returned.
 func (trie *VerkleTrie) TryDelete(addr, key []byte) error {
-	pointEval := trie.pointCache.GetTreeKeyHeader(key)
+	pointEval := trie.pointCache.GetTreeKeyHeader(addr)
 	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(pointEval, key)
-	return trie.root.Delete(k, func(h []byte) ([]byte, error) {
+	var zero [32]byte
+	return trie.root.Insert(k, zero[:], func(h []byte) ([]byte, error) {
 		return trie.db.diskdb.Get(h)
 	})
 }
@@ -246,7 +249,7 @@ func (trie *VerkleTrie) Commit(_ bool) (common.Hash, *NodeSet, error) {
 		}
 	}
 
-	return nodes[0].CommitmentBytes, NewNodeSet(common.Hash{}), nil
+	return nodes[0].CommitmentBytes, nil, nil
 }
 
 // NodeIterator returns an iterator that returns nodes of the trie. Iteration
@@ -278,7 +281,7 @@ func (trie *VerkleTrie) IsVerkle() bool {
 }
 
 func (trie *VerkleTrie) ProveAndSerialize(keys [][]byte, kv map[string][]byte) (*verkle.VerkleProof, verkle.StateDiff, error) {
-	proof, _, _, _, err := verkle.MakeVerkleMultiProof(trie.root, keys, kv)
+	proof, _, _, _, err := verkle.MakeVerkleMultiProof(trie.root, keys)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -354,9 +357,9 @@ func deserializeVerkleProof(vp *verkle.VerkleProof, rootC *verkle.Point, statedi
 		}
 	}
 
-	pe, _, _ := tree.GetProofItems(proof.Keys)
+	pe, _, _, err := tree.GetProofItems(proof.Keys)
 
-	return proof, pe.Cis, pe.Zis, pe.Yis, nil
+	return proof, pe.Cis, pe.Zis, pe.Yis, err
 }
 
 // ChunkedCode represents a sequence of 32-bytes chunks of code (31 bytes of which

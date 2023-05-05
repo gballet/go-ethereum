@@ -1725,6 +1725,11 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 			atomic.StoreUint32(&followupInterrupt, 1)
 			return it.index, err
 		}
+		if fdb, ok := statedb.Database().(*state.ForkingDB); ok {
+			if fdb.InTransition() || fdb.Transitionned() {
+				bc.AddRootTranslation(block.Root(), statedb.IntermediateRoot(false))
+			}
+		}
 
 		// Update the metrics touched during block processing
 		accountReadTimer.Update(statedb.AccountReads)                 // Account reads are complete, we can mark them
@@ -2456,4 +2461,8 @@ func (bc *BlockChain) SetBlockValidatorAndProcessorForTesting(v Validator, p Pro
 
 func (bc *BlockChain) StartVerkleTransition(originalRoot, translatedRoot common.Hash) {
 	bc.stateCache.(*state.ForkingDB).StartTransition(originalRoot, translatedRoot)
+}
+
+func (bc *BlockChain) AddRootTranslation(originalRoot, translatedRoot common.Hash) {
+	bc.stateCache.(*state.ForkingDB).AddTranslation(originalRoot, translatedRoot)
 }

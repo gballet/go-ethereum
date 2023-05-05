@@ -20,18 +20,21 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/gballet/go-verkle"
 )
 
 type TransitionTrie struct {
 	overlay *VerkleTrie
 	base    *SecureTrie
+	storage bool
 }
 
-func NewTransitionTree(base *SecureTrie, overlay *VerkleTrie) *TransitionTrie {
+func NewTransitionTree(base *SecureTrie, overlay *VerkleTrie, st bool) *TransitionTrie {
 	return &TransitionTrie{
 		overlay: overlay,
 		base:    base,
+		storage: st,
 	}
 }
 
@@ -63,7 +66,22 @@ func (t *TransitionTrie) TryGet(addr, key []byte) ([]byte, error) {
 		return val, nil
 	}
 	// TODO also insert value into overlay
-	return t.base.TryGet(nil, key)
+	rlpval, err := t.base.TryGet(nil, key)
+	if err != nil {
+		return nil, err
+	}
+	if len(rlpval) == 0 {
+		return nil, nil
+	}
+	// the value will come as RLP, decode it so that the
+	// interface is consistent.
+	_, content, _, err := rlp.Split(rlpval)
+	if err != nil || len(content) == 0 {
+		return nil, err
+	}
+	var v [32]byte
+	copy(v[32-len(content):], content)
+	return v[:], nil
 }
 
 // TryGetAccount abstract an account read from the trie.
@@ -73,6 +91,9 @@ func (t *TransitionTrie) TryGetAccount(key []byte) (*types.StateAccount, error) 
 		return nil, err
 	}
 	if data != nil {
+		if t.overlay.db.HasStorageRootConversion(key) {
+			data.Root = t.overlay.db.StorageRootConversion(key)
+		}
 		return data, nil
 	}
 	// TODO also insert value into overlay
@@ -89,6 +110,9 @@ func (t *TransitionTrie) TryUpdate(address, key []byte, value []byte) error {
 
 // TryUpdateAccount abstract an account write to the trie.
 func (t *TransitionTrie) TryUpdateAccount(key []byte, account *types.StateAccount) error {
+	if account.Root != (common.Hash{}) || account.Root != emptyRoot {
+		t.overlay.db.SetStorageRootConversion(key, account.Root)
+	}
 	return t.overlay.TryUpdateAccount(key, account)
 }
 

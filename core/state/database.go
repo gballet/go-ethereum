@@ -19,6 +19,7 @@ package state
 import (
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/VictoriaMetrics/fastcache"
 	"github.com/ethereum/go-ethereum/common"
@@ -162,11 +163,18 @@ type ForkingDB struct {
 	*VerkleDB
 
 	// TODO ensure that this info is in the DB
-	started, ended  bool
-	translatedRoots map[common.Hash]common.Hash // hash of the translated root, for opening
-	baseRoot        common.Hash                 // hash of the read-only base tree
-	LastAccHash     common.Hash                 // hash of the last translated account address
-	LastSlotHash    common.Hash                 // hash of the last translated storage slot address
+	started, ended      bool
+	translatedRoots     map[common.Hash]common.Hash // hash of the translated root, for opening
+	translatedRootsLock sync.RWMutex
+
+	baseRoot           common.Hash // hash of the read-only base tree
+	CurrentAccountHash common.Hash // hash of the last translated account
+	CurrentSlotHash    common.Hash // hash of the last translated storage slot
+
+	// Mark whether the storage for an account has been processed. This is useful if the
+	// maximum number of leaves of the conversion is reached before the whole storage is
+	// processed.
+	StorageProcessed bool
 }
 
 // ContractCode implements Database
@@ -193,7 +201,7 @@ func (fdb *ForkingDB) CopyTrie(t Trie) Trie {
 
 	if fdb.started {
 		overlay := fdb.VerkleDB.CopyTrie(t)
-		return trie.NewTransitionTree(mpt.(*trie.SecureTrie), overlay.(*trie.VerkleTrie))
+		return trie.NewTransitionTree(mpt.(*trie.SecureTrie), overlay.(*trie.VerkleTrie), false)
 	}
 
 	return mpt
@@ -205,11 +213,13 @@ func (fdb *ForkingDB) OpenStorageTrie(stateRoot, addrHash, root common.Hash, sel
 	if fdb.started && err == nil {
 		// Return a "storage trie" that is an adapter between the storge MPT
 		// and the unique verkle tree.
-		vkt, err := fdb.VerkleDB.OpenStorageTrie(stateRoot, addrHash, fdb.translatedRoots[root], self)
+		fdb.translatedRootsLock.RLock()
+		vkt, err := fdb.VerkleDB.OpenStorageTrie(stateRoot, addrHash, fdb.translatedRoots[root], self.(*trie.TransitionTrie).Overlay())
+		fdb.translatedRootsLock.RUnlock()
 		if err != nil {
 			return nil, err
 		}
-		return trie.NewTransitionTree(mpt.(*trie.SecureTrie), vkt.(*trie.VerkleTrie)), nil
+		return trie.NewTransitionTree(mpt.(*trie.SecureTrie), vkt.(*trie.VerkleTrie), true), nil
 	}
 
 	return mpt, err
@@ -221,21 +231,24 @@ func (fdb *ForkingDB) OpenTrie(root common.Hash) (Trie, error) {
 		mpt Trie
 		err error
 	)
+
 	if fdb.started {
 		mpt, err = fdb.cachingDB.OpenTrie(fdb.baseRoot)
 		if err != nil {
 			return nil, err
 		}
+		fdb.translatedRootsLock.RLock()
 		vkt, err := fdb.VerkleDB.OpenTrie(fdb.translatedRoots[root])
+		fdb.translatedRootsLock.RUnlock()
 		if err != nil {
 			return nil, err
-		} else {
-			mpt, err = fdb.cachingDB.OpenTrie(root)
-			if err != nil {
-				return nil, err
-			}
 		}
-		return trie.NewTransitionTree(mpt.(*trie.SecureTrie), vkt.(*trie.VerkleTrie)), nil
+		return trie.NewTransitionTree(mpt.(*trie.SecureTrie), vkt.(*trie.VerkleTrie), false), nil
+	} else {
+		mpt, err = fdb.cachingDB.OpenTrie(root)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return mpt, nil
@@ -263,6 +276,10 @@ func (fdg *ForkingDB) InTransition() bool {
 	return fdg.started && !fdg.ended
 }
 
+func (fdg *ForkingDB) Transitionned() bool {
+	return fdg.ended
+}
+
 // Fork implements the fork
 func (fdb *ForkingDB) StartTransition(originalRoot, translatedRoot common.Hash) {
 	fmt.Println(`
@@ -275,6 +292,8 @@ func (fdb *ForkingDB) StartTransition(originalRoot, translatedRoot common.Hash) 
 	fdb.started = true
 	fdb.translatedRoots = map[common.Hash]common.Hash{originalRoot: translatedRoot}
 	fdb.baseRoot = originalRoot
+	// initialize so that the first storage-less accounts are processed
+	fdb.StorageProcessed = true
 }
 
 func (fdb *ForkingDB) EndTransition() {
@@ -290,7 +309,9 @@ func (fdb *ForkingDB) EndTransition() {
 
 func (fdb *ForkingDB) AddTranslation(orig, trans common.Hash) {
 	// TODO make this persistent
+	fdb.translatedRootsLock.Lock()
 	fdb.translatedRoots[orig] = trans
+	fdb.translatedRootsLock.Unlock()
 }
 
 type cachingDB struct {

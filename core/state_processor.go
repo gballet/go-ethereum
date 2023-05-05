@@ -34,6 +34,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
 	tutils "github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/gballet/go-verkle"
@@ -102,7 +103,6 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	if fdb, ok := statedb.Database().(*state.ForkingDB); ok {
 		if fdb.InTransition() {
 			now := time.Now()
-			// XXX overkill, just save the parent root in the forking db
 			tt := statedb.GetTrie().(*trie.TransitionTrie)
 			mpt := tt.Base()
 
@@ -110,12 +110,10 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			if err != nil {
 				return nil, nil, 0, err
 			}
-			stIt, err := statedb.Snaps().StorageIterator(mpt.Hash(), fdb.LastAccHash, fdb.LastSlotHash)
-			if err != nil {
-				return nil, nil, 0, err
-			}
+			defer accIt.Release()
+			accIt.Next()
 
-			const maxMovedCount = 500
+			const maxMovedCount = 1000
 			// mkv will be assiting in the collection of up to maxMovedCount key values to be migrated to the VKT.
 			// It has internal caches to do efficient MPT->VKT key calculations, which will be discarded after
 			// this function.
@@ -123,21 +121,71 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			// move maxCount accounts into the verkle tree, starting with the
 			// slots from the previous account.
 			count := 0
-			addr := rawdb.ReadPreimage(statedb.Database().DiskDB(), accIt.Hash())
-			for ; stIt.Next() && count < maxMovedCount; count++ {
-				slotnr := rawdb.ReadPreimage(statedb.Database().DiskDB(), stIt.Hash())
-				mkv.addStorageSlot(addr, slotnr, stIt.Slot())
-			}
 
 			// if less than maxCount slots were moved, move to the next account
 			for count < maxMovedCount {
-				if accIt.Next() {
-					acc, err := snapshot.FullAccount(accIt.Account())
+				fdb.CurrentAccountHash = accIt.Hash()
+
+				acc, err := snapshot.FullAccount(accIt.Account())
+				if err != nil {
+					log.Error("Invalid account encountered during traversal", "error", err)
+					return nil, nil, 0, err
+				}
+				addr := rawdb.ReadPreimage(statedb.Database().DiskDB(), accIt.Hash())
+				if len(addr) == 0 {
+					panic(fmt.Sprintf("%x %x %v", addr, accIt.Hash(), acc))
+				}
+
+				// Start with processing the storage, because once the account is
+				// converted, the `stateRoot` field loses its meaning. Which means
+				// that it opens the door to a situation in which the storage isn't
+				// converted, but it can not be found since the account was and so
+				// there is no way to find the MPT storage from the information found
+				// in the verkle account.
+				// Note that this issue can still occur if the account gets written
+				// to during normal block execution. A mitigation strategy has been
+				// introduced with the `*StorageRootConversion` fields in VerkleDB.
+				if acc.HasStorage() {
+					stIt, err := statedb.Snaps().StorageIterator(mpt.Hash(), accIt.Hash(), fdb.CurrentSlotHash)
 					if err != nil {
-						log.Error("Invalid account encountered during traversal", "error", err)
 						return nil, nil, 0, err
 					}
-					addr := rawdb.ReadPreimage(statedb.Database().DiskDB(), accIt.Hash())
+					stIt.Next()
+
+					// fdb.StorageProcessed will be initialized to `true` if the
+					// entire storage for an account was not entirely processed
+					// by the previous block. This is used as a signal to resume
+					// processing the storage for that account where we left off.
+					// If the entire storage was processed, then the iterator was
+					// created in vain, but it's ok as this will not happen often.
+					for ; !fdb.StorageProcessed && count < maxMovedCount; count++ {
+						var (
+							value     []byte   // slot value after RLP decoding
+							safeValue [32]byte // 32-byte aligned value
+						)
+						if err := rlp.DecodeBytes(stIt.Slot(), &value); err != nil {
+							return nil, nil, 0, fmt.Errorf("error decoding bytes %x: %w", stIt.Slot(), err)
+						}
+						copy(safeValue[32-len(value):], value)
+						slotnr := rawdb.ReadPreimage(statedb.Database().DiskDB(), stIt.Hash())
+
+						mkv.addStorageSlot(addr, slotnr, safeValue[:])
+
+						// advance the storage iterator
+						fdb.StorageProcessed = !stIt.Next()
+						if !fdb.StorageProcessed {
+							fdb.CurrentSlotHash = stIt.Hash()
+						}
+					}
+					stIt.Release()
+				}
+
+				// If the maximum number of leaves hasn't been reached, then
+				// it means that the storage has finished processing (or none
+				// was available for this account) and that the account itself
+				// can be processed.
+				if count < maxMovedCount {
+					count++ // count increase for the account itself
 
 					mkv.addAccount(addr, acc)
 
@@ -149,26 +197,24 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 						mkv.addAccountCode(addr, uint64(len(code)), chunks)
 					}
 
-					if acc.HasStorage() {
-						for ; stIt.Next() && count < maxMovedCount; count++ {
-							slotnr := rawdb.ReadPreimage(statedb.Database().DiskDB(), stIt.Hash())
+					// reset storage iterator marker for next account
+					fdb.StorageProcessed = false
+					fdb.CurrentSlotHash = common.Hash{}
 
-							mkv.addStorageSlot(addr, slotnr, stIt.Slot())
-						}
+					// Move to the next account, if available - or end
+					// the transition otherwise.
+					if accIt.Next() {
+						fdb.CurrentAccountHash = accIt.Hash()
+					} else {
+						// case when the account iterator has
+						// reached the end but count < maxCount
+						fdb.EndTransition()
+						break
 					}
 				}
 			}
 
-			// If the iterators have reached the end, mark the
-			// transition as complete.
-			if !accIt.Next() && !stIt.Next() {
-				fdb.EndTransition()
-			} else {
-				// Update the pointers in the forking db
-				fdb.LastAccHash = accIt.Hash()
-				fdb.LastSlotHash = stIt.Hash()
-			}
-			log.Info("Collected and prepared key values from base tree", "count", count, "duration", time.Since(now))
+			log.Info("Collected and prepared key values from base tree", "count", count, "duration", time.Since(now), "last account", fdb.CurrentAccountHash)
 
 			now = time.Now()
 			if err := mkv.migrateCollectedKeyValues(tt.Overlay()); err != nil {
@@ -337,7 +383,7 @@ func (kvm *keyValueMigrator) getOrInitLeafNodeData(stem []byte) *verkle.BatchNew
 	stemStr := string(stem)
 	if _, ok := kvm.vktLeafData[stemStr]; !ok {
 		kvm.vktLeafData[stemStr] = &verkle.BatchNewLeafNodeData{
-			Stem:   stem,
+			Stem:   stem[:verkle.StemSize],
 			Values: make(map[byte][]byte),
 		}
 	}
