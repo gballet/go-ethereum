@@ -98,11 +98,20 @@ func (t *VerkleTrie) TryGetAccount(key []byte) (*types.StateAccount, error) {
 	if len(values[utils.NonceLeafKey]) > 0 {
 		acc.Nonce = binary.LittleEndian.Uint64(values[utils.NonceLeafKey])
 	}
-	balance := values[utils.BalanceLeafKey]
-	if len(balance) > 0 {
-		for i := 0; i < len(balance)/2; i++ {
-			balance[len(balance)-i-1], balance[i] = balance[i], balance[len(balance)-i-1]
-		}
+	if acc.Nonce == 0 && len(values) > 10 && len(values[10]) > 0 && bytes.Equal(values[4], zero[:]) {
+		// WORKAROUND: detect if this account has been deleted: if the
+		// 10th entry is 0, it means that the account has been deleted
+		// at least once, and if the code keccak is also zero, then it
+		// means that the account is currently deleted.
+		// Detecting a deleted account is important because otherwise,
+		// some strange bugs occur where an account is returned with a
+		// negative balance, which can be quite tricky to debug.
+		return nil, nil
+	}
+	var balance [32]byte
+	copy(balance[:], values[utils.BalanceLeafKey])
+	for i := 0; i < len(balance)/2; i++ {
+		balance[len(balance)-i-1], balance[i] = balance[i], balance[len(balance)-i-1]
 	}
 	acc.Balance = new(big.Int).SetBytes(balance[:])
 	acc.CodeHash = values[utils.CodeKeccakLeafKey]
@@ -210,7 +219,7 @@ func (t *VerkleTrie) TryDeleteAccount(key []byte) error {
 // TryDelete removes any existing value for key from the trie. If a node was not
 // found in the database, a trie.MissingNodeError is returned.
 func (trie *VerkleTrie) TryDelete(addr, key []byte) error {
-	pointEval := trie.pointCache.GetTreeKeyHeader(key)
+	pointEval := trie.pointCache.GetTreeKeyHeader(addr)
 	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(pointEval, key)
 	return trie.root.Delete(k, func(h []byte) ([]byte, error) {
 		return trie.db.diskdb.Get(h)

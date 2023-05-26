@@ -200,8 +200,9 @@ func (s *stateObject) GetCommittedState(db Database, key common.Hash) common.Has
 	}
 	// If no live objects are available, attempt to use snapshots
 	var (
-		enc []byte
-		err error
+		enc   []byte
+		err   error
+		value common.Hash
 	)
 	if s.db.snap != nil {
 		// If the object was destructed in *this* block (and potentially resurrected),
@@ -221,11 +222,15 @@ func (s *stateObject) GetCommittedState(db Database, key common.Hash) common.Has
 	}
 	// If the snapshot is unavailable or reading from it fails, load from the database.
 	if s.db.snap == nil || err != nil {
-		if s.db.GetTrie().IsVerkle() {
-			panic("verkle trees use the snapshot")
-		}
+		var tr = s.getTrie(db)
 		start := time.Now()
-		enc, err = s.getTrie(db).TryGet(s.address[:], key.Bytes())
+		if s.db.GetTrie().IsVerkle() {
+			var v []byte
+			v, err = tr.TryGet(s.address[:], key.Bytes())
+			copy(value[:], v)
+		} else {
+			enc, err = s.getTrie(db).TryGet(s.address[:], key.Bytes())
+		}
 		if metrics.EnabledExpensive {
 			s.db.StorageReads += time.Since(start)
 		}
@@ -234,7 +239,6 @@ func (s *stateObject) GetCommittedState(db Database, key common.Hash) common.Has
 			return common.Hash{}
 		}
 	}
-	var value common.Hash
 	if len(enc) > 0 {
 		_, content, _, err := rlp.Split(enc)
 		if err != nil {
@@ -324,11 +328,7 @@ func (s *stateObject) updateTrie(db Database) Trie {
 	var storage map[common.Hash][]byte
 	// Insert all the pending updates into the trie
 	var tr Trie
-	if s.db.trie.IsVerkle() {
-		tr = s.db.trie
-	} else {
-		tr = s.getTrie(db)
-	}
+	tr = s.getTrie(db)
 	hasher := s.db.hasher
 
 	usedStorage := make([][]byte, 0, len(s.pendingStorage))
@@ -373,7 +373,7 @@ func (s *stateObject) updateTrie(db Database) Trie {
 	if len(s.pendingStorage) > 0 {
 		s.pendingStorage = make(Storage)
 	}
-	return tr
+	return s.trie
 }
 
 // UpdateRoot sets the trie root to the current root hash of
