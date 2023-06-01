@@ -164,7 +164,7 @@ type ForkingDB struct {
 
 	// TODO ensure that this info is in the DB
 	started, ended      bool
-	translatedRoots     map[common.Hash]common.Hash // hash of the translated root, for opening\
+	translatedRoots     map[common.Hash]common.Hash // hash of the translated root, for opening
 	translatedRootsLock sync.RWMutex
 
 	baseRoot     common.Hash // hash of the read-only base tree

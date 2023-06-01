@@ -98,14 +98,10 @@ func (t *VerkleTrie) TryGetAccount(key []byte) (*types.StateAccount, error) {
 	if len(values[utils.NonceLeafKey]) > 0 {
 		acc.Nonce = binary.LittleEndian.Uint64(values[utils.NonceLeafKey])
 	}
-	if acc.Nonce == 0 && len(values) > 10 && len(values[10]) > 0 && bytes.Equal(values[4], zero[:]) {
-		// WORKAROUND: detect if this account has been deleted: if the
-		// 10th entry is 0, it means that the account has been deleted
-		// at least once, and if the code keccak is also zero, then it
-		// means that the account is currently deleted.
-		// Detecting a deleted account is important because otherwise,
-		// some strange bugs occur where an account is returned with a
-		// negative balance, which can be quite tricky to debug.
+	// if the account has been deleted, then values[10] will be 0 and not nil. If it has
+	// been recreated after that, then its code keccak will NOT be 0. So return `nil` if
+	// the nonce, and values[10], and code keccak is 0.
+	if acc.Nonce == 0 && len(values) > 10 && len(values[10]) > 0 && bytes.Equal(values[utils.CodeKeccakLeafKey], zero[:]) {
 		return nil, nil
 	}
 	var balance [32]byte
