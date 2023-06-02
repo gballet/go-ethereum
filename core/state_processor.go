@@ -212,7 +212,11 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 					if !bytes.Equal(acc.CodeHash, emptyCodeHash[:]) {
 						code := rawdb.ReadCode(statedb.Database().DiskDB(), common.BytesToHash(acc.CodeHash))
 						chunks := trie.ChunkifyCode(code)
-						count += len(chunks) // count increase for the code chunks
+						// NOTE the line below is breaking the loop, most likely
+						// because of the problem reported by @jsign: if the count
+						// is reached, it will not update LastAccHash correctly.
+						// count += len(chunks) // count increase for the code chunks
+
 						// this means that more than maxMovedCount leaves can be
 						// transferred for a single block, but it's good enough
 						// for now.

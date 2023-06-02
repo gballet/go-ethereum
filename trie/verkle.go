@@ -217,7 +217,8 @@ func (t *VerkleTrie) TryDeleteAccount(key []byte) error {
 func (trie *VerkleTrie) TryDelete(addr, key []byte) error {
 	pointEval := trie.pointCache.GetTreeKeyHeader(addr)
 	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(pointEval, key)
-	return trie.root.Delete(k, func(h []byte) ([]byte, error) {
+	var zero [32]byte
+	return trie.root.Insert(k, zero[:], func(h []byte) ([]byte, error) {
 		return trie.db.diskdb.Get(h)
 	})
 }
