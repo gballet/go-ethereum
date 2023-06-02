@@ -409,7 +409,7 @@ func (kvm *keyValueMigrator) getOrInitLeafNodeData(stem []byte) *verkle.BatchNew
 	stemStr := string(stem)
 	if _, ok := kvm.vktLeafData[stemStr]; !ok {
 		kvm.vktLeafData[stemStr] = &verkle.BatchNewLeafNodeData{
-			Stem:   stem,
+			Stem:   stem[:verkle.StemSize],
 			Values: make(map[byte][]byte),
 		}
 	}
