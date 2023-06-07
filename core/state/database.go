@@ -167,9 +167,9 @@ type ForkingDB struct {
 	translatedRoots     map[common.Hash]common.Hash // hash of the translated root, for opening
 	translatedRootsLock sync.RWMutex
 
-	baseRoot     common.Hash // hash of the read-only base tree
-	LastAccHash  common.Hash // hash of the last translated account
-	LastSlotHash common.Hash // hash of the last translated storage slot
+	baseRoot           common.Hash // hash of the read-only base tree
+	CurrentAccountHash common.Hash // hash of the last translated account
+	CurrentSlotHash    common.Hash // hash of the last translated storage slot
 
 	// Mark whether the storage for an account has been processed. This is useful if the
 	// maximum number of leaves of the conversion is reached before the whole storage is

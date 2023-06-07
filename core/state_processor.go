@@ -111,6 +111,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 				return nil, nil, 0, err
 			}
 			defer accIt.Release()
+			accIt.Next()
 
 			const maxMovedCount = 1000
 			// mkv will be assiting in the collection of up to maxMovedCount key values to be migrated to the VKT.
@@ -122,8 +123,8 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			count := 0
 
 			// if less than maxCount slots were moved, move to the next account
-			for accIt.Next() && count < maxMovedCount {
-				fdb.LastAccHash = accIt.Hash()
+			for count < maxMovedCount {
+				fdb.CurrentAccountHash = accIt.Hash()
 
 				acc, err := snapshot.FullAccount(accIt.Account())
 				if err != nil {
@@ -141,22 +142,22 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 				// converted, but it can not be found since the account was and so
 				// there is no way to find the MPT storage from the information found
 				// in the verkle account.
-				// Not that this issue can still occur if the account gets written
+				// Note that this issue can still occur if the account gets written
 				// to during normal block execution. A mitigation strategy has been
 				// introduced with the `*StorageRootConversion` fields in VerkleDB.
 				if acc.HasStorage() {
-					stIt, err := statedb.Snaps().StorageIterator(mpt.Hash(), accIt.Hash(), fdb.LastSlotHash)
+					stIt, err := statedb.Snaps().StorageIterator(mpt.Hash(), accIt.Hash(), fdb.CurrentSlotHash)
 					if err != nil {
 						return nil, nil, 0, err
 					}
+					stIt.Next()
 
-					// mark storage processing as "in progress" if there is
-					// at least one value to process left in the state.
-					fdb.StorageProcessed = !stIt.Next()
-
-					// Process up to maxMovedCount storage slots, if the whole storage isn't
-					// processed by the time the limit is reached, `fdb.StorageProcessed`
-					// will be false when the loop is executed again on the next block.
+					// fdb.StorageProcessed will be initialized to `true` if the
+					// entire storage for an account was not entirely processed
+					// by the previous block. This is used as a signal to resume
+					// processing the storage for that account where we left off.
+					// If the entire storage was processed, then the iterator was
+					// created in vain, but it's ok as this will not happen often.
 					for ; !fdb.StorageProcessed && count < maxMovedCount; count++ {
 						var (
 							value     []byte   // slot value after RLP decoding
@@ -167,43 +168,23 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 						}
 						copy(safeValue[32-len(value):], value)
 						slotnr := rawdb.ReadPreimage(statedb.Database().DiskDB(), stIt.Hash())
-						fdb.LastSlotHash = stIt.Hash()
-
-						// move the storage to the next value, so that if the max
-						// leaf count is reached, the loop interrupted, and resumed
-						// at the next block, `stIt.Next()` will check fot the presence
-						// of the next slot, and mark the whole storage as "processed"
-						// if no such slot can be found.
-						for x := 31; x >= 0; x-- {
-							if fdb.LastSlotHash[x] < 255 {
-								break
-							}
-							fdb.LastSlotHash[x] = 0
-
-							// This means that 0xff....ff will circle back to 0x00..00
-							// but it's not a problem because the next call to stIt.Next()
-							// will update the processing marker, so the iterator will
-							// not be used again.
-						}
 
 						mkv.addStorageSlot(addr, slotnr, safeValue[:])
 
-						// advance the storage iterator and leave the loop
-						// if the iterator reached the end.
+						// advance the storage iterator
 						fdb.StorageProcessed = !stIt.Next()
-						if fdb.StorageProcessed {
-							break
+						if !fdb.StorageProcessed {
+							fdb.CurrentSlotHash = stIt.Hash()
 						}
 					}
 					stIt.Release()
 				}
 
-				// Process the account if all of its storage slots have been processed.
-				// If the maximum number of processable leafs has been reached, this
-				// part is skipped until the next block. If the limit was reached right
-				// after processing the storage, the account will be processed in the
-				// next block as the check for !fdb.StorageProcessed will be false then.
-				if fdb.StorageProcessed && count < maxMovedCount {
+				// If the maximum number of leaves hasn't been reached, then
+				// it means that the storage has finished processing (or none
+				// was available for this account) and that the account itself
+				// can be processed.
+				if count < maxMovedCount {
 					count++ // count increase for the account itself
 
 					mkv.addAccount(addr, acc)
@@ -212,35 +193,28 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 					if !bytes.Equal(acc.CodeHash, emptyCodeHash[:]) {
 						code := rawdb.ReadCode(statedb.Database().DiskDB(), common.BytesToHash(acc.CodeHash))
 						chunks := trie.ChunkifyCode(code)
-						// NOTE the line below is breaking the loop, most likely
-						// because of the problem reported by @jsign: if the count
-						// is reached, it will not update LastAccHash correctly.
-						// count += len(chunks) // count increase for the code chunks
-
-						// this means that more than maxMovedCount leaves can be
-						// transferred for a single block, but it's good enough
-						// for now.
 
 						mkv.addAccountCode(addr, uint64(len(code)), chunks)
 					}
 
 					// reset storage iterator marker for next account
-					fdb.LastSlotHash = common.Hash{}
+					fdb.StorageProcessed = false
+					fdb.CurrentSlotHash = common.Hash{}
+
+					// Move to the next account, if available - or end
+					// the transition otherwise.
+					if accIt.Next() {
+						fdb.CurrentAccountHash = accIt.Hash()
+					} else {
+						// case when the account iterator has
+						// reached the end but count < maxCount
+						fdb.EndTransition()
+						break
+					}
 				}
 			}
 
-			// If the iterators have reached the end, mark the
-			// transition as complete.
-			// The hash check is to ensure that all the storage for
-			// the last account has been converted.
-			if fdb.StorageProcessed && !accIt.Next() {
-				// XXX There is an undhandler corner case here: if an account's
-				// storage is processed, but the account itself is not, and this
-				// account is the last one, then the transition will be marked
-				// as complete, but missing the last account.
-				fdb.EndTransition()
-			}
-			log.Info("Collected and prepared key values from base tree", "count", count, "duration", time.Since(now))
+			log.Info("Collected and prepared key values from base tree", "count", count, "duration", time.Since(now), "last account", fdb.CurrentAccountHash)
 
 			now = time.Now()
 			if err := mkv.migrateCollectedKeyValues(tt.Overlay()); err != nil {
