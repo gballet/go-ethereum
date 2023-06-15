@@ -963,7 +963,7 @@ func TestFlushOrderDataLoss(t *testing.T) {
 func TestCodeChunkOverflow(t *testing.T) {
 	// Create an empty state database
 	db := rawdb.NewMemoryDatabase()
-	state, _ := New(common.Hash{}, NewDatabaseWithConfig(db, nil), nil)
+	state, _ := New(common.Hash{}, NewDatabaseWithConfig(db, nil, true), nil)
 
 	// Update it with some accounts
 	addr := common.BytesToAddress([]byte{1})

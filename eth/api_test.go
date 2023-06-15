@@ -67,7 +67,7 @@ func TestAccountRange(t *testing.T) {
 	t.Parallel()
 
 	var (
-		statedb  = state.NewDatabaseWithConfig(rawdb.NewMemoryDatabase(), &trie.Config{Preimages: true})
+		statedb  = state.NewDatabaseWithConfig(rawdb.NewMemoryDatabase(), &trie.Config{Preimages: true}, false)
 		state, _ = state.New(common.Hash{}, statedb, nil)
 		addrs    = [AccountRangeMaxResults * 2]common.Address{}
 		m        = map[common.Address]bool{}

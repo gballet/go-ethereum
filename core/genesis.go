@@ -120,7 +120,8 @@ func (ga *GenesisAlloc) deriveHash(cfg *params.ChainConfig) (common.Hash, error)
 	var trieCfg *trie.Config
 	// Create an ephemeral in-memory database for computing hash,
 	// all the derived states will be discarded to not pollute disk.
-	db := state.NewDatabaseWithConfig(rawdb.NewMemoryDatabase(), trieCfg, cfg.IsCancun(big.NewInt(int64(0))))
+	convertedToVerkle := cfg != nil && cfg.IsCancun(big.NewInt(int64(0)))
+	db := state.NewDatabaseWithConfig(rawdb.NewMemoryDatabase(), trieCfg, convertedToVerkle)
 	// TODO remove the nil config check once we have rebased, it should never be nil
 	statedb, err := state.New(common.Hash{}, db, nil)
 	if err != nil {
@@ -142,7 +143,8 @@ func (ga *GenesisAlloc) deriveHash(cfg *params.ChainConfig) (common.Hash, error)
 // Also, the genesis state specification will be flushed as well.
 func (ga *GenesisAlloc) flush(db ethdb.Database, cfg *params.ChainConfig) error {
 	trieCfg := &trie.Config{Preimages: true}
-	triedb := state.NewDatabaseWithConfig(db, trieCfg, cfg.IsCancun(big.NewInt(int64(0))))
+	convertedToVerkle := cfg != nil && cfg.IsCancun(big.NewInt(int64(0)))
+	triedb := state.NewDatabaseWithConfig(db, trieCfg, convertedToVerkle)
 	statedb, err := state.New(common.Hash{}, triedb, nil)
 	if err != nil {
 		return err
@@ -336,7 +338,8 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, genesis *Genesis, override
 		}
 	}
 
-	triedb := state.NewDatabaseWithConfig(db, trieCfg, genesis.Config.IsCancun(big.NewInt(0)))
+	convertedToVerkle := genesis != nil && genesis.Config != nil && genesis.Config.IsCancun(big.NewInt(0))
+	triedb := state.NewDatabaseWithConfig(db, trieCfg, convertedToVerkle)
 	if genesis != nil && genesis.Config != nil && genesis.Config.IsCancun(big.NewInt(0)) {
 		triedb.EndVerkleTransition()
 	}
