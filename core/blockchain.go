@@ -303,10 +303,7 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 		Cache:     cacheConfig.TrieCleanLimit,
 		Journal:   cacheConfig.TrieCleanJournal,
 		Preimages: cacheConfig.Preimages,
-	})
-	if bc.chainConfig.IsCancun(head.Header().Number) {
-		bc.stateCache.EndVerkleTransition()
-	}
+	}, chainConfig.IsCancun(head.Header().Number))
 
 	if _, err := state.New(head.Root(), bc.stateCache, bc.snaps); err != nil {
 		// Head state is missing, before the state recovery, find out the

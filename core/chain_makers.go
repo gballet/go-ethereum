@@ -385,8 +385,7 @@ func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine
 	}
 	var snaps *snapshot.Tree
 	for i := 0; i < n; i++ {
-		triedb := state.NewDatabaseWithConfig(db, nil)
-		triedb.EndVerkleTransition()
+		triedb := state.NewDatabaseWithConfig(db, nil, true)
 		statedb, err := state.New(parent.Root(), triedb, snaps)
 		if err != nil {
 			panic(fmt.Sprintf("could not find state for block %d: err=%v, parent root=%x", i, err, parent.Root()))

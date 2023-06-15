@@ -131,21 +131,25 @@ type Trie interface {
 // concurrent use, but does not retain any recent trie nodes in memory. To keep some
 // historical state in memory, use the NewDatabaseWithConfig constructor.
 func NewDatabase(db ethdb.Database) Database {
-	return NewDatabaseWithConfig(db, nil)
+	return NewDatabaseWithConfig(db, nil, false)
 }
 
 // NewDatabaseWithConfig creates a backing store for state. The returned database
 // is safe for concurrent use and retains a lot of collapsed RLP trie nodes in a
 // large memory cache.
-func NewDatabaseWithConfig(db ethdb.Database, config *trie.Config) Database {
+func NewDatabaseWithConfig(db ethdb.Database, config *trie.Config, completedVerkleConversion bool) Database {
 	csc, _ := lru.New(codeSizeCacheSize)
-	return &cachingDB{
+	triedb := &cachingDB{
 		db:            trie.NewDatabaseWithConfig(db, config),
 		disk:          db,
 		codeSizeCache: csc,
 		codeCache:     fastcache.New(codeCacheSize),
 		addrToPoint:   utils.NewPointCache(),
 	}
+	if completedVerkleConversion {
+		triedb.EndVerkleTransition()
+	}
+	return triedb
 }
 
 type cachingDB struct {
