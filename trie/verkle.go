@@ -85,6 +85,15 @@ func (trie *VerkleTrie) GetWithHashedKey(key []byte) ([]byte, error) {
 	return trie.root.Get(key, resolver)
 }
 
+// WORKAROUND: this special error is returned if it has been
+// detected that the account was deleted in the verkle tree.
+// This is needed in case an account was translated while it
+// was in the MPT, and was selfdestructed in verkle mode.
+//
+// This is only a problem for replays, and this code is not
+// needed after SELFDESTRUCT has been removed.
+var errDeletedAccount = errors.New("account deleted in VKT")
+
 func (t *VerkleTrie) TryGetAccount(key []byte) (*types.StateAccount, error) {
 	var (
 		acc      *types.StateAccount = &types.StateAccount{}
@@ -108,7 +117,7 @@ func (t *VerkleTrie) TryGetAccount(key []byte) (*types.StateAccount, error) {
 	// been recreated after that, then its code keccak will NOT be 0. So return `nil` if
 	// the nonce, and values[10], and code keccak is 0.
 	if acc.Nonce == 0 && len(values) > 10 && len(values[10]) > 0 && bytes.Equal(values[utils.CodeKeccakLeafKey], zero[:]) {
-		return nil, nil
+		return nil, errDeletedAccount
 	}
 	var balance [32]byte
 	copy(balance[:], values[utils.BalanceLeafKey])

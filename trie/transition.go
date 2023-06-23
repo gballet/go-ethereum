@@ -88,6 +88,11 @@ func (t *TransitionTrie) TryGet(addr, key []byte) ([]byte, error) {
 func (t *TransitionTrie) TryGetAccount(key []byte) (*types.StateAccount, error) {
 	data, err := t.overlay.TryGetAccount(key)
 	if err != nil {
+		// WORKAROUND, see the definition of errDeletedAccount
+		// for an explainer of why this if is needed.
+		if err == errDeletedAccount {
+			return nil, nil
+		}
 		return nil, err
 	}
 	if data != nil {
