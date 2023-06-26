@@ -26,7 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
-	trieUtils "github.com/ethereum/go-ethereum/trie/utils"
+	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/holiman/uint256"
 )
 
@@ -349,7 +349,8 @@ func opExtCodeSize(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	slot := scope.Stack.peek()
 	cs := uint64(interpreter.evm.StateDB.GetCodeSize(slot.Bytes20()))
 	if interpreter.evm.chainConfig.IsCancun(interpreter.evm.Context.BlockNumber) {
-		index := trieUtils.GetTreeKeyCodeSize(slot.Bytes())
+		// TODO cache this value as it has already been computed in the gas function
+		index := utils.GetTreeKeyCodeSizeWithEvaluatedAddress(utils.EvaluateAddressPoint(slot.Bytes()))
 		statelessGas := interpreter.evm.Accesses.TouchAddressOnReadAndComputeGas(index)
 		scope.Contract.UseGas(statelessGas)
 	}
@@ -439,7 +440,7 @@ func touchEachChunksOnReadAndChargeGas(offset, size uint64, contract *Contract, 
 	for i := offset / 31; i <= (endOffset-1)/31; i++ {
 		// only charge for+cache the chunk if it isn't already present
 		if !accesses.HasCodeChunk(contract.Address().Bytes(), i) {
-			index := trieUtils.GetTreeKeyCodeChunkWithEvaluatedAddress(contract.AddressPoint(), uint256.NewInt(i))
+			index := utils.GetTreeKeyCodeChunkWithEvaluatedAddress(contract.AddressPoint(), uint256.NewInt(i))
 
 			var overflow bool
 			statelessGasCharged, overflow = math.SafeAdd(statelessGasCharged, accesses.TouchAddressOnReadAndComputeGas(index))

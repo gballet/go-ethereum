@@ -295,8 +295,8 @@ func (aw *AccessWitness) TouchAndChargeMessageCall(addr []byte) uint64 {
 
 func (aw *AccessWitness) TouchAndChargeValueTransfer(callerAddr, targetAddr []byte) uint64 {
 	var gas uint64
-	gas += aw.TouchAddressOnWriteAndComputeGas(utils.GetTreeKeyBalance(callerAddr[:]))
-	gas += aw.TouchAddressOnWriteAndComputeGas(utils.GetTreeKeyBalance(targetAddr[:]))
+	gas += aw.TouchAddressOnWriteAndComputeGas(utils.GetTreeKeyBalanceWithEvaluatedAddress(utils.EvaluateAddressPoint(callerAddr[:])))
+	gas += aw.TouchAddressOnWriteAndComputeGas(utils.GetTreeKeyBalanceWithEvaluatedAddress(utils.EvaluateAddressPoint(targetAddr[:])))
 	return gas
 }
 
