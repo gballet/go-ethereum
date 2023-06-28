@@ -17,23 +17,32 @@
 package aura
 
 import (
+	"bytes"
 	"errors"
+	"fmt"
+	"math"
 	"math/big"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
 	lru "github.com/hashicorp/golang-lru"
+	"github.com/holiman/uint256"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -293,10 +302,166 @@ func (a *Aura) Prepare(chain consensus.ChainHeaderReader, header *types.Header) 
 	return nil
 }
 
+// RewardKind - The kind of block reward.
+// Depending on the consensus engine the allocated block reward might have
+// different semantics which could lead e.g. to different reward values.
+type RewardKind uint16
+
+const (
+	// RewardAuthor - attributed to the block author.
+	RewardAuthor RewardKind = 0
+	// RewardEmptyStep - attributed to the author(s) of empty step(s) included in the block (AuthorityRound engine).
+	RewardEmptyStep RewardKind = 1
+	// RewardExternal - attributed by an external protocol (e.g. block reward contract).
+	RewardExternal RewardKind = 2
+	// RewardUncle - attributed to the block uncle(s) with given difference.
+	RewardUncle RewardKind = 3
+)
+
+type Reward struct {
+	Beneficiary common.Address
+	Kind        RewardKind
+	Amount      uint256.Int
+}
+
+type BlockRewardContract struct {
+	blockNum uint64
+	address  common.Address // On-chain address.
+}
+
+type BlockRewardContractList []BlockRewardContract
+
+func (r BlockRewardContractList) Less(i, j int) bool { return r[i].blockNum < r[j].blockNum }
+func (r BlockRewardContractList) Len() int           { return len(r) }
+func (r BlockRewardContractList) Swap(i, j int)      { r[i], r[j] = r[j], r[i] }
+
+type BlockReward struct {
+	blockNum uint64
+	amount   *uint256.Int
+}
+
+type BlockRewardList []BlockReward
+
+func (a *Aura) CalculateRewards(header *types.Header, _ []*types.Header, chain consensus.ChainHeaderReader, statedb *state.StateDB) ([]Reward, error) {
+	var rewardContractAddress BlockRewardContract
+	rewardContractAddress = BlockRewardContract{
+		blockNum: 9186425,
+		address: common.HexToAddress("0x481c034c6d9441db23ea48de68bcae812c5d39ba"),
+	}
+		beneficiaries := []common.Address{header.Coinbase}
+		rewardKind := []RewardKind{RewardAuthor}
+		var amounts []*uint256.Int
+		beneficiaries, amounts = callBlockRewardAbi(rewardContractAddress.address, beneficiaries, rewardKind, chain, header, statedb)
+		rewards := make([]Reward, len(amounts))
+		for i, amount := range amounts {
+			rewards[i].Beneficiary = beneficiaries[i]
+			rewards[i].Kind = RewardExternal
+			rewards[i].Amount = *amount
+		}
+		return rewards, nil
+
+	r := Reward{Beneficiary: header.Coinbase, Kind: RewardAuthor, Amount: *uint256.NewInt(0)}
+	return []Reward{r}, nil
+}
+
+func callBlockRewardAbi(contractAddr common.Address, beneficiaries []common.Address, rewardKind []RewardKind, chain consensus.ChainHeaderReader, header *types.Header, statedb *state.StateDB) ([]common.Address, []*uint256.Int) {
+	castedKind := make([]uint16, len(rewardKind))
+	for i := range rewardKind {
+		castedKind[i] = uint16(rewardKind[i])
+	}
+	packed, err := blockRewardAbi().Pack("reward", beneficiaries, castedKind)
+	if err != nil {
+		panic(err)
+	out, err := syscall(contractAddr, packed, chain, header, statedb)
+	if err != nil {
+		panic(err)
+	}
+	if len(out) == 0 {
+		return nil, nil
+	}
+	res, err := blockRewardAbi().Unpack("reward", out)
+	if err != nil {
+		panic(err)
+	}
+	beneficiariesRes := res[0].([]common.Address)
+	rewardsBig := res[1].([]*big.Int)
+	rewardsU256 := make([]*uint256.Int, len(rewardsBig))
+	for i := 0; i < len(rewardsBig); i++ {
+		var overflow bool
+		rewardsU256[i], overflow = uint256.FromBig(rewardsBig[i])
+		if overflow {
+			panic("Overflow in callBlockRewardAbi")
+		}
+	}
+	return beneficiariesRes, rewardsU256
+}
+
+var blockRewardABIJSON = `[
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "name": "benefactors",
+        "type": "address[]"
+      },
+      {
+        "name": "kind",
+        "type": "uint16[]"
+      }
+    ],
+    "name": "reward",
+    "outputs": [
+      {
+        "name": "",
+        "type": "address[]"
+      },
+      {
+        "name": "",
+        "type": "uint256[]"
+      }
+    ],
+    "payable": false,
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+]`
+
+func blockRewardAbi() abi.ABI {
+	a, err := abi.JSON(bytes.NewReader([]byte(blockRewardABIJSON)))
+	if err != nil {
+		panic(err)
+	}
+	return a
+}
+
+func (a *Aura) applyRewards(header *types.Header, state *state.StateDB, chain consensus.ChainHeaderReader) error {
+	rewards, err := a.CalculateRewards(header, nil, chain, state)
+	if err != nil {
+		return err
+	}
+	for _, r := range rewards {
+		state.AddBalance(r.Beneficiary, r.Amount.ToBig())
+	}
+	return nil
+}
+func syscall(contractaddr common.Address, data []byte, chain consensus.ChainHeaderReader, header *types.Header, statedb *state.StateDB) ([]byte, error) {
+	sysaddr := common.HexToAddress("fffffffffffffffffffffffffffffffffffffffe")
+	msg := types.NewMessage(sysaddr, &contractaddr, 0, big.NewInt(0), math.MaxUint64, big.NewInt(0), nil, nil, data, nil, false)
+	txctx := core.NewEVMTxContext(msg)
+	blkctx := core.NewEVMBlockContext(header, chain.(*core.BlockChain), nil)
+	evm := vm.NewEVM(blkctx, txctx, statedb, chain.Config(), vm.Config{Debug: true, Tracer: logger.NewJSONLogger(nil, os.Stdout)})
+	ret, _, err := evm.Call(vm.AccountRef(sysaddr), contractaddr, data, math.MaxUint64, new(big.Int))
+	if err != nil {
+		panic(err)
+	}
+	return ret, err
+}
+
 // Finalize implements consensus.Engine, ensuring no uncles are set, nor block
 // rewards given, and returns the final block.
 func (a *Aura) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header) {
-	state.AddBalance(a.signer, big.NewInt(5*(10^18)))
+	if err := a.applyRewards(header, state, chain); err != nil {
+	}
 	// No block rewards in PoA, so the state remains as is and uncles are dropped
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))
 	header.UncleHash = types.CalcUncleHash(nil)
