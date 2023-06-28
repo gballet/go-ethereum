@@ -113,7 +113,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			defer accIt.Release()
 			accIt.Next()
 
-			const maxMovedCount = 1000
+			const maxMovedCount = 10000
 			// mkv will be assiting in the collection of up to maxMovedCount key values to be migrated to the VKT.
 			// It has internal caches to do efficient MPT->VKT key calculations, which will be discarded after
 			// this function.

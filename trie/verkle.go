@@ -257,13 +257,15 @@ func (trie *VerkleTrie) Commit(_ bool) (common.Hash, *NodeSet, error) {
 		return common.Hash{}, nil, fmt.Errorf("serializing tree nodes: %s", err)
 	}
 
+	batch := trie.db.diskdb.NewBatch()
 	for _, node := range nodes {
-		if err := trie.db.diskdb.Put(append([]byte("flat-"), node.Path...), node.SerializedBytes); err != nil {
+		if err := batch.Put(append([]byte("flat-"), node.Path...), node.SerializedBytes); err != nil {
 			return common.Hash{}, nil, fmt.Errorf("put node to disk: %s", err)
 		}
+		batch.Write()
 	}
 
-	return nodes[0].CommitmentBytes, nil, nil
+	return common.BytesToHash(nodes[0].CommitmentBytes[:32]), nil, nil
 }
 
 // NodeIterator returns an iterator that returns nodes of the trie. Iteration
