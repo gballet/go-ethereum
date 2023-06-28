@@ -267,7 +267,7 @@ var (
 	}
 
 	GnosisChainConfig = &ChainConfig{
-		ChainID:             big.NewInt(10200),
+		ChainID:             big.NewInt(100),
 		HomesteadBlock:      big.NewInt(0),
 		DAOForkBlock:        big.NewInt(0),
 		DAOForkSupport:      true,
