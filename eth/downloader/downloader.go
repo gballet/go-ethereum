@@ -803,6 +803,10 @@ func calculateRequestSpan(remoteHeight, localHeight uint64) (int64, int, int, ui
 // In the rare scenario when we ended up on a long reorganisation (i.e. none of
 // the head links match), we do a binary search to find the common ancestor.
 func (d *Downloader) findAncestor(p *peerConnection, remoteHeader *types.Header) (uint64, error) {
+	// This is a shortcut so that geth doesn't require having all
+	// the blocks. The complete block import has to be dnoe in order
+	// for other nodes to be able to sync from us.
+	return 26733531, nil
 	// Figure out the valid ancestor range to prevent rewrite attacks
 	var (
 		floor        = int64(-1)
