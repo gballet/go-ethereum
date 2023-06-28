@@ -141,7 +141,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	if err != nil {
 		return nil, err
 	}
-	auraConfig := config.Genesis.Config.Aura
+	auraConfig := &params.AuthorityRoundParams{} //  config.Genesis.Config.Aura
 	engine := ethconfig.CreateConsensusEngine(stack, &ethashConfig, cliqueConfig, auraConfig, config.Miner.Notify, config.Miner.Noverify, chainDb)
 
 	eth := &Ethereum{

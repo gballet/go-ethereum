@@ -2278,9 +2278,9 @@ func MakeChain(ctx *cli.Context, stack *node.Node, readonly bool) (*core.BlockCh
 	if ctx.Bool(FakePoWFlag.Name) {
 		ethashConfig.PowMode = ethash.ModeFake
 	}
-	var auraConfig *params.AuraConfig
+	var auraConfig *params.AuthorityRoundParams
 	if ctx.Bool(GnosisChainFlag.Name) {
-		auraConfig = &params.AuraConfig{}
+		auraConfig = &params.AuthorityRoundParams{}
 	}
 	engine := ethconfig.CreateConsensusEngine(stack, &ethashConfig, cliqueConfig, auraConfig, nil, false, chainDb)
 	if gcmode := ctx.String(GCModeFlag.Name); gcmode != "full" && gcmode != "archive" {

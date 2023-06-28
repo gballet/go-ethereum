@@ -284,7 +284,7 @@ var (
 		LondonBlock:         big.NewInt(19_040_000),
 		ArrowGlacierBlock:   big.NewInt(19_040_000),
 		GrayGlacierBlock:    big.NewInt(19_040_000),
-		Aura:                &AuraConfig{},
+		Aura:                nil,
 	}
 
 	// AllEthashProtocolChanges contains every protocol change (EIPs) introduced
@@ -407,11 +407,13 @@ type ChainConfig struct {
 	TerminalTotalDifficultyPassed bool `json:"terminalTotalDifficultyPassed,omitempty"`
 
 	// Various consensus engines
-	Ethash *EthashConfig `json:"ethash,omitempty"`
-	Clique *CliqueConfig `json:"clique,omitempty"`
-	Aura   *AuraConfig   `json:"aura,omitempty"`
+	Ethash *EthashConfig         `json:"ethash,omitempty"`
+	Clique *CliqueConfig         `json:"clique,omitempty"`
+	Aura   *AuthorityRoundParams `json:"aura,omitempty"`
 }
 
+type AuthorityRoundParams struct {
+}
 // EthashConfig is the consensus engine configs for proof-of-work based sealing.
 type EthashConfig struct{}
 
@@ -432,9 +434,6 @@ func (c *CliqueConfig) String() string {
 }
 
 type Signature []byte
-
-type AuraConfig struct {
-}
 
 // Description returns a human-readable description of ChainConfig.
 func (c *ChainConfig) Description() string {

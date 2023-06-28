@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -444,6 +445,13 @@ func (g *Genesis) configOrDefault(ghash common.Hash) *params.ChainConfig {
 	case ghash == params.KilnGenesisHash:
 		return DefaultKilnGenesisBlock().Config
 	case ghash == params.GnosisChainHash:
+		// Load the config from the chainspec
+		params.GnosisChainConfig.Aura = new(params.AuthorityRoundParams)
+		data, err := os.ReadFile("xdai.json")
+		if err != nil {
+			panic(fmt.Sprintf("could not find the gnosis chain's spec file: %v", err))
+		}
+		json.Unmarshal(data, params.GnosisChainConfig.Aura)
 		return params.GnosisChainConfig
 	default:
 		return params.AllEthashProtocolChanges
