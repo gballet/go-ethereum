@@ -65,7 +65,7 @@ func BenchmarkPedersenHash(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		rand.Read(v[:])
 		rand.Read(addr[:])
-		GetTreeKeyCodeSize(addr[:])
+		GetTreeKeyVersion(addr[:])
 	}
 }
 
