@@ -258,8 +258,11 @@ func (trie *VerkleTrie) Commit(_ bool) (common.Hash, *NodeSet, error) {
 	}
 
 	batch := trie.db.diskdb.NewBatch()
+	const keyPrefix = "flat-"
+	path := make([]byte, 0, len(keyPrefix)+32)
+	path = append(path, []byte(keyPrefix)...)
 	for _, node := range nodes {
-		path := append([]byte("flat-"), node.Path...)
+		path := append(path[:len(keyPrefix)], node.Path...)
 
 		if err := batch.Put(path, node.SerializedBytes); err != nil {
 			return common.Hash{}, nil, fmt.Errorf("put node to disk: %s", err)
