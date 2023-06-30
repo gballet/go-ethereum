@@ -220,7 +220,6 @@ func ImportChain(chain *core.BlockChain, fn string) error {
 		}
 		missing := missingBlocks(chain, blocks[:i])
 		if len(missing) == 0 {
-			fmt.Println(reader)
 			log.Info("Skipping batch as all blocks present", "batch", batch, "first", blocks[0].Hash(), "last", blocks[i-1].Hash())
 			continue
 		}
