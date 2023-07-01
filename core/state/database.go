@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/gballet/go-verkle"
@@ -38,6 +39,12 @@ const (
 
 	// Cache size granted for caching clean code.
 	codeCacheSize = 64 * 1024 * 1024
+)
+
+var (
+	dbKeyOverlayTransitionStarted = []byte("overlay-transition-started")
+	dbKeyOverlayTransitionEnded   = []byte("overlay-transition-ended")
+	translatedRootPrefix          = []byte("translated-")
 )
 
 // Database wraps access to tries and contract code.
@@ -137,6 +144,14 @@ func NewDatabase(db ethdb.Database) Database {
 // large memory cache.
 func NewDatabaseWithConfig(db ethdb.Database, config *trie.Config) Database {
 	csc, _ := lru.New(codeSizeCacheSize)
+	transitionStarted, err := db.Has(dbKeyOverlayTransitionStarted)
+	if err != nil {
+		panic(err)
+	}
+	transitionEnded, err := db.Has(dbKeyOverlayTransitionEnded)
+	if err != nil {
+		panic(err)
+	}
 	return &ForkingDB{
 		cachingDB: &cachingDB{
 			db:            trie.NewDatabaseWithConfig(db, config),
@@ -151,8 +166,8 @@ func NewDatabaseWithConfig(db ethdb.Database, config *trie.Config) Database {
 			codeCache:     fastcache.New(codeCacheSize),
 			addrToPoint:   utils.NewPointCache(),
 		},
-		started: (config != nil && config.UseVerkle),
-		ended:   (config != nil && config.UseVerkle),
+		started: transitionStarted,
+		ended:   transitionEnded,
 	}
 }
 
@@ -164,9 +179,6 @@ type ForkingDB struct {
 
 	// TODO ensure that this info is in the DB
 	started, ended      bool
-	translatedRoots     [32]common.Hash // hash of the translated root, for opening
-	origRoots           [32]common.Hash
-	translationIndex    int
 	translatedRootsLock sync.RWMutex
 
 	baseRoot           common.Hash // hash of the read-only base tree
@@ -283,7 +295,7 @@ func (fdg *ForkingDB) Transitionned() bool {
 }
 
 // Fork implements the fork
-func (fdb *ForkingDB) StartTransition(originalRoot, translatedRoot common.Hash) {
+func (fdb *ForkingDB) StartTransition(originalRoot, translatedRoot common.Hash) error {
 	fmt.Println(`
 	__________.__                       .__                .__                   __       .__                               .__          ____         
 	\__    ___|  |__   ____        ____ |  |   ____ ______ |  |__ _____    _____/  |_     |  |__ _____    ______    __  _  _|__| ____   / ___\ ______
@@ -292,13 +304,18 @@ func (fdb *ForkingDB) StartTransition(originalRoot, translatedRoot common.Hash) 
 	  |____|  |___|  /\___        \___  |____/\___  |   __/|___|  (____  |___|  |__|      |___|  (____  /_____/       \/\_/ |__|___|  /_____//_____/
                                                     |__|`)
 	fdb.started = true
+	if err := fdb.VerkleDB.diskdb.Put(dbKeyOverlayTransitionStarted, []byte{1}); err != nil {
+		return fmt.Errorf("failed to start transition: %s", err)
+	}
 	fdb.AddTranslation(originalRoot, translatedRoot)
 	fdb.baseRoot = originalRoot
 	// initialize so that the first storage-less accounts are processed
 	fdb.StorageProcessed = true
+
+	return nil
 }
 
-func (fdb *ForkingDB) EndTransition() {
+func (fdb *ForkingDB) EndTransition() error {
 	fmt.Println(`
 	__________.__                       .__                .__                   __       .__                       .__                    .___         .___
 	\__    ___|  |__   ____        ____ |  |   ____ ______ |  |__ _____    _____/  |_     |  |__ _____    ______    |  | _____    ____   __| _/____   __| _/
@@ -307,26 +324,28 @@ func (fdb *ForkingDB) EndTransition() {
 	  |____|  |___|  /\___        \___  |____/\___  |   __/|___|  (____  |___|  |__|      |___|  (____  /_____/     |____(____  |___|  \____ |\___  \____ |
                                                     |__|`)
 	fdb.ended = true
+	if err := fdb.VerkleDB.diskdb.Put(dbKeyOverlayTransitionEnded, []byte{1}); err != nil {
+		return fmt.Errorf("failed to mark transition as ended: %s", err)
+	}
+	return nil
 }
 
 func (fdb *ForkingDB) AddTranslation(orig, trans common.Hash) {
 	// TODO make this persistent
 	fdb.translatedRootsLock.Lock()
 	defer fdb.translatedRootsLock.Unlock()
-	fdb.translatedRoots[fdb.translationIndex] = trans
-	fdb.origRoots[fdb.translationIndex] = orig
-	fdb.translationIndex = (fdb.translationIndex + 1) % len(fdb.translatedRoots)
+	fdb.diskdb.Put(append(translatedRootPrefix, orig.Bytes()...), trans.Bytes())
+	log.Info("Saved translation", "originRoot", orig.Bytes(), "translatedRoot", trans.Bytes())
 }
 
 func (fdb *ForkingDB) getTranslation(orig common.Hash) common.Hash {
 	fdb.translatedRootsLock.RLock()
 	defer fdb.translatedRootsLock.RUnlock()
-	for i, o := range fdb.origRoots {
-		if o == orig {
-			return fdb.translatedRoots[i]
-		}
+	trans, err := fdb.diskdb.Get(append(translatedRootPrefix, orig.Bytes()...))
+	if err != nil {
+		return common.Hash{}
 	}
-	return common.Hash{}
+	return common.BytesToHash(trans)
 }
 
 type cachingDB struct {
