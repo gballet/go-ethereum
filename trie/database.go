@@ -123,10 +123,11 @@ func (db *Database) StorageRootConversion(addr []byte) common.Hash {
 }
 
 func (db *Database) ClearStorageRootConversion() {
-	// Not sure what makes sense, try with 128 MB
-	if len(db.addrToRoot) < 128*1024*1024 {
+	// Not sure what makes sense, try with ~128 MB
+	if len(db.addrToRoot) < 128*1024*1024/80 {
 		return
 	}
+	log.Info("Clearing storage root conversion cache")
 	db.addrToRootLock.Lock()
 	defer db.addrToRootLock.Unlock()
 	db.addrToRoot = nil
