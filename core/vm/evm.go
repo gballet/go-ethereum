@@ -138,7 +138,7 @@ func NewEVM(blockCtx BlockContext, txCtx TxContext, statedb StateDB, chainConfig
 		chainRules:  chainConfig.Rules(blockCtx.BlockNumber, blockCtx.Random != nil, blockCtx.Time),
 	}
 	if txCtx.Accesses == nil && chainConfig.IsVerkle(blockCtx.BlockNumber, blockCtx.Time) {
-		txCtx.Accesses = state.NewAccessWitness(evm.StateDB.(*state.StateDB))
+		txCtx.Accesses = evm.StateDB.(*state.StateDB).NewFreshAccessWitness()
 	}
 	evm.interpreter = NewEVMInterpreter(evm)
 	return evm
@@ -148,7 +148,7 @@ func NewEVM(blockCtx BlockContext, txCtx TxContext, statedb StateDB, chainConfig
 // This is not threadsafe and should only be done very cautiously.
 func (evm *EVM) Reset(txCtx TxContext, statedb StateDB) {
 	if txCtx.Accesses == nil && evm.chainRules.IsVerkle {
-		txCtx.Accesses = state.NewAccessWitness(evm.StateDB.(*state.StateDB))
+		txCtx.Accesses = evm.StateDB.(*state.StateDB).NewFreshAccessWitness()
 	}
 	evm.TxContext = txCtx
 	evm.StateDB = statedb
