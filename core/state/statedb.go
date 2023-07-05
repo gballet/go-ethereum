@@ -175,6 +175,17 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 			sdb.snapDestructs = make(map[common.Hash]struct{})
 			sdb.snapAccounts = make(map[common.Hash][]byte)
 			sdb.snapStorage = make(map[common.Hash]map[common.Hash][]byte)
+		} else {
+			if fdb, ok := db.(*ForkingDB); ok {
+				trans := fdb.getTranslation(root)
+				if trans != (common.Hash{}) {
+					if sdb.snap = sdb.snaps.Snapshot(trans); sdb.snap != nil {
+						sdb.snapDestructs = make(map[common.Hash]struct{})
+						sdb.snapAccounts = make(map[common.Hash][]byte)
+						sdb.snapStorage = make(map[common.Hash]map[common.Hash][]byte)
+					}
+				}
+			}
 		}
 	}
 	return sdb, nil
