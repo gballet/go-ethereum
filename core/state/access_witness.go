@@ -225,7 +225,7 @@ func (aw *AccessWitness) touchAddress(addr []byte, treeIndex uint256.Int, subInd
 		}
 
 		chunkValue := aw.chunks[chunkKey]
-		if ((chunkValue & AccessWitnessWriteFlag) == 0) && ((chunkValue | AccessWitnessWriteFlag) != 0) {
+		if (chunkValue & AccessWitnessWriteFlag) == 0 {
 			chunkWrite = true
 			aw.chunks[chunkKey] |= chunkValue
 		}
