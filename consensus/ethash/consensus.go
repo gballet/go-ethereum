@@ -35,6 +35,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
+	"github.com/holiman/uint256"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -669,8 +670,7 @@ func accumulateRewards(config *params.ChainConfig, state *state.StateDB, header 
 		r.Div(r, big8)
 
 		if config.IsCancun(header.Number) {
-			uncleCoinbase := utils.GetTreeKeyBalance(uncle.Coinbase.Bytes())
-			state.Witness().TouchAddressOnReadAndComputeGas(uncleCoinbase)
+			state.Witness().TouchAddressOnReadAndComputeGas(uncle.Coinbase.Bytes(), uint256.Int{}, utils.BalanceLeafKey)
 		}
 		state.AddBalance(uncle.Coinbase, r)
 
@@ -678,14 +678,10 @@ func accumulateRewards(config *params.ChainConfig, state *state.StateDB, header 
 		reward.Add(reward, r)
 	}
 	if config.IsCancun(header.Number) {
-		coinbase := utils.GetTreeKeyBalance(header.Coinbase.Bytes())
-		state.Witness().TouchAddressOnReadAndComputeGas(coinbase)
-		coinbase[31] = utils.VersionLeafKey // mark version
-		state.Witness().TouchAddressOnReadAndComputeGas(coinbase)
-		coinbase[31] = utils.NonceLeafKey // mark nonce
-		state.Witness().TouchAddressOnReadAndComputeGas(coinbase)
-		coinbase[31] = utils.CodeKeccakLeafKey // mark code keccak
-		state.Witness().TouchAddressOnReadAndComputeGas(coinbase)
+		state.Witness().TouchAddressOnReadAndComputeGas(header.Coinbase.Bytes(), uint256.Int{}, utils.BalanceLeafKey)
+		state.Witness().TouchAddressOnReadAndComputeGas(header.Coinbase.Bytes(), uint256.Int{}, utils.VersionLeafKey)
+		state.Witness().TouchAddressOnReadAndComputeGas(header.Coinbase.Bytes(), uint256.Int{}, utils.NonceLeafKey)
+		state.Witness().TouchAddressOnReadAndComputeGas(header.Coinbase.Bytes(), uint256.Int{}, utils.CodeKeccakLeafKey)
 	}
 	state.AddBalance(header.Coinbase, reward)
 }
