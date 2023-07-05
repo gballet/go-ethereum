@@ -22,54 +22,54 @@ import (
 	"github.com/ethereum/go-ethereum/trie/utils"
 )
 
-type VerkleStem [31]byte
+type verkleStem [31]byte
 
-// Mode specifies how a tree location has been accessed
+// mode specifies how a tree location has been accessed
 // for the byte value:
 // * the first bit is set if the branch has been edited
 // * the second bit is set if the branch has been read
-type Mode byte
+type mode byte
 
 const (
-	AccessWitnessReadFlag  = Mode(1)
-	AccessWitnessWriteFlag = Mode(2)
+	AccessWitnessReadFlag  = mode(1)
+	AccessWitnessWriteFlag = mode(2)
 )
 
 // AccessWitness lists the locations of the state that are being accessed
 // during the production of a block.
 type AccessWitness struct {
-	// Branches flags if a given branch has been loaded
-	Branches map[VerkleStem]Mode
+	// branches flags if a given branch has been loaded
+	branches map[verkleStem]mode
 
-	// Chunks contains the initial value of each address
-	Chunks map[common.Hash]Mode
+	// chunks contains the initial value of each address
+	chunks map[common.Hash]mode
 
-	// InitialValue contains either `nil` if the location
+	// initialValue contains either `nil` if the location
 	// didn't exist before it was accessed, or the value
 	// that a location had before the execution of this
 	// block.
-	InitialValue map[string][]byte
+	initialValue map[string][]byte
 
 	// Caches which code chunks have been accessed, in order
 	// to reduce the number of times that GetTreeKeyCodeChunk
 	// is called.
-	CodeLocations map[string]map[uint64]struct{}
+	codeLocations map[string]map[uint64]struct{}
 
 	statedb *StateDB
 }
 
 func NewAccessWitness(statedb *StateDB) *AccessWitness {
 	return &AccessWitness{
-		Branches:      make(map[VerkleStem]Mode),
-		Chunks:        make(map[common.Hash]Mode),
-		InitialValue:  make(map[string][]byte),
-		CodeLocations: make(map[string]map[uint64]struct{}),
+		branches:      make(map[verkleStem]mode),
+		chunks:        make(map[common.Hash]mode),
+		initialValue:  make(map[string][]byte),
+		codeLocations: make(map[string]map[uint64]struct{}),
 		statedb:       statedb,
 	}
 }
 
 func (aw *AccessWitness) HasCodeChunk(addr []byte, chunknr uint64) bool {
-	if locs, ok := aw.CodeLocations[string(addr)]; ok {
+	if locs, ok := aw.codeLocations[string(addr)]; ok {
 		if _, ok = locs[chunknr]; ok {
 			return true
 		}
@@ -78,23 +78,21 @@ func (aw *AccessWitness) HasCodeChunk(addr []byte, chunknr uint64) bool {
 	return false
 }
 
-// SetCodeLeafValue does the same thing as SetLeafValue, but for code chunks. It
-// maintains a cache of which (address, chunk) were calculated, in order to avoid
-// calling GetTreeKey more than once per chunk.
+// SetCachedCodeChunk marks the given (address, chunk) as having been calculated.
 func (aw *AccessWitness) SetCachedCodeChunk(addr []byte, chunknr uint64) {
-	if locs, ok := aw.CodeLocations[string(addr)]; ok {
+	if locs, ok := aw.codeLocations[string(addr)]; ok {
 		if _, ok = locs[chunknr]; ok {
 			return
 		}
 	} else {
-		aw.CodeLocations[string(addr)] = map[uint64]struct{}{}
+		aw.codeLocations[string(addr)] = map[uint64]struct{}{}
 	}
 
-	aw.CodeLocations[string(addr)][chunknr] = struct{}{}
+	aw.codeLocations[string(addr)][chunknr] = struct{}{}
 }
 
 func (aw *AccessWitness) touchAddressOnWrite(addr []byte) (bool, bool, bool) {
-	var stem VerkleStem
+	var stem verkleStem
 	var stemWrite, chunkWrite, chunkFill bool
 	copy(stem[:], addr[:31])
 
@@ -102,17 +100,17 @@ func (aw *AccessWitness) touchAddressOnWrite(addr []byte) (bool, bool, bool) {
 	// respective maps because this function is called at the end of
 	// processing a read access event
 
-	if (aw.Branches[stem] & AccessWitnessWriteFlag) == 0 {
+	if (aw.branches[stem] & AccessWitnessWriteFlag) == 0 {
 		stemWrite = true
-		aw.Branches[stem] |= AccessWitnessWriteFlag
+		aw.branches[stem] |= AccessWitnessWriteFlag
 	}
 
-	chunkValue := aw.Chunks[common.BytesToHash(addr)]
+	chunkValue := aw.chunks[common.BytesToHash(addr)]
 	// if chunkValue.mode XOR AccessWitnessWriteFlag
 	if ((chunkValue & AccessWitnessWriteFlag) == 0) && ((chunkValue | AccessWitnessWriteFlag) != 0) {
 		chunkWrite = true
 		chunkValue |= AccessWitnessWriteFlag
-		aw.Chunks[common.BytesToHash(addr)] = chunkValue
+		aw.chunks[common.BytesToHash(addr)] = chunkValue
 	}
 
 	// TODO charge chunk filling costs if the leaf was previously empty in the state
@@ -138,15 +136,15 @@ func (aw *AccessWitness) touchAddress(addr []byte, isWrite bool) (bool, bool, bo
 	copy(stem[:], addr[:31])
 
 	// Check for the presence of the stem
-	if _, hasStem := aw.Branches[stem]; !hasStem {
+	if _, hasStem := aw.branches[stem]; !hasStem {
 		stemRead = true
-		aw.Branches[stem] = AccessWitnessReadFlag
+		aw.branches[stem] = AccessWitnessReadFlag
 	}
 
 	// Check for the presence of the leaf selector
-	if _, hasSelector := aw.Chunks[common.BytesToHash(addr)]; !hasSelector {
+	if _, hasSelector := aw.chunks[common.BytesToHash(addr)]; !hasSelector {
 		selectorRead = true
-		aw.Chunks[common.BytesToHash(addr)] = AccessWitnessReadFlag
+		aw.chunks[common.BytesToHash(addr)] = AccessWitnessReadFlag
 	}
 
 	if isWrite {
@@ -192,21 +190,21 @@ func (aw *AccessWitness) TouchAddressOnReadAndComputeGas(addr []byte) uint64 {
 // of a tx, with the accumulation of witnesses that were generated during the
 // execution of all the txs preceding this one in a given block.
 func (aw *AccessWitness) Merge(other *AccessWitness) {
-	for k := range other.Branches {
-		if _, ok := aw.Branches[k]; !ok {
-			aw.Branches[k] = other.Branches[k]
+	for k := range other.branches {
+		if _, ok := aw.branches[k]; !ok {
+			aw.branches[k] = other.branches[k]
 		}
 	}
 
-	for k, chunk := range other.Chunks {
-		if _, ok := aw.Chunks[k]; !ok {
-			aw.Chunks[k] = chunk
+	for k, chunk := range other.chunks {
+		if _, ok := aw.chunks[k]; !ok {
+			aw.chunks[k] = chunk
 		}
 	}
 
-	for k, v := range other.InitialValue {
-		if _, ok := aw.InitialValue[k]; !ok {
-			aw.InitialValue[k] = v
+	for k, v := range other.initialValue {
+		if _, ok := aw.initialValue[k]; !ok {
+			aw.initialValue[k] = v
 		}
 	}
 
@@ -221,8 +219,8 @@ func (aw *AccessWitness) Merge(other *AccessWitness) {
 // Key returns, predictably, the list of keys that were touched during the
 // buildup of the access witness.
 func (aw *AccessWitness) Keys() [][]byte {
-	keys := make([][]byte, 0, len(aw.Chunks))
-	for key := range aw.Chunks {
+	keys := make([][]byte, 0, len(aw.chunks))
+	for key := range aw.chunks {
 		var k [32]byte
 		copy(k[:], key[:])
 		keys = append(keys, k[:])
@@ -232,7 +230,7 @@ func (aw *AccessWitness) Keys() [][]byte {
 
 func (aw *AccessWitness) KeyVals() map[string][]byte {
 	result := make(map[string][]byte)
-	for k, v := range aw.InitialValue {
+	for k, v := range aw.initialValue {
 		result[k] = v
 	}
 	return result
@@ -240,9 +238,9 @@ func (aw *AccessWitness) KeyVals() map[string][]byte {
 
 func (aw *AccessWitness) Copy() *AccessWitness {
 	naw := &AccessWitness{
-		Branches:     make(map[VerkleStem]Mode),
-		Chunks:       make(map[common.Hash]Mode),
-		InitialValue: make(map[string][]byte),
+		branches:     make(map[verkleStem]mode),
+		chunks:       make(map[common.Hash]mode),
+		initialValue: make(map[string][]byte),
 	}
 
 	naw.Merge(aw)
