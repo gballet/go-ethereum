@@ -44,12 +44,6 @@ type AccessWitness struct {
 	// chunks contains the initial value of each address
 	chunks map[common.Hash]mode
 
-	// initialValue contains either `nil` if the location
-	// didn't exist before it was accessed, or the value
-	// that a location had before the execution of this
-	// block.
-	initialValue map[string][]byte
-
 	// Caches which code chunks have been accessed, in order
 	// to reduce the number of times that GetTreeKeyCodeChunk
 	// is called.
@@ -58,11 +52,12 @@ type AccessWitness struct {
 	statedb *StateDB
 }
 
+// TODO(jsign): consider Reset() API.
+
 func NewAccessWitness(statedb *StateDB) *AccessWitness {
 	return &AccessWitness{
 		branches:      make(map[verkleStem]mode),
 		chunks:        make(map[common.Hash]mode),
-		initialValue:  make(map[string][]byte),
 		codeLocations: make(map[string]map[uint64]struct{}),
 		statedb:       statedb,
 	}
@@ -125,7 +120,7 @@ func (aw *AccessWitness) touchAddressOnWrite(addr []byte) (bool, bool, bool) {
 	return stemWrite, chunkWrite, chunkFill
 }
 
-// TouchAddress adds any missing addr to the witness and returns respectively
+// touchAddress adds any missing addr to the witness and returns respectively
 // true if the stem or the stub weren't arleady present.
 func (aw *AccessWitness) touchAddress(addr []byte, isWrite bool) (bool, bool, bool, bool, bool) {
 	var (
@@ -142,9 +137,10 @@ func (aw *AccessWitness) touchAddress(addr []byte, isWrite bool) (bool, bool, bo
 	}
 
 	// Check for the presence of the leaf selector
-	if _, hasSelector := aw.chunks[common.BytesToHash(addr)]; !hasSelector {
+	addrHash := common.BytesToHash(addr)
+	if _, hasSelector := aw.chunks[addrHash]; !hasSelector {
 		selectorRead = true
-		aw.chunks[common.BytesToHash(addr)] = AccessWitnessReadFlag
+		aw.chunks[addrHash] = AccessWitnessReadFlag
 	}
 
 	if isWrite {
@@ -155,10 +151,9 @@ func (aw *AccessWitness) touchAddress(addr []byte, isWrite bool) (bool, bool, bo
 }
 
 func (aw *AccessWitness) touchAddressAndChargeGas(addr []byte, isWrite bool) uint64 {
-	var gas uint64
-
 	stemRead, selectorRead, stemWrite, selectorWrite, selectorFill := aw.touchAddress(addr, isWrite)
 
+	var gas uint64
 	if stemRead {
 		gas += params.WitnessBranchReadCost
 	}
@@ -178,6 +173,7 @@ func (aw *AccessWitness) touchAddressAndChargeGas(addr []byte, isWrite bool) uin
 	return gas
 }
 
+// TODO(jsign): used?
 func (aw *AccessWitness) TouchAddressOnWriteAndComputeGas(addr []byte) uint64 {
 	return aw.touchAddressAndChargeGas(addr, true)
 }
@@ -202,12 +198,6 @@ func (aw *AccessWitness) Merge(other *AccessWitness) {
 		}
 	}
 
-	for k, v := range other.initialValue {
-		if _, ok := aw.initialValue[k]; !ok {
-			aw.initialValue[k] = v
-		}
-	}
-
 	// TODO see if merging improves performance
 	//for k, v := range other.addrToPoint {
 	//if _, ok := aw.addrToPoint[k]; !ok {
@@ -228,19 +218,10 @@ func (aw *AccessWitness) Keys() [][]byte {
 	return keys
 }
 
-func (aw *AccessWitness) KeyVals() map[string][]byte {
-	result := make(map[string][]byte)
-	for k, v := range aw.initialValue {
-		result[k] = v
-	}
-	return result
-}
-
 func (aw *AccessWitness) Copy() *AccessWitness {
 	naw := &AccessWitness{
-		branches:     make(map[verkleStem]mode),
-		chunks:       make(map[common.Hash]mode),
-		initialValue: make(map[string][]byte),
+		branches: make(map[verkleStem]mode),
+		chunks:   make(map[common.Hash]mode),
 	}
 
 	naw.Merge(aw)
