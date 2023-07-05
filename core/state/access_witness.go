@@ -23,8 +23,6 @@ import (
 	"github.com/holiman/uint256"
 )
 
-type verkleStem [31]byte
-
 // mode specifies how a tree location has been accessed
 // for the byte value:
 // * the first bit is set if the branch has been edited

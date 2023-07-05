@@ -244,7 +244,7 @@ func applyTransaction(msg types.Message, config *params.ChainConfig, author *com
 	// Create a new context to be used in the EVM environment.
 	txContext := NewEVMTxContext(msg)
 	if config.IsCancun(blockNumber) {
-		txContext.Accesses = state.NewAccessWitness(statedb)
+		txContext.Accesses = statedb.NewFreshAccessWitness()
 	}
 	evm.Reset(txContext, statedb)
 
