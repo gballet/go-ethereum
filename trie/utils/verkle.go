@@ -269,6 +269,11 @@ func EvaluateAddressPoint(address []byte) *verkle.Point {
 }
 
 func GetTreeKeyStorageSlotWithEvaluatedAddress(evaluated *verkle.Point, storageKey []byte) []byte {
+	treeIndex, subIndex := GetTreeKeyStorageSlotTreeIndexes(storageKey)
+	return GetTreeKeyWithEvaluatedAddess(evaluated, treeIndex, subIndex)
+}
+
+func GetTreeKeyStorageSlotTreeIndexes(storageKey []byte) (*uint256.Int, byte) {
 	// Note that `pos` must be a big.Int and not a uint256.Int, because the subsequent
 	// arithmetics operations could overflow. (e.g: imagine if storageKey is 2^256-1)
 	pos := new(big.Int).SetBytes(storageKey)
@@ -286,5 +291,5 @@ func GetTreeKeyStorageSlotWithEvaluatedAddress(evaluated *verkle.Point, storageK
 	posBytes := pos.Bytes()
 	subIndex := posBytes[len(posBytes)-1]
 
-	return GetTreeKeyWithEvaluatedAddess(evaluated, treeIndex, subIndex)
+	return treeIndex, subIndex
 }
