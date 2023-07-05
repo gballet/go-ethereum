@@ -174,7 +174,7 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 		hasher:               crypto.NewKeccakState(),
 	}
 	if tr.IsVerkle() {
-		sdb.witness = NewAccessWitness(sdb)
+		sdb.witness = NewAccessWitness(db.(*VerkleDB).addrToPoint)
 		// if sdb.snaps == nil {
 		// snapconfig := snapshot.Config{
 		// 	CacheSize:  256,
@@ -208,7 +208,7 @@ func (s *StateDB) Snaps() *snapshot.Tree {
 
 func (s *StateDB) Witness() *AccessWitness {
 	if s.witness == nil {
-		s.witness = NewAccessWitness(s)
+		s.witness = NewAccessWitness(s.db.(*VerkleDB).addrToPoint)
 	}
 	return s.witness
 }
