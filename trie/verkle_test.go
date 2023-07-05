@@ -65,14 +65,12 @@ func TestReproduceTree(t *testing.T) {
 	}
 
 	root := verkle.New()
-	kv := make(map[string][]byte)
 
 	for i, key := range presentKeys {
 		root.Insert(key, values[i], nil)
-		kv[string(key)] = values[i]
 	}
 
-	proof, Cs, zis, yis, _ := verkle.MakeVerkleMultiProof(root, append(presentKeys, absentKeys...), kv)
+	proof, Cs, zis, yis, _ := verkle.MakeVerkleMultiProof(root, append(presentKeys, absentKeys...))
 	cfg := verkle.GetConfig()
 	if !verkle.VerifyVerkleProof(proof, Cs, zis, yis, cfg) {
 		t.Fatal("could not verify proof")
@@ -286,14 +284,12 @@ func TestReproduceCondrieuStemAggregationInProofOfAbsence(t *testing.T) {
 	}
 
 	root := verkle.New()
-	kv := make(map[string][]byte)
 
 	for i, key := range presentKeys {
 		root.Insert(key, values[i], nil)
-		kv[string(key)] = values[i]
 	}
 
-	proof, Cs, zis, yis, _ := verkle.MakeVerkleMultiProof(root, append(presentKeys, absentKeys...), kv)
+	proof, Cs, zis, yis, _ := verkle.MakeVerkleMultiProof(root, append(presentKeys, absentKeys...))
 	cfg := verkle.GetConfig()
 	if !verkle.VerifyVerkleProof(proof, Cs, zis, yis, cfg) {
 		t.Fatal("could not verify proof")
@@ -333,14 +329,12 @@ func TestReproduceCondrieuPoAStemConflictWithAnotherStem(t *testing.T) {
 	}
 
 	root := verkle.New()
-	kv := make(map[string][]byte)
 
 	for i, key := range presentKeys {
 		root.Insert(key, values[i], nil)
-		kv[string(key)] = values[i]
 	}
 
-	proof, Cs, zis, yis, _ := verkle.MakeVerkleMultiProof(root, append(presentKeys, absentKeys...), kv)
+	proof, Cs, zis, yis, _ := verkle.MakeVerkleMultiProof(root, append(presentKeys, absentKeys...))
 	cfg := verkle.GetConfig()
 	if !verkle.VerifyVerkleProof(proof, Cs, zis, yis, cfg) {
 		t.Fatal("could not verify proof")
@@ -366,7 +360,7 @@ func TestReproduceCondrieuPoAStemConflictWithAnotherStem(t *testing.T) {
 
 func TestEmptyKeySetInProveAndSerialize(t *testing.T) {
 	tree := verkle.New()
-	verkle.MakeVerkleMultiProof(tree, [][]byte{}, map[string][]byte{})
+	verkle.MakeVerkleMultiProof(tree, [][]byte{})
 }
 
 func TestGetTreeKeys(t *testing.T) {
