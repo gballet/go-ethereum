@@ -217,9 +217,7 @@ func (fdb *ForkingDB) OpenStorageTrie(stateRoot, addrHash, root common.Hash, sel
 	if fdb.started && err == nil {
 		// Return a "storage trie" that is an adapter between the storge MPT
 		// and the unique verkle tree.
-		fdb.translatedRootsLock.RLock()
 		vkt, err := fdb.VerkleDB.OpenStorageTrie(stateRoot, addrHash, fdb.getTranslation(root), self.(*trie.TransitionTrie).Overlay())
-		fdb.translatedRootsLock.RUnlock()
 		if err != nil {
 			return nil, err
 		}
@@ -241,9 +239,7 @@ func (fdb *ForkingDB) OpenTrie(root common.Hash) (Trie, error) {
 		if err != nil {
 			return nil, err
 		}
-		fdb.translatedRootsLock.RLock()
 		vkt, err := fdb.VerkleDB.OpenTrie(fdb.getTranslation(root))
-		fdb.translatedRootsLock.RUnlock()
 		if err != nil {
 			return nil, err
 		}
