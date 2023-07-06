@@ -19,6 +19,7 @@ package state
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"sync"
 
 	"github.com/VictoriaMetrics/fastcache"
@@ -26,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/gballet/go-verkle"
@@ -283,7 +285,7 @@ func (fdg *ForkingDB) Transitionned() bool {
 }
 
 // Fork implements the fork
-func (fdb *ForkingDB) StartTransition(originalRoot, translatedRoot common.Hash) {
+func (fdb *ForkingDB) StartTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, cancunBlock *big.Int) {
 	fmt.Println(`
 	__________.__                       .__                .__                   __       .__                               .__          ____         
 	\__    ___|  |__   ____        ____ |  |   ____ ______ |  |__ _____    _____/  |_     |  |__ _____    ______    __  _  _|__| ____   / ___\ ______
@@ -296,6 +298,7 @@ func (fdb *ForkingDB) StartTransition(originalRoot, translatedRoot common.Hash) 
 	fdb.baseRoot = originalRoot
 	// initialize so that the first storage-less accounts are processed
 	fdb.StorageProcessed = true
+	chainConfig.CancunBlock = cancunBlock
 }
 
 func (fdb *ForkingDB) EndTransition() {

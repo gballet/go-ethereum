@@ -1688,7 +1688,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 		}
 
 		if parent.Number.Uint64() == conversionBlock {
-			bc.StartVerkleTransition(parent.Root, emptyVerkleRoot)
+			bc.StartVerkleTransition(parent.Root, emptyVerkleRoot, bc.Config(), parent.Number)
 		}
 		statedb, err := state.New(parent.Root, bc.stateCache, bc.snaps)
 		if err != nil {
@@ -2459,8 +2459,8 @@ func (bc *BlockChain) SetBlockValidatorAndProcessorForTesting(v Validator, p Pro
 	bc.processor = p
 }
 
-func (bc *BlockChain) StartVerkleTransition(originalRoot, translatedRoot common.Hash) {
-	bc.stateCache.(*state.ForkingDB).StartTransition(originalRoot, translatedRoot)
+func (bc *BlockChain) StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, cancunBlock *big.Int) {
+	bc.stateCache.(*state.ForkingDB).StartTransition(originalRoot, translatedRoot, chainConfig, cancunBlock)
 }
 
 func (bc *BlockChain) AddRootTranslation(originalRoot, translatedRoot common.Hash) {
