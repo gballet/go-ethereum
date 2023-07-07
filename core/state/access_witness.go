@@ -45,8 +45,6 @@ type AccessWitness struct {
 	pointCache *utils.PointCache
 }
 
-// TODO(jsign): consider Reset() API.
-
 func NewAccessWitness(pointCache *utils.PointCache) *AccessWitness {
 	return &AccessWitness{
 		branches:   make(map[branchAccessKey]mode),
@@ -88,11 +86,6 @@ func (aw *AccessWitness) Copy() *AccessWitness {
 	}
 	naw.Merge(aw)
 	return naw
-}
-
-// TODO(jsign): remove
-func (aw *AccessWitness) GetTreeKeyVersionCached(addr []byte) []byte {
-	return aw.pointCache.GetTreeKeyVersionCached(addr)
 }
 
 func (aw *AccessWitness) TouchAndChargeProofOfAbsence(addr []byte) uint64 {
@@ -137,7 +130,7 @@ func (aw *AccessWitness) TouchAndChargeContractCreateInit(addr []byte, createSen
 // the tree
 func (aw *AccessWitness) TouchAndChargeContractCreateCompleted(addr []byte, withValue bool) uint64 { // TODO(jsign): withValue not used?
 	var gas uint64
-	gas += aw.TouchAddressOnWriteAndComputeGas(addr, zeroTreeIndex, utils.VersionLeafKey) // TODO(jsign): why write?
+	gas += aw.TouchAddressOnWriteAndComputeGas(addr, zeroTreeIndex, utils.VersionLeafKey)
 	gas += aw.TouchAddressOnReadAndComputeGas(addr, zeroTreeIndex, utils.CodeSizeLeafKey)
 	gas += aw.TouchAddressOnReadAndComputeGas(addr, zeroTreeIndex, utils.CodeKeccakLeafKey)
 	gas += aw.TouchAddressOnWriteAndComputeGas(addr, zeroTreeIndex, utils.NonceLeafKey)
