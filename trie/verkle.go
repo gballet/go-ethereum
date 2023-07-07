@@ -457,3 +457,7 @@ func ChunkifyCode(code []byte) ChunkedCode {
 func (t *VerkleTrie) SetStorageRootConversion(key []byte, root common.Hash) {
 	t.db.SetStorageRootConversion(key, root)
 }
+
+func (t *VerkleTrie) ClearStrorageRootConversion(addr []byte) {
+	t.db.ClearStorageRootConversion(addr)
+}

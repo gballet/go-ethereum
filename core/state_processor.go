@@ -102,9 +102,12 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	// N values from the MPT into the verkle tree.
 	if fdb, ok := statedb.Database().(*state.ForkingDB); ok {
 		if fdb.InTransition() {
-			now := time.Now()
-			tt := statedb.GetTrie().(*trie.TransitionTrie)
-			mpt := tt.Base()
+			var (
+				now = time.Now()
+				tt  = statedb.GetTrie().(*trie.TransitionTrie)
+				mpt = tt.Base()
+				vkt = tt.Overlay()
+			)
 
 			accIt, err := statedb.Snaps().AccountIterator(mpt.Hash(), fdb.CurrentAccountHash)
 			if err != nil {
@@ -135,6 +138,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 				if len(addr) == 0 {
 					panic(fmt.Sprintf("%x %x %v", addr, accIt.Hash(), acc))
 				}
+				vkt.SetStorageRootConversion(addr, common.BytesToHash(acc.Root))
 
 				// Start with processing the storage, because once the account is
 				// converted, the `stateRoot` field loses its meaning. Which means
@@ -188,7 +192,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 					count++ // count increase for the account itself
 
 					mkv.addAccount(addr, acc)
-					tt.Overlay().SetStorageRootConversion(addr, common.BytesToHash(acc.Root))
+					vkt.ClearStrorageRootConversion(addr)
 
 					// Store the account code if present
 					if !bytes.Equal(acc.CodeHash, emptyCodeHash[:]) {
