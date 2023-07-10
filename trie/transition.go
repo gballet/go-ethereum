@@ -88,6 +88,11 @@ func (t *TransitionTrie) TryGet(addr, key []byte) ([]byte, error) {
 func (t *TransitionTrie) TryGetAccount(key []byte) (*types.StateAccount, error) {
 	data, err := t.overlay.TryGetAccount(key)
 	if err != nil {
+		// WORKAROUND, see the definition of errDeletedAccount
+		// for an explainer of why this if is needed.
+		if err == errDeletedAccount {
+			return nil, nil
+		}
 		return nil, err
 	}
 	if data != nil {
@@ -110,7 +115,7 @@ func (t *TransitionTrie) TryUpdate(address, key []byte, value []byte) error {
 
 // TryUpdateAccount abstract an account write to the trie.
 func (t *TransitionTrie) TryUpdateAccount(key []byte, account *types.StateAccount) error {
-	if account.Root != (common.Hash{}) || account.Root != emptyRoot {
+	if account.Root != (common.Hash{}) && account.Root != emptyRoot {
 		t.overlay.db.SetStorageRootConversion(key, account.Root)
 	}
 	return t.overlay.TryUpdateAccount(key, account)
@@ -169,7 +174,7 @@ func (t *TransitionTrie) IsVerkle() bool {
 func (t *TransitionTrie) TryUpdateStem(key []byte, values [][]byte) error {
 	trie := t.overlay
 	resolver := func(h []byte) ([]byte, error) {
-		return trie.db.diskdb.Get(h)
+		return trie.db.diskdb.Get(append([]byte("flat-"), h...))
 	}
 	switch root := trie.root.(type) {
 	case *verkle.InternalNode:
