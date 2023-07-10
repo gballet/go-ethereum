@@ -183,3 +183,11 @@ func (t *TransitionTrie) TryUpdateStem(key []byte, values [][]byte) error {
 		panic("invalid root type")
 	}
 }
+
+func (t *TransitionTrie) Copy() *TransitionTrie {
+	return &TransitionTrie{
+		overlay: t.overlay.Copy(t.overlay.db),
+		base:    t.base.Copy(),
+		storage: t.storage,
+	}
+}
