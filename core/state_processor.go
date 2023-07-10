@@ -403,7 +403,10 @@ func (kvm *keyValueMigrator) migrateCollectedKeyValues(tree *trie.VerkleTrie) er
 	}
 
 	// Create all leaves in batch mode so we can optimize cryptography operations.
-	newLeaves := verkle.BatchNewLeafNode(nodeValues)
+	newLeaves, err := verkle.BatchNewLeafNode(nodeValues)
+	if err != nil {
+		return fmt.Errorf("failed to batch-create new leaf nodes")
+	}
 
 	// Insert into the tree.
 	if err := tree.InsertMigratedLeaves(newLeaves); err != nil {
