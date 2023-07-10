@@ -19,6 +19,7 @@ package state
 import (
 	"errors"
 	"fmt"
+	"math/big"
 	"sync"
 
 	"github.com/VictoriaMetrics/fastcache"
@@ -26,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/gballet/go-verkle"
@@ -164,7 +166,9 @@ type ForkingDB struct {
 
 	// TODO ensure that this info is in the DB
 	started, ended      bool
-	translatedRoots     map[common.Hash]common.Hash // hash of the translated root, for opening
+	translatedRoots     [32]common.Hash // hash of the translated root, for opening
+	origRoots           [32]common.Hash
+	translationIndex    int
 	translatedRootsLock sync.RWMutex
 
 	baseRoot           common.Hash // hash of the read-only base tree
@@ -213,9 +217,7 @@ func (fdb *ForkingDB) OpenStorageTrie(stateRoot, addrHash, root common.Hash, sel
 	if fdb.started && err == nil {
 		// Return a "storage trie" that is an adapter between the storge MPT
 		// and the unique verkle tree.
-		fdb.translatedRootsLock.RLock()
-		vkt, err := fdb.VerkleDB.OpenStorageTrie(stateRoot, addrHash, fdb.translatedRoots[root], self.(*trie.TransitionTrie).Overlay())
-		fdb.translatedRootsLock.RUnlock()
+		vkt, err := fdb.VerkleDB.OpenStorageTrie(stateRoot, addrHash, fdb.getTranslation(root), self.(*trie.TransitionTrie).Overlay())
 		if err != nil {
 			return nil, err
 		}
@@ -237,9 +239,7 @@ func (fdb *ForkingDB) OpenTrie(root common.Hash) (Trie, error) {
 		if err != nil {
 			return nil, err
 		}
-		fdb.translatedRootsLock.RLock()
-		vkt, err := fdb.VerkleDB.OpenTrie(fdb.translatedRoots[root])
-		fdb.translatedRootsLock.RUnlock()
+		vkt, err := fdb.VerkleDB.OpenTrie(fdb.getTranslation(root))
 		if err != nil {
 			return nil, err
 		}
@@ -281,7 +281,7 @@ func (fdg *ForkingDB) Transitionned() bool {
 }
 
 // Fork implements the fork
-func (fdb *ForkingDB) StartTransition(originalRoot, translatedRoot common.Hash) {
+func (fdb *ForkingDB) StartTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, cancunBlock *big.Int) {
 	fmt.Println(`
 	__________.__                       .__                .__                   __       .__                               .__          ____         
 	\__    ___|  |__   ____        ____ |  |   ____ ______ |  |__ _____    _____/  |_     |  |__ _____    ______    __  _  _|__| ____   / ___\ ______
@@ -290,10 +290,11 @@ func (fdb *ForkingDB) StartTransition(originalRoot, translatedRoot common.Hash) 
 	  |____|  |___|  /\___        \___  |____/\___  |   __/|___|  (____  |___|  |__|      |___|  (____  /_____/       \/\_/ |__|___|  /_____//_____/
                                                     |__|`)
 	fdb.started = true
-	fdb.translatedRoots = map[common.Hash]common.Hash{originalRoot: translatedRoot}
+	fdb.AddTranslation(originalRoot, translatedRoot)
 	fdb.baseRoot = originalRoot
 	// initialize so that the first storage-less accounts are processed
 	fdb.StorageProcessed = true
+	chainConfig.CancunBlock = cancunBlock
 }
 
 func (fdb *ForkingDB) EndTransition() {
@@ -310,8 +311,21 @@ func (fdb *ForkingDB) EndTransition() {
 func (fdb *ForkingDB) AddTranslation(orig, trans common.Hash) {
 	// TODO make this persistent
 	fdb.translatedRootsLock.Lock()
-	fdb.translatedRoots[orig] = trans
-	fdb.translatedRootsLock.Unlock()
+	defer fdb.translatedRootsLock.Unlock()
+	fdb.translatedRoots[fdb.translationIndex] = trans
+	fdb.origRoots[fdb.translationIndex] = orig
+	fdb.translationIndex = (fdb.translationIndex + 1) % len(fdb.translatedRoots)
+}
+
+func (fdb *ForkingDB) getTranslation(orig common.Hash) common.Hash {
+	fdb.translatedRootsLock.RLock()
+	defer fdb.translatedRootsLock.RUnlock()
+	for i, o := range fdb.origRoots {
+		if o == orig {
+			return fdb.translatedRoots[i]
+		}
+	}
+	return common.Hash{}
 }
 
 type cachingDB struct {

@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/pprof"
 	"strings"
 	"syscall"
 	"time"
@@ -173,6 +174,17 @@ func ImportChain(chain *core.BlockChain, fn string) error {
 			return err
 		}
 	}
+	cpuProfile, err := os.Create("cpu.out")
+	if err != nil {
+		return fmt.Errorf("Error creating CPU profile: %v", err)
+	}
+	defer cpuProfile.Close()
+	err = pprof.StartCPUProfile(cpuProfile)
+	if err != nil {
+		return fmt.Errorf("Error starting CPU profile: %v", err)
+	}
+	defer pprof.StopCPUProfile()
+
 	stream := rlp.NewStream(reader, 0)
 
 	// Run actual the import.

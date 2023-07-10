@@ -257,13 +257,27 @@ func (trie *VerkleTrie) Commit(_ bool) (common.Hash, *NodeSet, error) {
 		return common.Hash{}, nil, fmt.Errorf("serializing tree nodes: %s", err)
 	}
 
+	batch := trie.db.diskdb.NewBatch()
+	const keyPrefix = "flat-"
+	path := make([]byte, 0, len(keyPrefix)+32)
+	path = append(path, []byte(keyPrefix)...)
 	for _, node := range nodes {
-		if err := trie.db.diskdb.Put(append([]byte("flat-"), node.Path...), node.SerializedBytes); err != nil {
+		path := append(path[:len(keyPrefix)], node.Path...)
+
+		if err := batch.Put(path, node.SerializedBytes); err != nil {
 			return common.Hash{}, nil, fmt.Errorf("put node to disk: %s", err)
 		}
-	}
 
-	return nodes[0].CommitmentBytes, nil, nil
+		if batch.ValueSize() >= ethdb.IdealBatchSize {
+			batch.Write()
+			batch.Reset()
+		}
+	}
+	batch.Write()
+
+	// Serialize root commitment form
+	rootH := root.Hash().BytesLE()
+	return common.BytesToHash(rootH[:]), nil, nil
 }
 
 // NodeIterator returns an iterator that returns nodes of the trie. Iteration
@@ -444,4 +458,8 @@ func ChunkifyCode(code []byte) ChunkedCode {
 
 func (t *VerkleTrie) SetStorageRootConversion(key []byte, root common.Hash) {
 	t.db.SetStorageRootConversion(key, root)
+}
+
+func (t *VerkleTrie) ClearStrorageRootConversion(addr []byte) {
+	t.db.ClearStorageRootConversion(addr)
 }

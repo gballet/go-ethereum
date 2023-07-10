@@ -87,6 +87,7 @@ type Database struct {
 	childrenSize common.StorageSize // Storage size of the external children tracking
 	preimages    *preimageStore     // The store for caching preimages
 
+	// XXX after the shapella rebase, use common.Address as a key type
 	addrToRoot     map[string]common.Hash
 	addrToRootLock sync.RWMutex
 
@@ -119,6 +120,12 @@ func (db *Database) StorageRootConversion(addr []byte) common.Hash {
 		return common.Hash{}
 	}
 	return db.addrToRoot[string(addr)]
+}
+
+func (db *Database) ClearStorageRootConversion(addr []byte) {
+	db.addrToRootLock.Lock()
+	defer db.addrToRootLock.Unlock()
+	delete(db.addrToRoot, string(addr))
 }
 
 // rawNode is a simple binary blob used to differentiate between collapsed trie
