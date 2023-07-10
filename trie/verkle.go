@@ -276,8 +276,6 @@ func (trie *VerkleTrie) Commit(_ bool) (common.Hash, *NodeSet, error) {
 	batch.Write()
 
 	// Serialize root commitment in compressed form, and only the root commitment
-	// TODO figure out if Hash() is the correct function to call, or if PointToHash() should
-	// be called instead.
 	rootH := root.Hash().BytesLE()
 	return common.BytesToHash(rootH[:]), nil, nil
 }
