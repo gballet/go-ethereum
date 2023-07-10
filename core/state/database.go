@@ -201,14 +201,7 @@ func (fdb *ForkingDB) ContractCodeSize(addrHash common.Hash, codeHash common.Has
 
 // CopyTrie implements Database
 func (fdb *ForkingDB) CopyTrie(t Trie) Trie {
-	mpt := fdb.cachingDB.CopyTrie(t)
-
-	if fdb.started {
-		overlay := fdb.VerkleDB.CopyTrie(t)
-		return trie.NewTransitionTree(mpt.(*trie.SecureTrie), overlay.(*trie.VerkleTrie), false)
-	}
-
-	return mpt
+	return fdb.cachingDB.CopyTrie(t)
 }
 
 // OpenStorageTrie implements Database
@@ -235,14 +228,24 @@ func (fdb *ForkingDB) OpenTrie(root common.Hash) (Trie, error) {
 	)
 
 	if fdb.started {
-		mpt, err = fdb.cachingDB.OpenTrie(fdb.baseRoot)
-		if err != nil {
-			return nil, err
-		}
 		vkt, err := fdb.VerkleDB.OpenTrie(fdb.getTranslation(root))
 		if err != nil {
 			return nil, err
 		}
+
+		// If the verkle conversion has ended, return a single
+		// verkle trie.
+		if fdb.ended {
+			return vkt, nil
+		}
+
+		// Otherwise, return a transition trie, with a base MPT
+		// trie and an overlay, verkle trie.
+		mpt, err = fdb.cachingDB.OpenTrie(fdb.baseRoot)
+		if err != nil {
+			return nil, err
+		}
+
 		return trie.NewTransitionTree(mpt.(*trie.SecureTrie), vkt.(*trie.VerkleTrie), false), nil
 	} else {
 		mpt, err = fdb.cachingDB.OpenTrie(root)
@@ -360,6 +363,8 @@ func (db *cachingDB) CopyTrie(t Trie) Trie {
 		return t.Copy()
 	case *trie.TransitionTrie:
 		return t.Copy()
+	case *trie.VerkleTrie:
+		return t.Copy()
 	default:
 		panic(fmt.Errorf("unknown trie type %T", t))
 	}
@@ -451,12 +456,14 @@ func (db *VerkleDB) OpenStorageTrie(stateRoot, addrHash, root common.Hash, self 
 
 // CopyTrie returns an independent copy of the given trie.
 func (db *VerkleDB) CopyTrie(tr Trie) Trie {
-	t, ok := tr.(*trie.VerkleTrie)
-	if ok {
-		return t.Copy(db.db)
+	switch t := tr.(type) {
+	case *trie.VerkleTrie:
+		return t.Copy()
+	case *trie.TransitionTrie:
+		return t.Copy()
+	default:
+		panic(fmt.Sprintf("invalid tree type %T != VerkleTrie", tr))
 	}
-
-	panic("invalid tree type != VerkleTrie")
 }
 
 // ContractCode retrieves a particular contract's code.

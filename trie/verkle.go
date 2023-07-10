@@ -297,10 +297,10 @@ func (trie *VerkleTrie) Prove(key []byte, fromLevel uint, proofDb ethdb.KeyValue
 	panic("not implemented")
 }
 
-func (trie *VerkleTrie) Copy(db *Database) *VerkleTrie {
+func (trie *VerkleTrie) Copy() *VerkleTrie {
 	return &VerkleTrie{
 		root: trie.root.Copy(),
-		db:   db,
+		db:   trie.db,
 	}
 }
 

@@ -192,7 +192,7 @@ func (t *TransitionTrie) TryUpdateStem(key []byte, values [][]byte) error {
 
 func (t *TransitionTrie) Copy() *TransitionTrie {
 	return &TransitionTrie{
-		overlay: t.overlay.Copy(t.overlay.db),
+		overlay: t.overlay.Copy(),
 		base:    t.base.Copy(),
 		storage: t.storage,
 	}
