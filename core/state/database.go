@@ -204,13 +204,24 @@ func (fdb *ForkingDB) CopyTrie(t Trie) Trie {
 	return fdb.cachingDB.CopyTrie(t)
 }
 
+func verkleOrTransitionTree(self Trie) Trie {
+	switch t := self.(type) {
+	case *trie.TransitionTrie:
+		return t.Overlay()
+	case *trie.VerkleTrie:
+		return t
+	default:
+		panic("unexpected trie type")
+	}
+}
+
 // OpenStorageTrie implements Database
 func (fdb *ForkingDB) OpenStorageTrie(stateRoot, addrHash, root common.Hash, self Trie) (Trie, error) {
 	mpt, err := fdb.cachingDB.OpenStorageTrie(stateRoot, addrHash, root, nil)
 	if fdb.started && err == nil {
 		// Return a "storage trie" that is an adapter between the storge MPT
 		// and the unique verkle tree.
-		vkt, err := fdb.VerkleDB.OpenStorageTrie(stateRoot, addrHash, fdb.getTranslation(root), self.(*trie.TransitionTrie).Overlay())
+		vkt, err := fdb.VerkleDB.OpenStorageTrie(stateRoot, addrHash, fdb.getTranslation(root), verkleOrTransitionTree(self))
 		if err != nil {
 			return nil, err
 		}

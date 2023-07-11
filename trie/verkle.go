@@ -309,7 +309,10 @@ func (trie *VerkleTrie) IsVerkle() bool {
 }
 
 func (trie *VerkleTrie) ProveAndSerialize(keys [][]byte, kv map[string][]byte) (*verkle.VerkleProof, verkle.StateDiff, error) {
-	proof, _, _, _, err := verkle.MakeVerkleMultiProof(trie.root, keys)
+	resolver := func(path []byte) ([]byte, error) {
+		return trie.db.diskdb.Get(append([]byte("flat-"), path...))
+	}
+	proof, _, _, _, err := verkle.MakeVerkleMultiProof(trie.root, keys, resolver)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -385,7 +388,9 @@ func deserializeVerkleProof(vp *verkle.VerkleProof, rootC *verkle.Point, statedi
 		}
 	}
 
-	pe, _, _, err := tree.GetProofItems(proof.Keys)
+	// no need to resolve as the tree has been reconstructed from the proof
+	// and must not contain any unresolved nodes.
+	pe, _, _, err := tree.GetProofItems(proof.Keys, nil)
 
 	return proof, pe.Cis, pe.Zis, pe.Yis, err
 }
