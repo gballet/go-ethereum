@@ -70,6 +70,7 @@ func NewStateProcessor(config *params.ChainConfig, bc *BlockChain, engine consen
 // returns the amount of gas that was used in the process. If any of the
 // transactions failed to execute due to insufficient gas it will return an error.
 func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg vm.Config) (types.Receipts, []*types.Log, uint64, error) {
+	now := time.Now()
 	var (
 		receipts    types.Receipts
 		usedGas     = new(uint64)
@@ -99,7 +100,9 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		receipts = append(receipts, receipt)
 		allLogs = append(allLogs, receipt.Logs...)
 	}
+	fmt.Printf("block execution: %v\n", time.Since(now))
 
+	now = time.Now()
 	// verkle transition: if the conversion process is in progress, move
 	// N values from the MPT into the verkle tree.
 	if fdb, ok := statedb.Database().(*state.ForkingDB); ok {
@@ -239,9 +242,12 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			log.Info("Inserted key values in overlay tree", "count", count, "duration", time.Since(now))
 		}
 	}
+	fmt.Printf("migration took: %v\n", time.Since(now))
 
+	now = time.Now()
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.engine.Finalize(p.bc, header, statedb, block.Transactions(), block.Uncles())
+	fmt.Printf("Finalize: %v\n", time.Since(now))
 
 	if block.NumberU64()%100 == 0 {
 		stateRoot := statedb.GetTrie().Hash()
