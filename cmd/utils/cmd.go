@@ -46,7 +46,7 @@ import (
 )
 
 const (
-	importBatchSize = 2500
+	importBatchSize = 50
 )
 
 // Fatalf formats a message to standard error and exits the program.
@@ -168,6 +168,10 @@ func ImportChain(chain *core.BlockChain, fn string) error {
 	}
 	defer fh.Close()
 
+	if _, err := fh.Seek(18224628422, 0); err != nil {
+		panic(err)
+	}
+
 	var reader io.Reader = fh
 	if strings.HasSuffix(fn, ".gz") {
 		if reader, err = gzip.NewReader(reader); err != nil {
@@ -185,7 +189,31 @@ func ImportChain(chain *core.BlockChain, fn string) error {
 	}
 	defer pprof.StopCPUProfile()
 
+	// traceProfile, err := os.Create("trace.out")
+	// if err != nil {
+	// 	return fmt.Errorf("error creating trace profile: %v", err)
+	// }
+	// defer traceProfile.Close()
+
+	// trace.Start(traceProfile)
+	// defer trace.Stop()
+
 	stream := rlp.NewStream(reader, 0)
+
+	go func() {
+		for {
+			time.Sleep(10 * time.Second)
+			// Write heap dump into a file
+			f, err := os.Create("mem.out")
+			if err != nil {
+				panic(err)
+			}
+			if err := pprof.WriteHeapProfile(f); err != nil {
+				panic(err)
+			}
+			f.Close()
+		}
+	}()
 
 	// Run actual the import.
 	blocks := make(types.Blocks, importBatchSize)
