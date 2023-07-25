@@ -145,6 +145,12 @@ func (t *TransitionTrie) Hash() common.Hash {
 // Once the trie is committed, it's not usable anymore. A new trie must
 // be created with new root and updated trie database for following usage
 func (t *TransitionTrie) Commit(collectLeaf bool) (common.Hash, *NodeSet, error) {
+	// Just return if the trie is a storage trie: otherwise,
+	// the overlay trie will be committed as many times as
+	// there are storage tries. This would kill performance.
+	if t.storage {
+		return common.Hash{}, nil, nil
+	}
 	return t.overlay.Commit(collectLeaf)
 }
 
