@@ -176,7 +176,7 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 			sdb.snapAccounts = make(map[common.Hash][]byte)
 			sdb.snapStorage = make(map[common.Hash]map[common.Hash][]byte)
 		} else {
-			if fdb, ok := db.(*ForkingDB); ok {
+			if fdb, ok := db.(*cachingDB); ok {
 				trans := fdb.getTranslation(root)
 				if trans != (common.Hash{}) {
 					if sdb.snap = sdb.snaps.Snapshot(trans); sdb.snap != nil {
@@ -544,7 +544,7 @@ func (s *StateDB) updateStateObject(obj *stateObject) {
 			groupOffset := (chunknr + 128) % 256
 			if groupOffset == 0 /* start of new group */ || chunknr == 0 /* first chunk in header group */ {
 				values = make([][]byte, verkle.NodeWidth)
-				key = utils.GetTreeKeyCodeChunkWithEvaluatedAddress(obj.db.db.(*ForkingDB).GetTreeKeyHeader(obj.address[:]), uint256.NewInt(chunknr))
+				key = utils.GetTreeKeyCodeChunkWithEvaluatedAddress(obj.db.db.(*cachingDB).GetTreeKeyHeader(obj.address[:]), uint256.NewInt(chunknr))
 			}
 			values[groupOffset] = chunks[i : i+32]
 

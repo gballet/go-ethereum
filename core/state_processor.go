@@ -100,133 +100,131 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 
 	// verkle transition: if the conversion process is in progress, move
 	// N values from the MPT into the verkle tree.
-	if fdb, ok := statedb.Database().(*state.ForkingDB); ok {
-		if fdb.InTransition() {
-			var (
-				now = time.Now()
-				tt  = statedb.GetTrie().(*trie.TransitionTrie)
-				mpt = tt.Base()
-				vkt = tt.Overlay()
-			)
+	if statedb.Database().InTransition() {
+		var (
+			now = time.Now()
+			tt  = statedb.GetTrie().(*trie.TransitionTrie)
+			mpt = tt.Base()
+			vkt = tt.Overlay()
+		)
 
-			accIt, err := statedb.Snaps().AccountIterator(mpt.Hash(), fdb.CurrentAccountHash)
+		accIt, err := statedb.Snaps().AccountIterator(mpt.Hash(), statedb.Database().GetCurrentAccountHash())
+		if err != nil {
+			return nil, nil, 0, err
+		}
+		defer accIt.Release()
+		accIt.Next()
+
+		const maxMovedCount = 10000
+		// mkv will be assiting in the collection of up to maxMovedCount key values to be migrated to the VKT.
+		// It has internal caches to do efficient MPT->VKT key calculations, which will be discarded after
+		// this function.
+		mkv := &keyValueMigrator{vktLeafData: make(map[string]*verkle.BatchNewLeafNodeData)}
+		// move maxCount accounts into the verkle tree, starting with the
+		// slots from the previous account.
+		count := 0
+
+		// if less than maxCount slots were moved, move to the next account
+		for count < maxMovedCount {
+			statedb.Database().SetCurrentAccountHash(accIt.Hash())
+
+			acc, err := snapshot.FullAccount(accIt.Account())
 			if err != nil {
+				log.Error("Invalid account encountered during traversal", "error", err)
 				return nil, nil, 0, err
 			}
-			defer accIt.Release()
-			accIt.Next()
+			addr := rawdb.ReadPreimage(statedb.Database().DiskDB(), accIt.Hash())
+			if len(addr) == 0 {
+				panic(fmt.Sprintf("%x %x %v", addr, accIt.Hash(), acc))
+			}
+			vkt.SetStorageRootConversion(addr, common.BytesToHash(acc.Root))
 
-			const maxMovedCount = 10000
-			// mkv will be assiting in the collection of up to maxMovedCount key values to be migrated to the VKT.
-			// It has internal caches to do efficient MPT->VKT key calculations, which will be discarded after
-			// this function.
-			mkv := &keyValueMigrator{vktLeafData: make(map[string]*verkle.BatchNewLeafNodeData)}
-			// move maxCount accounts into the verkle tree, starting with the
-			// slots from the previous account.
-			count := 0
-
-			// if less than maxCount slots were moved, move to the next account
-			for count < maxMovedCount {
-				fdb.CurrentAccountHash = accIt.Hash()
-
-				acc, err := snapshot.FullAccount(accIt.Account())
+			// Start with processing the storage, because once the account is
+			// converted, the `stateRoot` field loses its meaning. Which means
+			// that it opens the door to a situation in which the storage isn't
+			// converted, but it can not be found since the account was and so
+			// there is no way to find the MPT storage from the information found
+			// in the verkle account.
+			// Note that this issue can still occur if the account gets written
+			// to during normal block execution. A mitigation strategy has been
+			// introduced with the `*StorageRootConversion` fields in VerkleDB.
+			if acc.HasStorage() {
+				stIt, err := statedb.Snaps().StorageIterator(mpt.Hash(), accIt.Hash(), statedb.Database().GetCurrentSlotHash())
 				if err != nil {
-					log.Error("Invalid account encountered during traversal", "error", err)
 					return nil, nil, 0, err
 				}
-				addr := rawdb.ReadPreimage(statedb.Database().DiskDB(), accIt.Hash())
-				if len(addr) == 0 {
-					panic(fmt.Sprintf("%x %x %v", addr, accIt.Hash(), acc))
-				}
-				vkt.SetStorageRootConversion(addr, common.BytesToHash(acc.Root))
+				stIt.Next()
 
-				// Start with processing the storage, because once the account is
-				// converted, the `stateRoot` field loses its meaning. Which means
-				// that it opens the door to a situation in which the storage isn't
-				// converted, but it can not be found since the account was and so
-				// there is no way to find the MPT storage from the information found
-				// in the verkle account.
-				// Note that this issue can still occur if the account gets written
-				// to during normal block execution. A mitigation strategy has been
-				// introduced with the `*StorageRootConversion` fields in VerkleDB.
-				if acc.HasStorage() {
-					stIt, err := statedb.Snaps().StorageIterator(mpt.Hash(), accIt.Hash(), fdb.CurrentSlotHash)
-					if err != nil {
-						return nil, nil, 0, err
+				// fdb.StorageProcessed will be initialized to `true` if the
+				// entire storage for an account was not entirely processed
+				// by the previous block. This is used as a signal to resume
+				// processing the storage for that account where we left off.
+				// If the entire storage was processed, then the iterator was
+				// created in vain, but it's ok as this will not happen often.
+				for ; !statedb.Database().GetStorageProcessed() && count < maxMovedCount; count++ {
+					var (
+						value     []byte   // slot value after RLP decoding
+						safeValue [32]byte // 32-byte aligned value
+					)
+					if err := rlp.DecodeBytes(stIt.Slot(), &value); err != nil {
+						return nil, nil, 0, fmt.Errorf("error decoding bytes %x: %w", stIt.Slot(), err)
 					}
-					stIt.Next()
+					copy(safeValue[32-len(value):], value)
+					slotnr := rawdb.ReadPreimage(statedb.Database().DiskDB(), stIt.Hash())
 
-					// fdb.StorageProcessed will be initialized to `true` if the
-					// entire storage for an account was not entirely processed
-					// by the previous block. This is used as a signal to resume
-					// processing the storage for that account where we left off.
-					// If the entire storage was processed, then the iterator was
-					// created in vain, but it's ok as this will not happen often.
-					for ; !fdb.StorageProcessed && count < maxMovedCount; count++ {
-						var (
-							value     []byte   // slot value after RLP decoding
-							safeValue [32]byte // 32-byte aligned value
-						)
-						if err := rlp.DecodeBytes(stIt.Slot(), &value); err != nil {
-							return nil, nil, 0, fmt.Errorf("error decoding bytes %x: %w", stIt.Slot(), err)
-						}
-						copy(safeValue[32-len(value):], value)
-						slotnr := rawdb.ReadPreimage(statedb.Database().DiskDB(), stIt.Hash())
+					mkv.addStorageSlot(addr, slotnr, safeValue[:])
 
-						mkv.addStorageSlot(addr, slotnr, safeValue[:])
-
-						// advance the storage iterator
-						fdb.StorageProcessed = !stIt.Next()
-						if !fdb.StorageProcessed {
-							fdb.CurrentSlotHash = stIt.Hash()
-						}
-					}
-					stIt.Release()
-				}
-
-				// If the maximum number of leaves hasn't been reached, then
-				// it means that the storage has finished processing (or none
-				// was available for this account) and that the account itself
-				// can be processed.
-				if count < maxMovedCount {
-					count++ // count increase for the account itself
-
-					mkv.addAccount(addr, acc)
-					vkt.ClearStrorageRootConversion(addr)
-
-					// Store the account code if present
-					if !bytes.Equal(acc.CodeHash, emptyCodeHash[:]) {
-						code := rawdb.ReadCode(statedb.Database().DiskDB(), common.BytesToHash(acc.CodeHash))
-						chunks := trie.ChunkifyCode(code)
-
-						mkv.addAccountCode(addr, uint64(len(code)), chunks)
-					}
-
-					// reset storage iterator marker for next account
-					fdb.StorageProcessed = false
-					fdb.CurrentSlotHash = common.Hash{}
-
-					// Move to the next account, if available - or end
-					// the transition otherwise.
-					if accIt.Next() {
-						fdb.CurrentAccountHash = accIt.Hash()
-					} else {
-						// case when the account iterator has
-						// reached the end but count < maxCount
-						fdb.EndTransition()
-						break
+					// advance the storage iterator
+					statedb.Database().SetStorageProcessed(!stIt.Next())
+					if !statedb.Database().GetStorageProcessed() {
+						statedb.Database().SetCurrentSlotHash(stIt.Hash())
 					}
 				}
+				stIt.Release()
 			}
 
-			log.Info("Collected and prepared key values from base tree", "count", count, "duration", time.Since(now), "last account", fdb.CurrentAccountHash)
+			// If the maximum number of leaves hasn't been reached, then
+			// it means that the storage has finished processing (or none
+			// was available for this account) and that the account itself
+			// can be processed.
+			if count < maxMovedCount {
+				count++ // count increase for the account itself
 
-			now = time.Now()
-			if err := mkv.migrateCollectedKeyValues(tt.Overlay()); err != nil {
-				return nil, nil, 0, fmt.Errorf("could not migrate key values: %w", err)
+				mkv.addAccount(addr, acc)
+				vkt.ClearStrorageRootConversion(addr)
+
+				// Store the account code if present
+				if !bytes.Equal(acc.CodeHash, emptyCodeHash[:]) {
+					code := rawdb.ReadCode(statedb.Database().DiskDB(), common.BytesToHash(acc.CodeHash))
+					chunks := trie.ChunkifyCode(code)
+
+					mkv.addAccountCode(addr, uint64(len(code)), chunks)
+				}
+
+				// reset storage iterator marker for next account
+				statedb.Database().SetStorageProcessed(false)
+				statedb.Database().SetCurrentSlotHash(common.Hash{})
+
+				// Move to the next account, if available - or end
+				// the transition otherwise.
+				if accIt.Next() {
+					statedb.Database().SetCurrentAccountHash(accIt.Hash())
+				} else {
+					// case when the account iterator has
+					// reached the end but count < maxCount
+					statedb.Database().EndVerkleTransition()
+					break
+				}
 			}
-			log.Info("Inserted key values in overlay tree", "count", count, "duration", time.Since(now))
 		}
+
+		log.Info("Collected and prepared key values from base tree", "count", count, "duration", time.Since(now), "last account", statedb.Database().GetCurrentAccountHash())
+
+		now = time.Now()
+		if err := mkv.migrateCollectedKeyValues(tt.Overlay()); err != nil {
+			return nil, nil, 0, fmt.Errorf("could not migrate key values: %w", err)
+		}
+		log.Info("Inserted key values in overlay tree", "count", count, "duration", time.Since(now))
 	}
 
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
