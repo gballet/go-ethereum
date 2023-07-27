@@ -2464,6 +2464,10 @@ func (bc *BlockChain) StartVerkleTransition(originalRoot, translatedRoot common.
 	bc.stateCache.StartVerkleTransition(originalRoot, translatedRoot, chainConfig, cancunBlock)
 }
 
+func (bc *BlockChain) EndVerkleTransition() {
+	bc.stateCache.EndVerkleTransition()
+}
+
 func (bc *BlockChain) AddRootTranslation(originalRoot, translatedRoot common.Hash) {
 	bc.stateCache.AddRootTranslation(originalRoot, translatedRoot)
 }
