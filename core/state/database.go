@@ -196,6 +196,10 @@ func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.H
 }
 
 func (db *cachingDB) EndVerkleTransition() {
+	if !db.started {
+		db.started = true
+	}
+
 	fmt.Println(`
 	__________.__                       .__                .__                   __       .__                       .__                    .___         .___
 	\__    ___|  |__   ____        ____ |  |   ____ ______ |  |__ _____    _____/  |_     |  |__ _____    ______    |  | _____    ____   __| _/____   __| _/
