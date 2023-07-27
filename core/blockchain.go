@@ -1728,7 +1728,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 			return it.index, err
 		}
 
-		if statedb.Database().InTransition() || statedb.Database().Transitionned() {
+		if statedb.Database().InTransition() || statedb.Database().Transitioned() {
 			bc.AddRootTranslation(block.Root(), statedb.IntermediateRoot(false))
 		}
 

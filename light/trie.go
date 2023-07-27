@@ -113,7 +113,7 @@ func (db *odrDatabase) InTransition() bool {
 	panic("not implemented") // TODO: Implement
 }
 
-func (db *odrDatabase) Transitionned() bool {
+func (db *odrDatabase) Transitioned() bool {
 	panic("not implemented") // TODO: Implement
 }
 
