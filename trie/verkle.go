@@ -52,15 +52,28 @@ func NewVerkleTrie(root verkle.VerkleNode, db *Database, pointCache *utils.Point
 	}
 }
 
+func (trie *VerkleTrie) flatdbNodeResolver(path []byte) ([]byte, error) {
+	return trie.db.diskdb.Get(append(FlatDBVerkleNodeKeyPrefix, path...))
+}
+
 func (trie *VerkleTrie) InsertMigratedLeaves(leaves []verkle.LeafNode) error {
-	return trie.root.(*verkle.InternalNode).InsertMigratedLeaves(leaves, func(path []byte) ([]byte, error) {
-		return trie.db.diskdb.Get(append([]byte("flat-"), path...))
-	})
+	return trie.root.(*verkle.InternalNode).InsertMigratedLeaves(leaves, trie.flatdbNodeResolver)
 }
 
 var (
 	errInvalidProof    = errors.New("invalid proof")
 	errInvalidRootType = errors.New("invalid node type for root")
+
+	// WORKAROUND: this special error is returned if it has been
+	// detected that the account was deleted in the verkle tree.
+	// This is needed in case an account was translated while it
+	// was in the MPT, and was selfdestructed in verkle mode.
+	//
+	// This is only a problem for replays, and this code is not
+	// needed after SELFDESTRUCT has been removed.
+	errDeletedAccount = errors.New("account deleted in VKT")
+
+	FlatDBVerkleNodeKeyPrefix = []byte("flat-") // prefix for flatdb keys
 )
 
 // GetKey returns the sha3 preimage of a hashed key that was previously used
@@ -73,39 +86,19 @@ func (trie *VerkleTrie) GetKey(key []byte) []byte {
 // not be modified by the caller. If a node was not found in the database, a
 // trie.MissingNodeError is returned.
 func (trie *VerkleTrie) TryGet(addr, key []byte) ([]byte, error) {
-	resolver := func(path []byte) ([]byte, error) {
-		return trie.db.diskdb.Get(append([]byte("flat-"), path...))
-	}
 	pointEval := trie.pointCache.GetTreeKeyHeader(addr)
 	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(pointEval, key)
-	return trie.root.Get(k, resolver)
+	return trie.root.Get(k, trie.flatdbNodeResolver)
 }
 
 // GetWithHashedKey returns the value, assuming that the key has already
 // been hashed.
 func (trie *VerkleTrie) GetWithHashedKey(key []byte) ([]byte, error) {
-	resolver := func(path []byte) ([]byte, error) {
-		return trie.db.diskdb.Get(append([]byte("flat-"), path...))
-	}
-	return trie.root.Get(key, resolver)
+	return trie.root.Get(key, trie.flatdbNodeResolver)
 }
 
-// WORKAROUND: this special error is returned if it has been
-// detected that the account was deleted in the verkle tree.
-// This is needed in case an account was translated while it
-// was in the MPT, and was selfdestructed in verkle mode.
-//
-// This is only a problem for replays, and this code is not
-// needed after SELFDESTRUCT has been removed.
-var errDeletedAccount = errors.New("account deleted in VKT")
-
 func (t *VerkleTrie) TryGetAccount(key []byte) (*types.StateAccount, error) {
-	var (
-		acc      *types.StateAccount = &types.StateAccount{}
-		resolver                     = func(path []byte) ([]byte, error) {
-			return t.db.diskdb.Get(append([]byte("flat-"), path...))
-		}
-	)
+	acc := &types.StateAccount{}
 	versionkey := t.pointCache.GetTreeKeyVersionCached(key)
 	var (
 		values [][]byte
@@ -113,7 +106,7 @@ func (t *VerkleTrie) TryGetAccount(key []byte) (*types.StateAccount, error) {
 	)
 	switch t.root.(type) {
 	case *verkle.InternalNode:
-		values, err = t.root.(*verkle.InternalNode).GetStem(versionkey[:31], resolver)
+		values, err = t.root.(*verkle.InternalNode).GetStem(versionkey[:31], t.flatdbNodeResolver)
 	default:
 		return nil, errInvalidRootType
 	}
@@ -180,13 +173,9 @@ func (t *VerkleTrie) TryUpdateAccount(key []byte, acc *types.StateAccount) error
 		}
 	}
 
-	resolver := func(path []byte) ([]byte, error) {
-		return t.db.diskdb.Get(append([]byte("flat-"), path...))
-	}
-
 	switch root := t.root.(type) {
 	case *verkle.InternalNode:
-		err = root.InsertStem(stem, values, resolver)
+		err = root.InsertStem(stem, values, t.flatdbNodeResolver)
 	default:
 		return errInvalidRootType
 	}
@@ -199,12 +188,9 @@ func (t *VerkleTrie) TryUpdateAccount(key []byte, acc *types.StateAccount) error
 }
 
 func (trie *VerkleTrie) TryUpdateStem(key []byte, values [][]byte) error {
-	resolver := func(path []byte) ([]byte, error) {
-		return trie.db.diskdb.Get(append([]byte("flat-"), path...))
-	}
 	switch root := trie.root.(type) {
 	case *verkle.InternalNode:
-		return root.InsertStem(key, values, resolver)
+		return root.InsertStem(key, values, trie.flatdbNodeResolver)
 	default:
 		panic("invalid root type")
 	}
@@ -218,9 +204,7 @@ func (trie *VerkleTrie) TryUpdate(address, key, value []byte) error {
 	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(trie.pointCache.GetTreeKeyHeader(address), key)
 	var v [32]byte
 	copy(v[:], value[:])
-	return trie.root.Insert(k, v[:], func(path []byte) ([]byte, error) {
-		return trie.db.diskdb.Get(append([]byte("flat-"), path...))
-	})
+	return trie.root.Insert(k, v[:], trie.flatdbNodeResolver)
 }
 
 func (t *VerkleTrie) TryDeleteAccount(key []byte) error {
@@ -234,13 +218,9 @@ func (t *VerkleTrie) TryDeleteAccount(key []byte) error {
 		values[i] = zero[:]
 	}
 
-	resolver := func(path []byte) ([]byte, error) {
-		return t.db.diskdb.Get(append([]byte("flat-"), path...))
-	}
-
 	switch root := t.root.(type) {
 	case *verkle.InternalNode:
-		err = root.InsertStem(stem, values, resolver)
+		err = root.InsertStem(stem, values, t.flatdbNodeResolver)
 	default:
 		return errInvalidRootType
 	}
@@ -258,9 +238,7 @@ func (trie *VerkleTrie) TryDelete(addr, key []byte) error {
 	pointEval := trie.pointCache.GetTreeKeyHeader(addr)
 	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(pointEval, key)
 	var zero [32]byte
-	return trie.root.Insert(k, zero[:], func(path []byte) ([]byte, error) {
-		return trie.db.diskdb.Get(append([]byte("flat-"), path...))
-	})
+	return trie.root.Insert(k, zero[:], trie.flatdbNodeResolver)
 }
 
 // Hash returns the root hash of the trie. It does not write to the database and
@@ -287,11 +265,10 @@ func (trie *VerkleTrie) Commit(_ bool) (common.Hash, *NodeSet, error) {
 	}
 
 	batch := trie.db.diskdb.NewBatch()
-	const keyPrefix = "flat-"
-	path := make([]byte, 0, len(keyPrefix)+32)
-	path = append(path, []byte(keyPrefix)...)
+	path := make([]byte, 0, len(FlatDBVerkleNodeKeyPrefix)+32)
+	path = append(path, FlatDBVerkleNodeKeyPrefix...)
 	for _, node := range nodes {
-		path := append(path[:len(keyPrefix)], node.Path...)
+		path := append(path[:len(FlatDBVerkleNodeKeyPrefix)], node.Path...)
 
 		if err := batch.Put(path, node.SerializedBytes); err != nil {
 			return common.Hash{}, nil, fmt.Errorf("put node to disk: %s", err)
