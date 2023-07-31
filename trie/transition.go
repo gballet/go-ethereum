@@ -179,12 +179,9 @@ func (t *TransitionTrie) IsVerkle() bool {
 
 func (t *TransitionTrie) TryUpdateStem(key []byte, values [][]byte) error {
 	trie := t.overlay
-	resolver := func(h []byte) ([]byte, error) {
-		return trie.db.diskdb.Get(append([]byte("flat-"), h...))
-	}
 	switch root := trie.root.(type) {
 	case *verkle.InternalNode:
-		return root.InsertStem(key, values, resolver)
+		return root.InsertStem(key, values, t.overlay.flatdbNodeResolver)
 	default:
 		panic("invalid root type")
 	}

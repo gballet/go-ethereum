@@ -266,7 +266,7 @@ func (db *cachingDB) openMPTTrie(root common.Hash) (Trie, error) {
 }
 
 func (db *cachingDB) openVKTrie(root common.Hash) (Trie, error) {
-	payload, err := db.DiskDB().Get([]byte("flat-"))
+	payload, err := db.DiskDB().Get(trie.FlatDBVerkleNodeKeyPrefix)
 	if err != nil {
 		return trie.NewVerkleTrie(verkle.New(), db.db, db.addrToPoint, db.ended), nil
 	}
