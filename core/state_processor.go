@@ -17,10 +17,13 @@
 package core
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"math/big"
+	"os"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -98,9 +101,22 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		allLogs = append(allLogs, receipt.Logs...)
 	}
 
+	// Overlay tree migration logic
+	migrdb := statedb.Database()
+	filePreimages, err := os.Open("preimages.bin")
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("opening preimage file: %s", err)
+	}
+	defer filePreimages.Close()
+	preimageSeek := migrdb.GetCurrentPreimageOffset()
+	if _, err := filePreimages.Seek(migrdb.GetCurrentPreimageOffset(), io.SeekStart); err != nil {
+		return nil, nil, 0, fmt.Errorf("seeking preimage file: %s", err)
+	}
+	fpreimages := bufio.NewReader(filePreimages)
+
 	// verkle transition: if the conversion process is in progress, move
 	// N values from the MPT into the verkle tree.
-	if statedb.Database().InTransition() {
+	if migrdb.InTransition() {
 		var (
 			now = time.Now()
 			tt  = statedb.GetTrie().(*trie.TransitionTrie)
@@ -108,12 +124,26 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			vkt = tt.Overlay()
 		)
 
-		accIt, err := statedb.Snaps().AccountIterator(mpt.Hash(), statedb.Database().GetCurrentAccountHash())
+		accIt, err := statedb.Snaps().AccountIterator(mpt.Hash(), migrdb.GetCurrentAccountHash())
 		if err != nil {
 			return nil, nil, 0, err
 		}
 		defer accIt.Release()
 		accIt.Next()
+
+		// If we're about to start with the migration process, we have to read the first account hash preimage.
+		if migrdb.GetCurrentAccountAddress() == (common.Address{}) {
+			var addr common.Address
+			if _, err := io.ReadFull(fpreimages, addr[:]); err != nil {
+				return nil, nil, 0, fmt.Errorf("reading preimage file: %s", err)
+			}
+			// fmt.Printf("first account: %s != %s\n", crypto.Keccak256Hash(addr[:]), accIt.Hash())
+			if crypto.Keccak256Hash(addr[:]) != accIt.Hash() {
+				return nil, nil, 0, fmt.Errorf("preimage file does not match account hash: %s != %s", crypto.Keccak256Hash(addr[:]), accIt.Hash())
+			}
+			preimageSeek += int64(len(addr))
+			migrdb.SetCurrentAccountAddress(addr)
+		}
 
 		const maxMovedCount = 10000
 		// mkv will be assiting in the collection of up to maxMovedCount key values to be migrated to the VKT.
@@ -126,18 +156,12 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 
 		// if less than maxCount slots were moved, move to the next account
 		for count < maxMovedCount {
-			statedb.Database().SetCurrentAccountHash(accIt.Hash())
-
 			acc, err := snapshot.FullAccount(accIt.Account())
 			if err != nil {
 				log.Error("Invalid account encountered during traversal", "error", err)
 				return nil, nil, 0, err
 			}
-			addr := rawdb.ReadPreimage(statedb.Database().DiskDB(), accIt.Hash())
-			if len(addr) == 0 {
-				panic(fmt.Sprintf("%x %x %v", addr, accIt.Hash(), acc))
-			}
-			vkt.SetStorageRootConversion(addr, common.BytesToHash(acc.Root))
+			vkt.SetStorageRootConversion(migrdb.GetCurrentAccountAddress().Bytes(), common.BytesToHash(acc.Root))
 
 			// Start with processing the storage, because once the account is
 			// converted, the `stateRoot` field loses its meaning. Which means
@@ -149,7 +173,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			// to during normal block execution. A mitigation strategy has been
 			// introduced with the `*StorageRootConversion` fields in VerkleDB.
 			if acc.HasStorage() {
-				stIt, err := statedb.Snaps().StorageIterator(mpt.Hash(), accIt.Hash(), statedb.Database().GetCurrentSlotHash())
+				stIt, err := statedb.Snaps().StorageIterator(mpt.Hash(), accIt.Hash(), migrdb.GetCurrentSlotHash())
 				if err != nil {
 					return nil, nil, 0, err
 				}
@@ -161,7 +185,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 				// processing the storage for that account where we left off.
 				// If the entire storage was processed, then the iterator was
 				// created in vain, but it's ok as this will not happen often.
-				for ; !statedb.Database().GetStorageProcessed() && count < maxMovedCount; count++ {
+				for ; !migrdb.GetStorageProcessed() && count < maxMovedCount; count++ {
 					var (
 						value     []byte   // slot value after RLP decoding
 						safeValue [32]byte // 32-byte aligned value
@@ -170,14 +194,23 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 						return nil, nil, 0, fmt.Errorf("error decoding bytes %x: %w", stIt.Slot(), err)
 					}
 					copy(safeValue[32-len(value):], value)
-					slotnr := rawdb.ReadPreimage(statedb.Database().DiskDB(), stIt.Hash())
 
-					mkv.addStorageSlot(addr, slotnr, safeValue[:])
+					var slotnr [32]byte
+					if _, err := io.ReadFull(fpreimages, slotnr[:]); err != nil {
+						return nil, nil, 0, fmt.Errorf("reading preimage file: %s", err)
+					}
+					// fmt.Printf("slot: %s != %s\n", crypto.Keccak256Hash(slotnr[:]), stIt.Hash())
+					if crypto.Keccak256Hash(slotnr[:]) != stIt.Hash() {
+						return nil, nil, 0, fmt.Errorf("preimage file does not match storage hash: %s!=%s", crypto.Keccak256Hash(slotnr[:]), stIt.Hash())
+					}
+					preimageSeek += int64(len(slotnr))
+
+					mkv.addStorageSlot(migrdb.GetCurrentAccountAddress().Bytes(), slotnr[:], safeValue[:])
 
 					// advance the storage iterator
-					statedb.Database().SetStorageProcessed(!stIt.Next())
-					if !statedb.Database().GetStorageProcessed() {
-						statedb.Database().SetCurrentSlotHash(stIt.Hash())
+					migrdb.SetStorageProcessed(!stIt.Next())
+					if !migrdb.GetStorageProcessed() {
+						migrdb.SetCurrentSlotHash(stIt.Hash())
 					}
 				}
 				stIt.Release()
@@ -190,33 +223,43 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			if count < maxMovedCount {
 				count++ // count increase for the account itself
 
-				mkv.addAccount(addr, acc)
-				vkt.ClearStrorageRootConversion(addr)
+				mkv.addAccount(migrdb.GetCurrentAccountAddress().Bytes(), acc)
+				vkt.ClearStrorageRootConversion(migrdb.GetCurrentAccountAddress().Bytes())
 
 				// Store the account code if present
 				if !bytes.Equal(acc.CodeHash, emptyCodeHash[:]) {
 					code := rawdb.ReadCode(statedb.Database().DiskDB(), common.BytesToHash(acc.CodeHash))
 					chunks := trie.ChunkifyCode(code)
 
-					mkv.addAccountCode(addr, uint64(len(code)), chunks)
+					mkv.addAccountCode(migrdb.GetCurrentAccountAddress().Bytes(), uint64(len(code)), chunks)
 				}
 
 				// reset storage iterator marker for next account
-				statedb.Database().SetStorageProcessed(false)
-				statedb.Database().SetCurrentSlotHash(common.Hash{})
+				migrdb.SetStorageProcessed(false)
+				migrdb.SetCurrentSlotHash(common.Hash{})
 
 				// Move to the next account, if available - or end
 				// the transition otherwise.
 				if accIt.Next() {
-					statedb.Database().SetCurrentAccountHash(accIt.Hash())
+					var addr common.Address
+					if _, err := io.ReadFull(fpreimages, addr[:]); err != nil {
+						return nil, nil, 0, fmt.Errorf("reading preimage file: %s", err)
+					}
+					// fmt.Printf("account switch: %s != %s\n", crypto.Keccak256Hash(addr[:]), accIt.Hash())
+					if crypto.Keccak256Hash(addr[:]) != accIt.Hash() {
+						return nil, nil, 0, fmt.Errorf("preimage file does not match account hash: %s != %s", crypto.Keccak256Hash(addr[:]), accIt.Hash())
+					}
+					preimageSeek += int64(len(addr))
+					migrdb.SetCurrentAccountAddress(addr)
 				} else {
 					// case when the account iterator has
 					// reached the end but count < maxCount
-					statedb.Database().EndVerkleTransition()
+					migrdb.EndVerkleTransition()
 					break
 				}
 			}
 		}
+		migrdb.SetCurrentPreimageOffset(preimageSeek)
 
 		log.Info("Collected and prepared key values from base tree", "count", count, "duration", time.Since(now), "last account", statedb.Database().GetCurrentAccountHash())
 

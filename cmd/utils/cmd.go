@@ -170,6 +170,10 @@ func ImportChain(chain *core.BlockChain, fn string) error {
 	}
 	defer fh.Close()
 
+	if _, err := fh.Seek(18224628422, 0); err != nil {
+		panic(err)
+	}
+
 	var reader io.Reader = fh
 	if strings.HasSuffix(fn, ".gz") {
 		if reader, err = gzip.NewReader(reader); err != nil {
