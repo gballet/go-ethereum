@@ -386,7 +386,7 @@ func ExportPreimages(db ethdb.Database, fn string) error {
 
 // ExportOverlayPreimages exports all known hash preimages into the specified file,
 // in the same order as expected by the overlay tree migration.
-func ExportOverlayPreimages(chain *core.BlockChain, fn string) error {
+func ExportOverlayPreimages(chain *core.BlockChain, fn string, root common.Hash) error {
 	log.Info("Exporting preimages", "file", fn)
 
 	fh, err := os.OpenFile(fn, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.ModePerm)
@@ -403,9 +403,11 @@ func ExportOverlayPreimages(chain *core.BlockChain, fn string) error {
 		return fmt.Errorf("failed to open statedb: %w", err)
 	}
 
-	mptRoot := chain.CurrentBlock().Root()
+	if root == (common.Hash{}) {
+		root = chain.CurrentBlock().Root()
+	}
 
-	accIt, err := statedb.Snaps().AccountIterator(mptRoot, common.Hash{})
+	accIt, err := statedb.Snaps().AccountIterator(root, common.Hash{})
 	if err != nil {
 		return err
 	}
@@ -426,7 +428,7 @@ func ExportOverlayPreimages(chain *core.BlockChain, fn string) error {
 		}
 
 		if acc.HasStorage() {
-			stIt, err := statedb.Snaps().StorageIterator(mptRoot, accIt.Hash(), common.Hash{})
+			stIt, err := statedb.Snaps().StorageIterator(root, accIt.Hash(), common.Hash{})
 			if err != nil {
 				return fmt.Errorf("failed to create storage iterator: %w", err)
 			}

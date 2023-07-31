@@ -150,7 +150,7 @@ It's deprecated, please use "geth db export" instead.
 		Name:      "export-overlay-preimages",
 		Usage:     "Export the preimage in overlay tree migration order",
 		ArgsUsage: "<dumpfile>",
-		Flags:     flags.Merge([]cli.Flag{}, utils.DatabasePathFlags),
+		Flags:     flags.Merge([]cli.Flag{utils.TreeRootFlag}, utils.DatabasePathFlags),
 		Description: `
 The export-overlay-preimages command exports hash preimages to a flat file, in exactly
 the expected order for the overlay tree migration.
@@ -415,8 +415,17 @@ func exportOverlayPreimages(ctx *cli.Context) error {
 
 	chain, _ := utils.MakeChain(ctx, stack)
 
+	var root common.Hash
+	if ctx.String(utils.TreeRootFlag.Name) != "" {
+		rootBytes := common.FromHex(ctx.String(utils.StartKeyFlag.Name))
+		if len(rootBytes) != common.HashLength {
+			return fmt.Errorf("invalid root hash length")
+		}
+		root = common.BytesToHash(rootBytes)
+	}
+
 	start := time.Now()
-	if err := utils.ExportOverlayPreimages(chain, ctx.Args().First()); err != nil {
+	if err := utils.ExportOverlayPreimages(chain, ctx.Args().First(), root); err != nil {
 		utils.Fatalf("Export error: %v\n", err)
 	}
 	fmt.Printf("Export done in %v\n", time.Since(start))
