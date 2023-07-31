@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"math/big"
 	"os"
 	"runtime"
@@ -1475,6 +1476,30 @@ func (bc *BlockChain) InsertChain(chain types.Blocks) (int, error) {
 	return bc.insertChain(chain, true, true)
 }
 
+func findVerkleConversionBlock() (uint64, error) {
+	if _, err := os.Stat("conversion.txt"); os.IsNotExist(err) {
+		return math.MaxUint64, nil
+	}
+
+	f, err := os.Open("conversion.txt")
+	if err != nil {
+		log.Error("Failed to open conversion.txt", "err", err)
+		return 0, err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	scanner.Scan()
+	conversionBlock, err := strconv.ParseUint(scanner.Text(), 10, 64)
+	if err != nil {
+		log.Error("Failed to parse conversionBlock", "err", err)
+		return 0, err
+	}
+	log.Info("Found conversion block info", "conversionBlock", conversionBlock)
+
+	return conversionBlock, nil
+}
+
 // insertChain is the internal implementation of InsertChain, which assumes that
 // 1) chains are contiguous, and 2) The chain mutex is held.
 //
@@ -1489,20 +1514,10 @@ func (bc *BlockChain) insertChain(chain types.Blocks, verifySeals, setHead bool)
 		return 0, nil
 	}
 
-	f, err := os.Open("conversion.txt")
+	conversionBlock, err := findVerkleConversionBlock()
 	if err != nil {
-		log.Error("Failed to open conversion.txt", "err", err)
 		return 0, err
 	}
-	defer f.Close()
-	scanner := bufio.NewScanner(f)
-	scanner.Scan()
-	conversionBlock, err := strconv.ParseUint(scanner.Text(), 10, 64)
-	if err != nil {
-		log.Error("Failed to parse conversionBlock", "err", err)
-		return 0, err
-	}
-	log.Info("Found conversion block info", "conversionBlock", conversionBlock)
 
 	// Start a parallel signature recovery (signer will fluke on fork transition, minimal perf loss)
 	senderCacher.recoverFromBlocks(types.MakeSigner(bc.chainConfig, chain[0].Number()), chain)
