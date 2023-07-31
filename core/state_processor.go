@@ -103,6 +103,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 
 	// Overlay tree migration logic
 	migrdb := statedb.Database()
+	// TODO: avoid opening the preimages file here and make it part of, potentially, statedb.Database().
 	filePreimages, err := os.Open("preimages.bin")
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("opening preimage file: %s", err)
@@ -137,7 +138,6 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			if _, err := io.ReadFull(fpreimages, addr[:]); err != nil {
 				return nil, nil, 0, fmt.Errorf("reading preimage file: %s", err)
 			}
-			// fmt.Printf("first account: %s != %s\n", crypto.Keccak256Hash(addr[:]), accIt.Hash())
 			if crypto.Keccak256Hash(addr[:]) != accIt.Hash() {
 				return nil, nil, 0, fmt.Errorf("preimage file does not match account hash: %s != %s", crypto.Keccak256Hash(addr[:]), accIt.Hash())
 			}
@@ -199,7 +199,6 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 					if _, err := io.ReadFull(fpreimages, slotnr[:]); err != nil {
 						return nil, nil, 0, fmt.Errorf("reading preimage file: %s", err)
 					}
-					// fmt.Printf("slot: %s != %s\n", crypto.Keccak256Hash(slotnr[:]), stIt.Hash())
 					if crypto.Keccak256Hash(slotnr[:]) != stIt.Hash() {
 						return nil, nil, 0, fmt.Errorf("preimage file does not match storage hash: %s!=%s", crypto.Keccak256Hash(slotnr[:]), stIt.Hash())
 					}
