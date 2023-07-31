@@ -36,17 +36,19 @@ type VerkleTrie struct {
 	root       verkle.VerkleNode
 	db         *Database
 	pointCache *utils.PointCache
+	ended      bool
 }
 
 func (vt *VerkleTrie) ToDot() string {
 	return verkle.ToDot(vt.root)
 }
 
-func NewVerkleTrie(root verkle.VerkleNode, db *Database, pointCache *utils.PointCache) *VerkleTrie {
+func NewVerkleTrie(root verkle.VerkleNode, db *Database, pointCache *utils.PointCache, ended bool) *VerkleTrie {
 	return &VerkleTrie{
 		root:       root,
 		db:         db,
 		pointCache: pointCache,
+		ended:      ended,
 	}
 }
 
@@ -128,8 +130,13 @@ func (t *VerkleTrie) TryGetAccount(key []byte) (*types.StateAccount, error) {
 	// if the account has been deleted, then values[10] will be 0 and not nil. If it has
 	// been recreated after that, then its code keccak will NOT be 0. So return `nil` if
 	// the nonce, and values[10], and code keccak is 0.
+
 	if acc.Nonce == 0 && len(values) > 10 && len(values[10]) > 0 && bytes.Equal(values[utils.CodeKeccakLeafKey], zero[:]) {
-		return nil, errDeletedAccount
+		if !t.ended {
+			return nil, errDeletedAccount
+		} else {
+			return nil, nil
+		}
 	}
 	var balance [32]byte
 	copy(balance[:], values[utils.BalanceLeafKey])
