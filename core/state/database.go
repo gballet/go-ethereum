@@ -268,14 +268,14 @@ func (db *cachingDB) openMPTTrie(root common.Hash) (Trie, error) {
 func (db *cachingDB) openVKTrie(root common.Hash) (Trie, error) {
 	payload, err := db.DiskDB().Get([]byte("flat-"))
 	if err != nil {
-		return trie.NewVerkleTrie(verkle.New(), db.db, db.addrToPoint), nil
+		return trie.NewVerkleTrie(verkle.New(), db.db, db.addrToPoint, db.ended), nil
 	}
 
 	r, err := verkle.ParseNode(payload, 0)
 	if err != nil {
 		panic(err)
 	}
-	return trie.NewVerkleTrie(r, db.db, db.addrToPoint), err
+	return trie.NewVerkleTrie(r, db.db, db.addrToPoint, db.ended), err
 }
 
 func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
@@ -326,14 +326,12 @@ func (db *cachingDB) openStorageMPTrie(stateRoot common.Hash, addrHash, root com
 func (db *cachingDB) OpenStorageTrie(stateRoot common.Hash, addrHash, root common.Hash, self Trie) (Trie, error) {
 	mpt, err := db.openStorageMPTrie(stateRoot, addrHash, root, nil)
 	if db.started && err == nil {
+		// Return a "storage trie" that is an adapter between the storge MPT
+		// and the unique verkle tree.
 		switch self := self.(type) {
 		case *trie.VerkleTrie:
-			// Return a "storage trie" that is an adapter between the storge MPT
-			// and the unique verkle tree.
 			return trie.NewTransitionTree(mpt.(*trie.SecureTrie), self, true), nil
 		case *trie.TransitionTrie:
-			// Return a "storage trie" that is an adapter between the storge MPT
-			// and the unique verkle tree.
 			return trie.NewTransitionTree(mpt.(*trie.SecureTrie), self.Overlay(), true), nil
 		default:
 			panic("unexpected trie type")
