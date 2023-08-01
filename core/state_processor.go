@@ -133,16 +133,16 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		accIt.Next()
 
 		// If we're about to start with the migration process, we have to read the first account hash preimage.
-		if migrdb.GetCurrentAccountAddress() == (common.Address{}) {
+		if migrdb.GetCurrentAccountAddress() == nil {
 			var addr common.Address
 			if _, err := io.ReadFull(fpreimages, addr[:]); err != nil {
 				return nil, nil, 0, fmt.Errorf("reading preimage file: %s", err)
 			}
-			if crypto.Keccak256Hash(addr[:]) != accIt.Hash() {
+			migrdb.SetCurrentAccountAddress(addr)
+			if migrdb.GetCurrentAccountHash() != accIt.Hash() {
 				return nil, nil, 0, fmt.Errorf("preimage file does not match account hash: %s != %s", crypto.Keccak256Hash(addr[:]), accIt.Hash())
 			}
 			preimageSeek += int64(len(addr))
-			migrdb.SetCurrentAccountAddress(addr)
 		}
 
 		const maxMovedCount = 10000

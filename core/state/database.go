@@ -76,7 +76,7 @@ type Database interface {
 
 	SetCurrentSlotHash(hash common.Hash)
 
-	GetCurrentAccountAddress() common.Address
+	GetCurrentAccountAddress() *common.Address
 
 	SetCurrentAccountAddress(common.Address)
 
@@ -253,10 +253,10 @@ type cachingDB struct {
 
 	addrToPoint *utils.PointCache
 
-	baseRoot              common.Hash    // hash of the read-only base tree
-	CurrentAccountAddress common.Address // addresss of the last translated account
-	CurrentSlotHash       common.Hash    // hash of the last translated storage slot
-	CurrentPreimageOffset int64          // next byte to read from the preimage file
+	baseRoot              common.Hash     // hash of the read-only base tree
+	CurrentAccountAddress *common.Address // addresss of the last translated account
+	CurrentSlotHash       common.Hash     // hash of the last translated storage slot
+	CurrentPreimageOffset int64           // next byte to read from the preimage file
 
 	// Mark whether the storage for an account has been processed. This is useful if the
 	// maximum number of leaves of the conversion is reached before the whole storage is
@@ -418,18 +418,18 @@ func (db *cachingDB) GetTreeKeyHeader(addr []byte) *verkle.Point {
 }
 
 func (db *cachingDB) SetCurrentAccountAddress(addr common.Address) {
-	db.CurrentAccountAddress = addr
+	db.CurrentAccountAddress = &addr
 }
 
 func (db *cachingDB) GetCurrentAccountHash() common.Hash {
 	var addrHash common.Hash
-	if db.CurrentAccountAddress != (common.Address{}) {
+	if db.CurrentAccountAddress != nil {
 		addrHash = crypto.Keccak256Hash(db.CurrentAccountAddress[:])
 	}
 	return addrHash
 }
 
-func (db *cachingDB) GetCurrentAccountAddress() common.Address {
+func (db *cachingDB) GetCurrentAccountAddress() *common.Address {
 	return db.CurrentAccountAddress
 }
 

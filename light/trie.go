@@ -121,7 +121,7 @@ func (db *odrDatabase) SetCurrentAccountAddress(common.Address) {
 	panic("not implemented") // TODO: Implement
 }
 
-func (db *odrDatabase) GetCurrentAccountAddress() common.Address {
+func (db *odrDatabase) GetCurrentAccountAddress() *common.Address {
 	panic("not implemented") // TODO: Implement
 }
 
