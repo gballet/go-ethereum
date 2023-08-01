@@ -117,12 +117,16 @@ func (db *odrDatabase) Transitioned() bool {
 	panic("not implemented") // TODO: Implement
 }
 
-func (db *odrDatabase) SetCurrentAccountHash(hash common.Hash) {
+func (db *odrDatabase) SetCurrentAccountAddress(common.Address) {
 	panic("not implemented") // TODO: Implement
 }
 
-func (db *odrDatabase) GetCurrentAccountHash() common.Hash {
+func (db *odrDatabase) GetCurrentAccountAddress() *common.Address {
 	panic("not implemented") // TODO: Implement
+}
+
+func (*odrDatabase) GetCurrentAccountHash() common.Hash {
+	panic("unimplemented")
 }
 
 func (db *odrDatabase) SetCurrentSlotHash(hash common.Hash) {
@@ -138,6 +142,14 @@ func (db *odrDatabase) SetStorageProcessed(_ bool) {
 }
 
 func (db *odrDatabase) GetStorageProcessed() bool {
+	panic("not implemented") // TODO: Implement
+}
+
+func (db *odrDatabase) GetCurrentPreimageOffset() int64 {
+	panic("not implemented") // TODO: Implement
+}
+
+func (db *odrDatabase) SetCurrentPreimageOffset(int64) {
 	panic("not implemented") // TODO: Implement
 }
 

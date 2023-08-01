@@ -26,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
@@ -73,17 +74,23 @@ type Database interface {
 
 	Transitioned() bool
 
-	SetCurrentAccountHash(hash common.Hash)
+	SetCurrentSlotHash(hash common.Hash)
+
+	GetCurrentAccountAddress() *common.Address
+
+	SetCurrentAccountAddress(common.Address)
 
 	GetCurrentAccountHash() common.Hash
-
-	SetCurrentSlotHash(hash common.Hash)
 
 	GetCurrentSlotHash() common.Hash
 
 	SetStorageProcessed(bool)
 
 	GetStorageProcessed() bool
+
+	GetCurrentPreimageOffset() int64
+
+	SetCurrentPreimageOffset(int64)
 
 	AddRootTranslation(originalRoot, translatedRoot common.Hash)
 }
@@ -246,9 +253,10 @@ type cachingDB struct {
 
 	addrToPoint *utils.PointCache
 
-	baseRoot           common.Hash // hash of the read-only base tree
-	CurrentAccountHash common.Hash // hash of the last translated account
-	CurrentSlotHash    common.Hash // hash of the last translated storage slot
+	baseRoot              common.Hash     // hash of the read-only base tree
+	CurrentAccountAddress *common.Address // addresss of the last translated account
+	CurrentSlotHash       common.Hash     // hash of the last translated storage slot
+	CurrentPreimageOffset int64           // next byte to read from the preimage file
 
 	// Mark whether the storage for an account has been processed. This is useful if the
 	// maximum number of leaves of the conversion is reached before the whole storage is
@@ -407,12 +415,28 @@ func (db *cachingDB) GetTreeKeyHeader(addr []byte) *verkle.Point {
 	return db.addrToPoint.GetTreeKeyHeader(addr)
 }
 
-func (db *cachingDB) SetCurrentAccountHash(hash common.Hash) {
-	db.CurrentAccountHash = hash
+func (db *cachingDB) SetCurrentAccountAddress(addr common.Address) {
+	db.CurrentAccountAddress = &addr
 }
 
 func (db *cachingDB) GetCurrentAccountHash() common.Hash {
-	return db.CurrentAccountHash
+	var addrHash common.Hash
+	if db.CurrentAccountAddress != nil {
+		addrHash = crypto.Keccak256Hash(db.CurrentAccountAddress[:])
+	}
+	return addrHash
+}
+
+func (db *cachingDB) GetCurrentAccountAddress() *common.Address {
+	return db.CurrentAccountAddress
+}
+
+func (db *cachingDB) GetCurrentPreimageOffset() int64 {
+	return db.CurrentPreimageOffset
+}
+
+func (db *cachingDB) SetCurrentPreimageOffset(offset int64) {
+	db.CurrentPreimageOffset = offset
 }
 
 func (db *cachingDB) SetCurrentSlotHash(hash common.Hash) {
