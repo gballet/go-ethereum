@@ -103,27 +103,33 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 
 	// Overlay tree migration logic
 	migrdb := statedb.Database()
-	// TODO: avoid opening the preimages file here and make it part of, potentially, statedb.Database().
-	filePreimages, err := os.Open("preimages.bin")
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("opening preimage file: %s", err)
-	}
-	defer filePreimages.Close()
-	preimageSeek := migrdb.GetCurrentPreimageOffset()
-	if _, err := filePreimages.Seek(migrdb.GetCurrentPreimageOffset(), io.SeekStart); err != nil {
-		return nil, nil, 0, fmt.Errorf("seeking preimage file: %s", err)
-	}
-	fpreimages := bufio.NewReader(filePreimages)
 
 	// verkle transition: if the conversion process is in progress, move
 	// N values from the MPT into the verkle tree.
 	if migrdb.InTransition() {
 		var (
-			now = time.Now()
-			tt  = statedb.GetTrie().(*trie.TransitionTrie)
-			mpt = tt.Base()
-			vkt = tt.Overlay()
+			now             = time.Now()
+			tt              = statedb.GetTrie().(*trie.TransitionTrie)
+			mpt             = tt.Base()
+			vkt             = tt.Overlay()
+			hasPreimagesBin = false
+			preimageSeek    = migrdb.GetCurrentPreimageOffset()
+			fpreimages      *bufio.Reader
 		)
+
+		// TODO: avoid opening the preimages file here and make it part of, potentially, statedb.Database().
+		filePreimages, err := os.Open("preimages.bin")
+		if err != nil {
+			// fallback on reading the db
+			log.Warn("opening preimage file", "error", err)
+		} else {
+			defer filePreimages.Close()
+			if _, err := filePreimages.Seek(preimageSeek, io.SeekStart); err != nil {
+				return nil, nil, 0, fmt.Errorf("seeking preimage file: %s", err)
+			}
+			fpreimages = bufio.NewReader(filePreimages)
+			hasPreimagesBin = true
+		}
 
 		accIt, err := statedb.Snaps().AccountIterator(mpt.Hash(), migrdb.GetCurrentAccountHash())
 		if err != nil {
@@ -135,8 +141,15 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		// If we're about to start with the migration process, we have to read the first account hash preimage.
 		if migrdb.GetCurrentAccountAddress() == nil {
 			var addr common.Address
-			if _, err := io.ReadFull(fpreimages, addr[:]); err != nil {
-				return nil, nil, 0, fmt.Errorf("reading preimage file: %s", err)
+			if hasPreimagesBin {
+				if _, err := io.ReadFull(fpreimages, addr[:]); err != nil {
+					return nil, nil, 0, fmt.Errorf("reading preimage file: %s", err)
+				}
+			} else {
+				addr = common.BytesToAddress(rawdb.ReadPreimage(migrdb.DiskDB(), accIt.Hash()))
+				if len(addr) != 20 {
+					return nil, nil, 0, fmt.Errorf("addr len is zero is not 32: %d", len(addr))
+				}
 			}
 			migrdb.SetCurrentAccountAddress(addr)
 			if migrdb.GetCurrentAccountHash() != accIt.Hash() {
@@ -196,8 +209,15 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 					copy(safeValue[32-len(value):], value)
 
 					var slotnr [32]byte
-					if _, err := io.ReadFull(fpreimages, slotnr[:]); err != nil {
-						return nil, nil, 0, fmt.Errorf("reading preimage file: %s", err)
+					if hasPreimagesBin {
+						if _, err := io.ReadFull(fpreimages, slotnr[:]); err != nil {
+							return nil, nil, 0, fmt.Errorf("reading preimage file: %s", err)
+						}
+					} else {
+						slotnr := rawdb.ReadPreimage(migrdb.DiskDB(), stIt.Hash())
+						if len(slotnr) != 32 {
+							return nil, nil, 0, fmt.Errorf("slotnr len is zero is not 32: %d", len(slotnr))
+						}
 					}
 					if crypto.Keccak256Hash(slotnr[:]) != stIt.Hash() {
 						return nil, nil, 0, fmt.Errorf("preimage file does not match storage hash: %s!=%s", crypto.Keccak256Hash(slotnr[:]), stIt.Hash())
@@ -241,8 +261,15 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 				// the transition otherwise.
 				if accIt.Next() {
 					var addr common.Address
-					if _, err := io.ReadFull(fpreimages, addr[:]); err != nil {
-						return nil, nil, 0, fmt.Errorf("reading preimage file: %s", err)
+					if hasPreimagesBin {
+						if _, err := io.ReadFull(fpreimages, addr[:]); err != nil {
+							return nil, nil, 0, fmt.Errorf("reading preimage file: %s", err)
+						}
+					} else {
+						addr = common.BytesToAddress(rawdb.ReadPreimage(migrdb.DiskDB(), accIt.Hash()))
+						if len(addr) != 20 {
+							return nil, nil, 0, fmt.Errorf("account address len is zero is not 20: %d", len(addr))
+						}
 					}
 					// fmt.Printf("account switch: %s != %s\n", crypto.Keccak256Hash(addr[:]), accIt.Hash())
 					if crypto.Keccak256Hash(addr[:]) != accIt.Hash() {
