@@ -102,36 +102,34 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	}
 
 	// Overlay tree migration logic
-	var (
-		migrdb          = statedb.Database()
-		hasPreimagesBin = false
-		preimageSeek    = migrdb.GetCurrentPreimageOffset()
-		fpreimages      *bufio.Reader
-	)
-
-	// TODO: avoid opening the preimages file here and make it part of, potentially, statedb.Database().
-	filePreimages, err := os.Open("preimages.bin")
-	if err != nil {
-		// fallback on reading the db
-		log.Warn("opening preimage file", "error", err)
-	} else {
-		defer filePreimages.Close()
-		if _, err := filePreimages.Seek(preimageSeek, io.SeekStart); err != nil {
-			return nil, nil, 0, fmt.Errorf("seeking preimage file: %s", err)
-		}
-		fpreimages = bufio.NewReader(filePreimages)
-		hasPreimagesBin = true
-	}
+	migrdb := statedb.Database()
 
 	// verkle transition: if the conversion process is in progress, move
 	// N values from the MPT into the verkle tree.
 	if migrdb.InTransition() {
 		var (
-			now = time.Now()
-			tt  = statedb.GetTrie().(*trie.TransitionTrie)
-			mpt = tt.Base()
-			vkt = tt.Overlay()
+			now             = time.Now()
+			tt              = statedb.GetTrie().(*trie.TransitionTrie)
+			mpt             = tt.Base()
+			vkt             = tt.Overlay()
+			hasPreimagesBin = false
+			preimageSeek    = migrdb.GetCurrentPreimageOffset()
+			fpreimages      *bufio.Reader
 		)
+
+		// TODO: avoid opening the preimages file here and make it part of, potentially, statedb.Database().
+		filePreimages, err := os.Open("preimages.bin")
+		if err != nil {
+			// fallback on reading the db
+			log.Warn("opening preimage file", "error", err)
+		} else {
+			defer filePreimages.Close()
+			if _, err := filePreimages.Seek(preimageSeek, io.SeekStart); err != nil {
+				return nil, nil, 0, fmt.Errorf("seeking preimage file: %s", err)
+			}
+			fpreimages = bufio.NewReader(filePreimages)
+			hasPreimagesBin = true
+		}
 
 		accIt, err := statedb.Snaps().AccountIterator(mpt.Hash(), migrdb.GetCurrentAccountHash())
 		if err != nil {
