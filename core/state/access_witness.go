@@ -131,10 +131,10 @@ func (aw *AccessWitness) TouchAndChargeContractCreateInit(addr []byte, createSen
 func (aw *AccessWitness) TouchAndChargeContractCreateCompleted(addr []byte, withValue bool) uint64 { // TODO(jsign): withValue not used?
 	var gas uint64
 	gas += aw.TouchAddressOnWriteAndComputeGas(addr, zeroTreeIndex, utils.VersionLeafKey)
-	gas += aw.TouchAddressOnReadAndComputeGas(addr, zeroTreeIndex, utils.CodeSizeLeafKey)
-	gas += aw.TouchAddressOnReadAndComputeGas(addr, zeroTreeIndex, utils.CodeKeccakLeafKey)
-	gas += aw.TouchAddressOnWriteAndComputeGas(addr, zeroTreeIndex, utils.NonceLeafKey)
 	gas += aw.TouchAddressOnWriteAndComputeGas(addr, zeroTreeIndex, utils.BalanceLeafKey)
+	gas += aw.TouchAddressOnWriteAndComputeGas(addr, zeroTreeIndex, utils.CodeSizeLeafKey)
+	gas += aw.TouchAddressOnWriteAndComputeGas(addr, zeroTreeIndex, utils.CodeKeccakLeafKey)
+	gas += aw.TouchAddressOnWriteAndComputeGas(addr, zeroTreeIndex, utils.NonceLeafKey)
 	return gas
 }
 
@@ -220,7 +220,7 @@ func (aw *AccessWitness) touchAddress(addr []byte, treeIndex uint256.Int, subInd
 		chunkValue := aw.chunks[chunkKey]
 		if (chunkValue & AccessWitnessWriteFlag) == 0 {
 			chunkWrite = true
-			aw.chunks[chunkKey] |= chunkValue
+			aw.chunks[chunkKey] |= AccessWitnessWriteFlag
 		}
 
 		// TODO: charge chunk filling costs if the leaf was previously empty in the state
