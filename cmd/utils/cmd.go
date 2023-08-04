@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/pprof"
 	"strings"
 	"syscall"
 	"time"
@@ -40,6 +41,7 @@ import (
 	"github.com/ethereum/go-ethereum/internal/debug"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/urfave/cli/v2"
 )
@@ -176,17 +178,17 @@ func ImportChain(chain *core.BlockChain, fn string) error {
 			return err
 		}
 	}
-	// cpuProfile, err := os.Create("cpu.out")
-	// if err != nil {
-	// 	return fmt.Errorf("Error creating CPU profile: %v", err)
-	// }
-	// defer cpuProfile.Close()
-	// err = pprof.StartCPUProfile(cpuProfile)
-	// if err != nil {
-	// 	return fmt.Errorf("Error starting CPU profile: %v", err)
-	// }
-	// defer pprof.StopCPUProfile()
-	// params.ClearVerkleWitnessCosts()
+	cpuProfile, err := os.Create("cpu.out")
+	if err != nil {
+		return fmt.Errorf("Error creating CPU profile: %v", err)
+	}
+	defer cpuProfile.Close()
+	err = pprof.StartCPUProfile(cpuProfile)
+	if err != nil {
+		return fmt.Errorf("Error starting CPU profile: %v", err)
+	}
+	defer pprof.StopCPUProfile()
+	params.ClearVerkleWitnessCosts()
 
 	stream := rlp.NewStream(reader, 0)
 
