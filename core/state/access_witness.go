@@ -128,7 +128,7 @@ func (aw *AccessWitness) TouchAndChargeContractCreateInit(addr []byte, createSen
 // TouchAndChargeContractCreateCompleted charges access access costs after
 // the completion of a contract creation to populate the created account in
 // the tree
-func (aw *AccessWitness) TouchAndChargeContractCreateCompleted(addr []byte, withValue bool) uint64 { // TODO(jsign): withValue not used?
+func (aw *AccessWitness) TouchAndChargeContractCreateCompleted(addr []byte) uint64 {
 	var gas uint64
 	gas += aw.TouchAddressOnWriteAndComputeGas(addr, zeroTreeIndex, utils.VersionLeafKey)
 	gas += aw.TouchAddressOnWriteAndComputeGas(addr, zeroTreeIndex, utils.BalanceLeafKey)
