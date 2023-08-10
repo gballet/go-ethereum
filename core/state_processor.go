@@ -115,6 +115,12 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	// verkle transition: if the conversion process is in progress, move
 	// N values from the MPT into the verkle tree.
 	if migrdb.InTransition() {
+		proof, stateDiff, err := statedb.Witness().GenerateProofAndSerialize()
+		if err != nil {
+			return nil, nil, 0, fmt.Errorf("could not generate proof: %w", err)
+		}
+		_, _ = proof, stateDiff
+
 		var (
 			now             = time.Now()
 			tt              = statedb.GetTrie().(*trie.TransitionTrie)
