@@ -17,8 +17,11 @@
 package state
 
 import (
+	"fmt"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/holiman/uint256"
 )
@@ -43,6 +46,12 @@ type AccessWitness struct {
 	chunks   map[chunkAccessKey]mode
 
 	pointCache *utils.PointCache
+
+	treeLoaderChunks chan chunkAccessKey
+	tree             *trie.VerkleTrie
+	treeLoaderQuit   chan struct{}
+	treeLoaderClosed chan struct{}
+	treeLoaderErr    error
 }
 
 func NewAccessWitness(pointCache *utils.PointCache) *AccessWitness {
@@ -53,6 +62,15 @@ func NewAccessWitness(pointCache *utils.PointCache) *AccessWitness {
 	}
 }
 
+func NewAccessWitnessWithTreeLoader(pointCache *utils.PointCache, trie *trie.VerkleTrie) *AccessWitness {
+	aw := NewAccessWitness(pointCache)
+	aw.treeLoaderChunks = make(chan chunkAccessKey, 1024)
+	aw.tree = trie
+	go aw.backgroundTreeLoader()
+
+	return aw
+}
+
 // Merge is used to merge the witness that got generated during the execution
 // of a tx, with the accumulation of witnesses that were generated during the
 // execution of all the txs preceding this one in a given block.
@@ -61,6 +79,13 @@ func (aw *AccessWitness) Merge(other *AccessWitness) {
 		aw.branches[k] |= other.branches[k]
 	}
 	for k, chunk := range other.chunks {
+		// If the to-be-merged chunk isn't already present,
+		// schedule to be warmed up in the loding witness tree.
+		if aw.treeLoaderChunks != nil {
+			if _, ok := aw.chunks[k]; !ok {
+				aw.treeLoaderChunks <- k
+			}
+		}
 		aw.chunks[k] |= chunk
 	}
 }
@@ -227,6 +252,38 @@ func (aw *AccessWitness) touchAddress(addr []byte, treeIndex uint256.Int, subInd
 	}
 
 	return branchRead, chunkRead, branchWrite, chunkWrite, chunkFill
+}
+
+func (aw *AccessWitness) GetLoadedTree() (*trie.VerkleTrie, error) {
+	// Signal that we are done sending chunks to load the tree.
+	aw.treeLoaderQuit <- struct{}{}
+	// Wait for the background loader to finish loading pending keys.
+	<-aw.treeLoaderClosed
+
+	// If the background loader encountered an error, return it.
+	if aw.treeLoaderErr != nil {
+		return nil, fmt.Errorf("loading the witness tree failed: %s", aw.treeLoaderErr)
+	}
+
+	// The tree is fully loaded and ready to support proof generation.
+	return aw.tree, nil
+}
+
+func (aw *AccessWitness) backgroundTreeLoader() {
+	defer close(aw.treeLoaderClosed)
+	for {
+		select {
+		case chunk := <-aw.treeLoaderChunks:
+			basePoint := aw.pointCache.GetTreeKeyHeader(chunk.addr[:])
+			key := utils.GetTreeKeyWithEvaluatedAddess(basePoint, &chunk.treeIndex, chunk.leafKey)
+			if err := aw.tree.LoadHashedKeyForProof(key); err != nil {
+				aw.treeLoaderErr = err
+				return
+			}
+		case <-aw.treeLoaderQuit:
+			return
+		}
+	}
 }
 
 type branchAccessKey struct {
