@@ -19,13 +19,16 @@ package trie
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/gballet/go-verkle"
@@ -332,11 +335,16 @@ func ProveAndSerialize(pretrie, posttrie *VerkleTrie, keys [][]byte, resolver ve
 		return nil, nil, err
 	}
 
+	startProofSerialization := time.Now()
 	p, kvps, err := verkle.SerializeProof(proof)
 	if err != nil {
 		return nil, nil, err
 	}
-
+	proofJson, err := json.Marshal(proof)
+	if err != nil {
+		return nil, nil, err
+	}
+	log.Debug("Generating the proof", "number of keys", len(keys), "building proof", startProofSerialization.Sub(startProofGen), "serializing proof", time.Since(startProofSerialization), "json encoded size", common.StorageSize(len(proofJson)))
 	return p, kvps, nil
 }
 
