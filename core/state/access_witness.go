@@ -48,12 +48,23 @@ type AccessWitness struct {
 
 	pointCache *utils.PointCache
 
+	// Fields below are only used when the witness tree loader
+	// is enabled by using the NewAccessWitnessWithTreeLoader constructor.
+
+	// treeLoaderChunks is a channel used to schedule chunks to be loaded.
 	treeLoaderChunks chan chunkAccessKey
-	tree             *trie.VerkleTrie
-	treeLoaderQuit   chan struct{}
+	// tree is the witness tree used to load chunks.
+	tree *trie.VerkleTrie
+	// treeLoaderQuit is used to signal the background tree loader to quit.
+	treeLoaderQuit chan struct{}
+	// treeLoaderClosed is used to signal that the background tree loader has quit.
 	treeLoaderClosed chan struct{}
-	treeLoaderErr    error
-	witnessKeys      [][]byte
+	// treeLoaderErr is used to signal that the background tree loader has
+	// encountered an error.
+	treeLoaderErr error
+	// witnessKeys is the list of keys that have been accessed.
+	witnessKeys [][]byte
+	// witnessKeyValues is the list of values that have been accessed.
 	witnessKeyValues map[string][]byte
 }
 
@@ -65,9 +76,13 @@ func NewAccessWitness(pointCache *utils.PointCache) *AccessWitness {
 	}
 }
 
+// NewAccessWitnessWithTreeLoader creates a new AccessWitness that will
+// construct a witness tree in the background when merging child witnesses.
+// The caller is expected to call ProveAndSerialize() to get the proof for
+// the witness tree, which will also clean up background tasks.
 func NewAccessWitnessWithTreeLoader(pointCache *utils.PointCache, trie *trie.VerkleTrie) *AccessWitness {
 	aw := NewAccessWitness(pointCache)
-	aw.treeLoaderChunks = make(chan chunkAccessKey, 1024)
+	aw.treeLoaderChunks = make(chan chunkAccessKey, 64)
 	aw.tree = trie
 	go aw.backgroundTreeLoader()
 
@@ -280,6 +295,7 @@ func (aw *AccessWitness) backgroundTreeLoader() {
 	defer close(aw.treeLoaderClosed)
 	for {
 		select {
+		// If we receive a new chunk, load it into the tree.
 		case chunk := <-aw.treeLoaderChunks:
 			basePoint := aw.pointCache.GetTreeKeyHeader(chunk.addr[:])
 			key := utils.GetTreeKeyWithEvaluatedAddess(basePoint, &chunk.treeIndex, chunk.leafKey)
@@ -290,6 +306,7 @@ func (aw *AccessWitness) backgroundTreeLoader() {
 			}
 			aw.witnessKeys = append(aw.witnessKeys, key)
 			aw.witnessKeyValues[string(key)] = value
+		// If we receive a quit signal, stop the loader.
 		case <-aw.treeLoaderQuit:
 			return
 		}
