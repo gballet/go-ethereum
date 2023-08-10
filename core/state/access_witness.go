@@ -23,6 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
+	"github.com/gballet/go-verkle"
 	"github.com/holiman/uint256"
 )
 
@@ -52,6 +53,8 @@ type AccessWitness struct {
 	treeLoaderQuit   chan struct{}
 	treeLoaderClosed chan struct{}
 	treeLoaderErr    error
+	witnessKeys      [][]byte
+	witnessKeyValues map[string][]byte
 }
 
 func NewAccessWitness(pointCache *utils.PointCache) *AccessWitness {
@@ -254,7 +257,7 @@ func (aw *AccessWitness) touchAddress(addr []byte, treeIndex uint256.Int, subInd
 	return branchRead, chunkRead, branchWrite, chunkWrite, chunkFill
 }
 
-func (aw *AccessWitness) GetLoadedTree() (*trie.VerkleTrie, error) {
+func (aw *AccessWitness) GenerateProofAndSerialize() (*verkle.VerkleProof, verkle.StateDiff, error) {
 	// Signal that we are done sending chunks to load the tree.
 	aw.treeLoaderQuit <- struct{}{}
 	// Wait for the background loader to finish loading pending keys.
@@ -262,11 +265,15 @@ func (aw *AccessWitness) GetLoadedTree() (*trie.VerkleTrie, error) {
 
 	// If the background loader encountered an error, return it.
 	if aw.treeLoaderErr != nil {
-		return nil, fmt.Errorf("loading the witness tree failed: %s", aw.treeLoaderErr)
+		return nil, nil, fmt.Errorf("loading the witness tree failed: %s", aw.treeLoaderErr)
 	}
 
 	// The tree is fully loaded and ready to support proof generation.
-	return aw.tree, nil
+	proof, stateDiff, err := aw.tree.ProveAndSerialize(aw.witnessKeys, aw.witnessKeyValues)
+	if err != nil {
+		return nil, nil, fmt.Errorf("generating the witness proof failed: %s", err)
+	}
+	return proof, stateDiff, nil
 }
 
 func (aw *AccessWitness) backgroundTreeLoader() {
@@ -276,10 +283,13 @@ func (aw *AccessWitness) backgroundTreeLoader() {
 		case chunk := <-aw.treeLoaderChunks:
 			basePoint := aw.pointCache.GetTreeKeyHeader(chunk.addr[:])
 			key := utils.GetTreeKeyWithEvaluatedAddess(basePoint, &chunk.treeIndex, chunk.leafKey)
-			if err := aw.tree.LoadHashedKeyForProof(key); err != nil {
+			value, err := aw.tree.GetAndLoadForProof(key)
+			if err != nil {
 				aw.treeLoaderErr = err
 				return
 			}
+			aw.witnessKeys = append(aw.witnessKeys, key)
+			aw.witnessKeyValues[string(key)] = value
 		case <-aw.treeLoaderQuit:
 			return
 		}

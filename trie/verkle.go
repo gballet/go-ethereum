@@ -314,8 +314,8 @@ func (trie *VerkleTrie) Copy() *VerkleTrie {
 	}
 }
 
-func (trie *VerkleTrie) LoadHashedKeyForProof(hashedKey []byte) error {
-	return trie.root.(*verkle.InternalNode).LoadKeyForProof(hashedKey, trie.flatdbNodeResolver)
+func (trie *VerkleTrie) GetAndLoadForProof(hashedKey []byte) ([]byte, error) {
+	return trie.root.(*verkle.InternalNode).GetAndLoadForProof(hashedKey, trie.flatdbNodeResolver)
 }
 
 func (trie *VerkleTrie) IsVerkle() bool {
