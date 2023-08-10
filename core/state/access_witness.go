@@ -18,8 +18,10 @@ package state
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
@@ -273,10 +275,12 @@ func (aw *AccessWitness) touchAddress(addr []byte, treeIndex uint256.Int, subInd
 }
 
 func (aw *AccessWitness) GenerateProofAndSerialize() (*verkle.VerkleProof, verkle.StateDiff, error) {
+	start := time.Now()
 	// Signal that we are done sending chunks to load the tree.
 	aw.treeLoaderQuit <- struct{}{}
 	// Wait for the background loader to finish loading pending keys.
 	<-aw.treeLoaderClosed
+	log.Debug("Waiting for the tree loader to finish took %s", time.Since(start))
 
 	// If the background loader encountered an error, return it.
 	if aw.treeLoaderErr != nil {
@@ -288,6 +292,7 @@ func (aw *AccessWitness) GenerateProofAndSerialize() (*verkle.VerkleProof, verkl
 	if err != nil {
 		return nil, nil, fmt.Errorf("generating the witness proof failed: %s", err)
 	}
+
 	return proof, stateDiff, nil
 }
 
