@@ -433,8 +433,8 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 			self: AccountRef(addr),
 		}
 		paddedCodeCopy, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(code, uint64CodeOffset, length.Uint64())
-		// TODO(jsign): contract.UseGas(return)?
-		touchCodeChunksRangeOnReadAndChargeGas(addr[:], copyOffset, nonPaddedCopyLength, uint64(len(contract.Code)), interpreter.evm.Accesses)
+		gas := touchCodeChunksRangeOnReadAndChargeGas(addr[:], copyOffset, nonPaddedCopyLength, uint64(len(contract.Code)), interpreter.evm.Accesses)
+		scope.Contract.UseGas(gas)
 		scope.Memory.Set(memOffset.Uint64(), length.Uint64(), paddedCodeCopy)
 	} else {
 		codeCopy := getData(interpreter.evm.StateDB.GetCode(addr), uint64CodeOffset, length.Uint64())
