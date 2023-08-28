@@ -19,13 +19,16 @@ package trie
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/gballet/go-verkle"
@@ -316,21 +319,32 @@ func (trie *VerkleTrie) Copy() *VerkleTrie {
 	}
 }
 
+func (trie *VerkleTrie) GetAndLoadForProof(hashedKey []byte) ([]byte, error) {
+	return trie.root.(*verkle.InternalNode).GetAndLoadForProof(hashedKey, trie.flatdbNodeResolver)
+}
+
 func (trie *VerkleTrie) IsVerkle() bool {
 	return true
 }
 
 func (trie *VerkleTrie) ProveAndSerialize(keys [][]byte, kv map[string][]byte) (*verkle.VerkleProof, verkle.StateDiff, error) {
+	// TODO: remove verbose logging.
+	startProofGen := time.Now()
 	proof, _, _, _, err := verkle.MakeVerkleMultiProof(trie.root, keys)
 	if err != nil {
 		return nil, nil, err
 	}
 
+	startProofSerialization := time.Now()
 	p, kvps, err := verkle.SerializeProof(proof)
 	if err != nil {
 		return nil, nil, err
 	}
-
+	proofJson, err := json.Marshal(proof)
+	if err != nil {
+		return nil, nil, err
+	}
+	log.Debug("Generating the proof", "number of keys", len(keys), "building proof", startProofSerialization.Sub(startProofGen), "serializing proof", time.Since(startProofSerialization), "json encoded size", common.StorageSize(len(proofJson)))
 	return p, kvps, nil
 }
 

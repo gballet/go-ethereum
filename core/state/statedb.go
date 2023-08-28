@@ -212,7 +212,8 @@ func (s *StateDB) NewAccessWitness() *AccessWitness {
 
 func (s *StateDB) Witness() *AccessWitness {
 	if s.witness == nil {
-		s.witness = s.NewAccessWitness()
+		verkleTree := s.GetTrie().(*trie.TransitionTrie).Overlay()
+		s.witness = NewAccessWitnessWithTreeLoader(s.db.(*cachingDB).addrToPoint, verkleTree)
 	}
 	return s.witness
 }
