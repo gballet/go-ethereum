@@ -360,6 +360,26 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 	// No block reward which is issued by consensus layer instead.
 }
 
+func loadKeysAndProve(tree state.Trie, keys [][]byte, kvs map[string][]byte) (*verkle.VerkleProof, verkle.StateDiff, error) {
+	if vtr, ok := tree.(*trie.VerkleTrie); ok {
+		for _, key := range keys {
+			// XXX workaround - there is a problem in the witness creation
+			// so fix the witness creation as well.
+			v, err := vtr.GetWithHashedKey(key)
+			if err != nil {
+				panic(err)
+			}
+			kvs[string(key)] = v
+		}
+
+		if len(keys) > 0 {
+			return vtr.ProveAndSerialize(keys, kvs)
+		}
+	}
+
+	return nil, nil, nil
+}
+
 // FinalizeAndAssemble implements consensus.Engine, setting the final state and
 // assembling the block.
 func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt, withdrawals []*types.Withdrawal) (*types.Block, error) {
@@ -384,8 +404,10 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	header.Root = state.IntermediateRoot(true)
 
 	var (
-		p *verkle.VerkleProof
-		k verkle.StateDiff
+		p    *verkle.VerkleProof
+		k    verkle.StateDiff
+		keys = state.Witness().Keys()
+		kvs  = state.Witness().KeyVals()
 	)
 	if chain.Config().IsVerkle(header.Number, header.Time) {
 		// Open the pre-tree to prove the pre-state against
@@ -397,25 +419,15 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 		if err != nil {
 			return nil, err
 		}
-		if vtr, ok := preTrie.(*trie.VerkleTrie); ok {
-			keys := state.Witness().Keys()
-			kvs := state.Witness().KeyVals()
-			for _, key := range keys {
-				// XXX workaround - there is a problem in the witness creation
-				// so fix the witness creation as well.
-				v, err := vtr.GetWithHashedKey(key)
-				if err != nil {
-					panic(err)
-				}
-				kvs[string(key)] = v
-			}
+		p, k, err = loadKeysAndProve(preTrie, keys, kvs)
+		if err != nil {
+			return nil, err
+		}
 
-			if len(state.Witness().Keys()) > 0 {
-				p, k, err = vtr.ProveAndSerialize(state.Witness().Keys(), kvs)
-				if err != nil {
-					return nil, err
-				}
-			}
+		// post-state
+		_, _, err = loadKeysAndProve(state.GetTrie(), keys, kvs)
+		if err != nil {
+			return nil, err
 		}
 	}
 
