@@ -39,6 +39,7 @@ type VerkleTrie struct {
 	db         *Database
 	pointCache *utils.PointCache
 	ended      bool
+	storage    bool
 }
 
 func (vt *VerkleTrie) ToDot() string {
@@ -51,6 +52,18 @@ func NewVerkleTrie(root verkle.VerkleNode, db *Database, pointCache *utils.Point
 		db:         db,
 		pointCache: pointCache,
 		ended:      ended,
+	}
+}
+
+// NewVerkleTrieFromMainTree creates a new VerkleTrie from the main trie, that
+// is used as an adapter for the main trie to be used as a storage trie.
+func NewStorageAdapterFromMainTree(self *VerkleTrie) *VerkleTrie {
+	return &VerkleTrie{
+		root:       self.root,
+		db:         self.db,
+		pointCache: self.pointCache,
+		ended:      self.ended,
+		storage:    true,
 	}
 }
 
@@ -261,6 +274,13 @@ func nodeToDBKey(n verkle.VerkleNode) []byte {
 // Commit writes all nodes to the trie's memory database, tracking the internal
 // and external (for account tries) references.
 func (trie *VerkleTrie) Commit(_ bool) (common.Hash, *trienode.NodeSet, error) {
+	if trie.storage {
+		// Do not commit anything if this is a "storage trie" adapter for
+		// the main trie. Verkle tries only commit the single trie once at
+		// the end of block processing.
+		return common.Hash{}, nil, nil
+	}
+
 	root, ok := trie.root.(*verkle.InternalNode)
 	if !ok {
 		return common.Hash{}, nil, errors.New("unexpected root node type")
