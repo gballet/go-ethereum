@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/gballet/go-verkle"
 )
 
 // A BlockNonce is a 64-bit hash which proves (combined with the
@@ -56,6 +57,54 @@ func (n BlockNonce) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (n *BlockNonce) UnmarshalText(input []byte) error {
 	return hexutil.UnmarshalFixedText("BlockNonce", input, n[:])
+}
+
+type ExecutionWitness struct {
+	StateDiff   verkle.StateDiff    `json:"stateDiff"`
+	VerkleProof *verkle.VerkleProof `json:"verkleProof"`
+}
+
+func (ew *ExecutionWitness) Copy() *ExecutionWitness {
+	ret := &ExecutionWitness{
+		StateDiff:   make([]verkle.StemStateDiff, len(ew.StateDiff)),
+		VerkleProof: &verkle.VerkleProof{},
+	}
+	for i := range ew.StateDiff {
+		copy(ret.StateDiff[i].Stem[:], ew.StateDiff[i].Stem[:])
+		ret.StateDiff[i].SuffixDiffs = make([]verkle.SuffixStateDiff, len(ew.StateDiff[i].SuffixDiffs))
+		for j := range ew.StateDiff[i].SuffixDiffs {
+			ret.StateDiff[i].SuffixDiffs[j].Suffix = ew.StateDiff[i].SuffixDiffs[j].Suffix
+			if ew.StateDiff[i].SuffixDiffs[j].CurrentValue != nil {
+				ret.StateDiff[i].SuffixDiffs[j].CurrentValue = &[32]byte{}
+				copy((*ret.StateDiff[i].SuffixDiffs[j].CurrentValue)[:], (*ew.StateDiff[i].SuffixDiffs[j].CurrentValue)[:])
+			}
+		}
+	}
+	if ew.VerkleProof != nil {
+		ret.VerkleProof.OtherStems = make([][31]byte, len(ew.VerkleProof.OtherStems))
+		ret.VerkleProof.DepthExtensionPresent = make([]byte, len(ew.VerkleProof.DepthExtensionPresent))
+		ret.VerkleProof.CommitmentsByPath = make([][32]byte, len(ew.VerkleProof.CommitmentsByPath))
+		ret.VerkleProof.IPAProof = &verkle.IPAProof{}
+
+		for i := range ew.VerkleProof.OtherStems {
+			copy(ret.VerkleProof.OtherStems[i][:], ew.VerkleProof.OtherStems[i][:])
+		}
+
+		copy(ret.VerkleProof.DepthExtensionPresent, ew.VerkleProof.DepthExtensionPresent)
+		for i := range ew.VerkleProof.CommitmentsByPath {
+			copy(ret.VerkleProof.CommitmentsByPath[i][:], ew.VerkleProof.CommitmentsByPath[i][:])
+		}
+		copy(ret.VerkleProof.D[:], ew.VerkleProof.D[:])
+
+		if ew.VerkleProof.IPAProof != nil {
+			for i := range ew.VerkleProof.IPAProof.CL {
+				copy(ret.VerkleProof.IPAProof.CL[i][:], ew.VerkleProof.IPAProof.CL[i][:])
+				copy(ret.VerkleProof.IPAProof.CR[i][:], ew.VerkleProof.IPAProof.CR[i][:])
+			}
+			copy(ret.VerkleProof.IPAProof.FinalEvaluation[:], ew.VerkleProof.IPAProof.FinalEvaluation[:])
+		}
+	}
+	return ret
 }
 
 //go:generate go run github.com/fjl/gencodec -type Header -field-override headerMarshaling -out gen_header_json.go
@@ -90,6 +139,8 @@ type Header struct {
 
 	// ExcessBlobGas was added by EIP-4844 and is ignored in legacy headers.
 	ExcessBlobGas *uint64 `json:"excessBlobGas" rlp:"optional"`
+
+	ExecutionWitness *ExecutionWitness `json:"executionWitness" rlp:"-"`
 }
 
 // field type overrides for gencodec
@@ -292,6 +343,10 @@ func CopyHeader(h *Header) *Header {
 		cpy.BlobGasUsed = new(uint64)
 		*cpy.BlobGasUsed = *h.BlobGasUsed
 	}
+	if h.ExecutionWitness != nil {
+		cpy.ExecutionWitness = h.ExecutionWitness.Copy()
+
+	}
 	return &cpy
 }
 
@@ -380,6 +435,8 @@ func (b *Block) BlobGasUsed() *uint64 {
 
 func (b *Block) Header() *Header { return CopyHeader(b.header) }
 
+func (b *Block) ExecutionWitness() *ExecutionWitness { return b.header.ExecutionWitness }
+
 // Body returns the non-header content of the block.
 func (b *Block) Body() *Body { return &Body{b.transactions, b.uncles, b.withdrawals} }
 
@@ -399,6 +456,18 @@ func (b *Block) Size() uint64 {
 // stuffed with junk data to add processing overhead
 func (b *Block) SanityCheck() error {
 	return b.header.SanityCheck()
+}
+
+func (b *Block) SetVerkleProof(vp *verkle.VerkleProof, statediff verkle.StateDiff) {
+	b.header.ExecutionWitness = &ExecutionWitness{statediff, vp}
+	if statediff == nil {
+		b.header.ExecutionWitness.StateDiff = []verkle.StemStateDiff{}
+	}
+	if vp == nil {
+		b.header.ExecutionWitness.VerkleProof = &verkle.VerkleProof{
+			IPAProof: &verkle.IPAProof{},
+		}
+	}
 }
 
 type writeCounter uint64

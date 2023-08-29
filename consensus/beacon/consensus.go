@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/gballet/go-verkle"
 )
 
 // Proof-of-stake protocol constants.
@@ -382,8 +383,46 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	// Assign the final state root to header.
 	header.Root = state.IntermediateRoot(true)
 
+	var (
+		p *verkle.VerkleProof
+		k verkle.StateDiff
+	)
+	if true {
+		// Open the pre-tree to prove the pre-state against
+		parent := chain.GetHeaderByNumber(header.Number.Uint64() - 1)
+		if parent == nil {
+			panic("nil parent")
+		}
+		preTrie, err := state.Database().OpenTrie(parent.Root)
+		if err != nil {
+			return nil, err
+		}
+		if vtr, ok := preTrie.(*trie.VerkleTrie); ok {
+			keys := state.Witness().Keys()
+			kvs := state.Witness().KeyVals()
+			for _, key := range keys {
+				// XXX workaround - there is a problem in the witness creation
+				// so fix the witness creation as well.
+				v, err := vtr.GetWithHashedKey(key)
+				if err != nil {
+					panic(err)
+				}
+				kvs[string(key)] = v
+			}
+
+			if len(state.Witness().Keys()) > 0 {
+				p, k, err = vtr.ProveAndSerialize(state.Witness().Keys(), kvs)
+				if err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+
 	// Assemble and return the final block.
-	return types.NewBlockWithWithdrawals(header, txs, uncles, receipts, withdrawals, trie.NewStackTrie(nil)), nil
+	block := types.NewBlockWithWithdrawals(header, txs, uncles, receipts, withdrawals, trie.NewStackTrie(nil))
+	block.SetVerkleProof(p, k)
+	return block, nil
 }
 
 // Seal generates a new sealing request for the given input block and pushes
