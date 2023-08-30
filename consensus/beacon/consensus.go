@@ -387,7 +387,7 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 		p *verkle.VerkleProof
 		k verkle.StateDiff
 	)
-	if true {
+	if chain.Config().IsVerkle(header.Number, header.Time) {
 		// Open the pre-tree to prove the pre-state against
 		parent := chain.GetHeaderByNumber(header.Number.Uint64() - 1)
 		if parent == nil {

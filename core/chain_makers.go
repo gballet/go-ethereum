@@ -379,7 +379,6 @@ func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine
 		genesis: parent,
 		chain:   blocks,
 	}
-	var preStateTrie *trie.VerkleTrie
 	genblock := func(i int, parent *types.Block, statedb *state.StateDB) (*types.Block, types.Receipts) {
 		b := &BlockGen{i: i, chain: blocks, parent: parent, statedb: statedb, config: config, engine: engine}
 		b.header = makeHeader(chainreader, parent, statedb, b.engine)
@@ -417,49 +416,6 @@ func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine
 			if err := statedb.Database().TrieDB().Commit(root, false); err != nil {
 				panic(fmt.Sprintf("trie write error: %v", err))
 			}
-
-			// Generate an associated verkle proof
-			tr := preState.GetTrie()
-			if !tr.IsVerkle() {
-				panic("tree should be verkle")
-			}
-
-			vtr := tr.(*trie.VerkleTrie)
-			// Make sure all keys are resolved before
-			// building the proof. Ultimately, node
-			// resolution can be done with a prefetcher
-			// or from GetCommitmentsAlongPath.
-			kvs := make(map[string][]byte)
-			keys := statedb.Witness().Keys()
-			for _, key := range keys {
-				v, err := vtr.GetWithHashedKey(key)
-				if err != nil {
-					panic(err)
-				}
-				kvs[string(key)] = v
-			}
-
-			// Initialize the preStateTrie if it is nil, this should
-			// correspond to the genesis block. This is a workaround
-			// needed until the main verkle PR is rebased on top of
-			// PBSS.
-			if preStateTrie == nil {
-				preStateTrie = vtr
-			}
-
-			vtr.Hash()
-			p, k, err := preStateTrie.ProveAndSerialize(statedb.Witness().Keys(), kvs)
-			if err != nil {
-				panic(err)
-			}
-			proofs = append(proofs, p)
-			keyvals = append(keyvals, k)
-
-			// save the current state of the trie for producing the proof for the next block,
-			// since reading it from disk is broken with the intermediate PBSS-like system we
-			// have: it will read the post-state as this is the only state present on disk.
-			// This is a workaround needed until the main verkle PR is rebased on top of PBSS.
-			preStateTrie = statedb.GetTrie().(*trie.VerkleTrie)
 
 			return block, b.receipts
 		}
