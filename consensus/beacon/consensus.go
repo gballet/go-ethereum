@@ -361,21 +361,6 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 }
 
 func loadKeysAndProve(tree state.Trie, keys [][]byte, kvs map[string][]byte) (*verkle.VerkleProof, verkle.StateDiff, error) {
-	if vtr, ok := tree.(*trie.VerkleTrie); ok {
-		for _, key := range keys {
-			// XXX workaround - there is a problem in the witness creation
-			// so fix the witness creation as well.
-			v, err := vtr.GetWithHashedKey(key)
-			if err != nil {
-				panic(err)
-			}
-			kvs[string(key)] = v
-		}
-
-		if len(keys) > 0 {
-			return vtr.ProveAndSerialize(keys, kvs)
-		}
-	}
 
 	return nil, nil, nil
 }
@@ -407,32 +392,45 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 		p    *verkle.VerkleProof
 		k    verkle.StateDiff
 		keys = state.Witness().Keys()
-		kvs  = state.Witness().KeyVals()
 	)
 	if chain.Config().IsVerkle(header.Number, header.Time) {
 		// Open the pre-tree to prove the pre-state against
 		parent := chain.GetHeaderByNumber(header.Number.Uint64() - 1)
 		if parent == nil {
-			panic("nil parent")
-		}
-		preTrie, err := state.Database().OpenTrie(parent.Root)
-		if err != nil {
-			return nil, err
-		}
-		p, k, err = loadKeysAndProve(preTrie, keys, kvs)
-		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("nil parent header for block %d", header.Number)
 		}
 
-		// post-state
-		_, _, err = loadKeysAndProve(state.GetTrie(), keys, kvs)
+		preTrie, err := state.Database().OpenTrie(parent.Root)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error opening pre-state tree root: %w", err)
+		}
+
+		vtrpre, okpre := preTrie.(*trie.VerkleTrie)
+		vtrpost, okpost := state.GetTrie().(*trie.VerkleTrie)
+		if okpre && okpost {
+			// Resolve values from the pre state, the post
+			// state should already have the values in memory.
+			// TODO: see if this can be captured at the witness
+			// level, like it used to.
+			for _, key := range keys {
+				_, err := vtrpre.GetWithHashedKey(key)
+				if err != nil {
+					panic(err)
+				}
+			}
+
+			if len(keys) > 0 {
+				p, k, err = trie.ProveAndSerialize(vtrpre, vtrpost, keys, nil)
+				if err != nil {
+					return nil, fmt.Errorf("error generating verkle proof for block %d: %w", header.Number, err)
+				}
+			}
 		}
 	}
 
 	// Assemble and return the final block.
 	block := types.NewBlockWithWithdrawals(header, txs, uncles, receipts, withdrawals, trie.NewStackTrie(nil))
+	fmt.Println(p, k)
 	block.SetVerkleProof(p, k)
 	return block, nil
 }

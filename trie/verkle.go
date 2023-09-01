@@ -316,8 +316,12 @@ func (trie *VerkleTrie) IsVerkle() bool {
 	return true
 }
 
-func (trie *VerkleTrie) ProveAndSerialize(keys [][]byte, kv map[string][]byte) (*verkle.VerkleProof, verkle.StateDiff, error) {
-	proof, _, _, _, err := verkle.MakeVerkleMultiProof(trie.root, keys)
+func ProveAndSerialize(pretrie, posttrie *VerkleTrie, keys [][]byte, resolver verkle.NodeResolverFn) (*verkle.VerkleProof, verkle.StateDiff, error) {
+	var postroot verkle.VerkleNode
+	if posttrie != nil {
+		postroot = posttrie.root
+	}
+	proof, _, _, _, err := verkle.MakeVerkleMultiProof(pretrie.root, postroot, keys, resolver)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -339,37 +343,25 @@ func addKey(s set, key []byte) {
 func DeserializeAndVerifyVerkleProof(vp *verkle.VerkleProof, root []byte, statediff verkle.StateDiff) error {
 	rootC := new(verkle.Point)
 	rootC.SetBytesTrusted(root)
-	proof, cis, indices, yis, err := deserializeVerkleProof(vp, rootC, statediff)
-	if err != nil {
-		return fmt.Errorf("could not deserialize proof: %w", err)
-	}
-	cfg := verkle.GetConfig()
-	if !verkle.VerifyVerkleProof(proof, cis, indices, yis, cfg) {
-		return errInvalidProof
-	}
 
-	return nil
-}
-
-func deserializeVerkleProof(vp *verkle.VerkleProof, rootC *verkle.Point, statediff verkle.StateDiff) (*verkle.Proof, []*verkle.Point, []byte, []*verkle.Fr, error) {
 	var others set = set{} // Mark when an "other" stem has been seen
 
 	proof, err := verkle.DeserializeProof(vp, statediff)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("verkle proof deserialization error: %w", err)
+		return fmt.Errorf("verkle proof deserialization error: %w", err)
 	}
 
 	for _, stem := range proof.PoaStems {
 		addKey(others, stem)
 	}
 
-	if len(proof.Keys) != len(proof.Values) {
-		return nil, nil, nil, nil, fmt.Errorf("keys and values are of different length %d != %d", len(proof.Keys), len(proof.Values))
+	if len(proof.Keys) != len(proof.PreValues) {
+		return fmt.Errorf("keys and values are of different length %d != %d", len(proof.Keys), len(proof.PreValues))
 	}
 
-	tree, err := verkle.TreeFromProof(proof, rootC)
+	pretree, err := verkle.PreStateTreeFromProof(proof, rootC)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("error rebuilding the tree from proof: %w", err)
+		return fmt.Errorf("error rebuilding the pre-tree from proof: %w", err)
 	}
 	for _, stemdiff := range statediff {
 		for _, suffixdiff := range stemdiff.SuffixDiffs {
@@ -377,30 +369,32 @@ func deserializeVerkleProof(vp *verkle.VerkleProof, rootC *verkle.Point, statedi
 			copy(key[:31], stemdiff.Stem[:])
 			key[31] = suffixdiff.Suffix
 
-			val, err := tree.Get(key[:], nil)
+			val, err := pretree.Get(key[:], nil)
 			if err != nil {
-				return nil, nil, nil, nil, fmt.Errorf("could not find key %x in tree rebuilt from proof: %w", key, err)
+				return fmt.Errorf("could not find key %x in tree rebuilt from proof: %w", key, err)
 			}
 			if len(val) > 0 {
 				if !bytes.Equal(val, suffixdiff.CurrentValue[:]) {
-					return nil, nil, nil, nil, fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, *suffixdiff.CurrentValue)
+					return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, *suffixdiff.CurrentValue)
 				}
 			} else {
 				if suffixdiff.CurrentValue != nil && len(suffixdiff.CurrentValue) != 0 {
-					return nil, nil, nil, nil, fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, *suffixdiff.CurrentValue)
+					return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, *suffixdiff.CurrentValue)
 				}
 			}
 		}
 	}
 
-	// no need to resolve as the tree has been reconstructed from the proof
-	// and must not contain any unresolved nodes.
-	pe, _, _, err := tree.GetProofItems(proof.Keys)
+	posttree, err := verkle.PostStateTreeFromProof(pretree, statediff)
 	if err != nil {
-		return nil, nil, nil, nil, fmt.Errorf("could not get proof items from tree rebuilt from proof: %w", err)
+		return fmt.Errorf("error rebuilding the post-tree from proof: %w", err)
 	}
 
-	return proof, pe.Cis, pe.Zis, pe.Yis, err
+	if verkle.VerifyVerkleProofWithPreAndPostTrie(proof, pretree, posttree, proof.Keys, nil /* no resolver needed TODO: remove it from the interface */, verkle.GetConfig()) {
+		return nil
+	}
+
+	return errors.New("could not verify proof")
 }
 
 // ChunkedCode represents a sequence of 32-bytes chunks of code (31 bytes of which
