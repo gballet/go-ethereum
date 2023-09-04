@@ -360,11 +360,6 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 	// No block reward which is issued by consensus layer instead.
 }
 
-func loadKeysAndProve(tree state.Trie, keys [][]byte, kvs map[string][]byte) (*verkle.VerkleProof, verkle.StateDiff, error) {
-
-	return nil, nil, nil
-}
-
 // FinalizeAndAssemble implements consensus.Engine, setting the final state and
 // assembling the block.
 func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt, withdrawals []*types.Withdrawal) (*types.Block, error) {
@@ -420,7 +415,7 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 			}
 
 			if len(keys) > 0 {
-				p, k, err = trie.ProveAndSerialize(vtrpre, vtrpost, keys, nil)
+				p, k, err = trie.ProveAndSerialize(vtrpre, vtrpost, keys, vtrpre.FlatdbNodeResolver)
 				if err != nil {
 					return nil, fmt.Errorf("error generating verkle proof for block %d: %w", header.Number, err)
 				}

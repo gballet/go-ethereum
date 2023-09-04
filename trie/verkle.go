@@ -54,12 +54,12 @@ func NewVerkleTrie(root verkle.VerkleNode, db *Database, pointCache *utils.Point
 	}
 }
 
-func (trie *VerkleTrie) flatdbNodeResolver(path []byte) ([]byte, error) {
+func (trie *VerkleTrie) FlatdbNodeResolver(path []byte) ([]byte, error) {
 	return trie.db.diskdb.Get(append(FlatDBVerkleNodeKeyPrefix, path...))
 }
 
 func (trie *VerkleTrie) InsertMigratedLeaves(leaves []verkle.LeafNode) error {
-	return trie.root.(*verkle.InternalNode).InsertMigratedLeaves(leaves, trie.flatdbNodeResolver)
+	return trie.root.(*verkle.InternalNode).InsertMigratedLeaves(leaves, trie.FlatdbNodeResolver)
 }
 
 var (
@@ -90,13 +90,13 @@ func (trie *VerkleTrie) GetKey(key []byte) []byte {
 func (trie *VerkleTrie) GetStorage(addr common.Address, key []byte) ([]byte, error) {
 	pointEval := trie.pointCache.GetTreeKeyHeader(addr[:])
 	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(pointEval, key)
-	return trie.root.Get(k, trie.flatdbNodeResolver)
+	return trie.root.Get(k, trie.FlatdbNodeResolver)
 }
 
 // GetWithHashedKey returns the value, assuming that the key has already
 // been hashed.
 func (trie *VerkleTrie) GetWithHashedKey(key []byte) ([]byte, error) {
-	return trie.root.Get(key, trie.flatdbNodeResolver)
+	return trie.root.Get(key, trie.FlatdbNodeResolver)
 }
 
 func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error) {
@@ -108,7 +108,7 @@ func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 	)
 	switch t.root.(type) {
 	case *verkle.InternalNode:
-		values, err = t.root.(*verkle.InternalNode).GetStem(versionkey[:31], t.flatdbNodeResolver)
+		values, err = t.root.(*verkle.InternalNode).GetStem(versionkey[:31], t.FlatdbNodeResolver)
 	default:
 		return nil, errInvalidRootType
 	}
@@ -177,7 +177,7 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount)
 
 	switch root := t.root.(type) {
 	case *verkle.InternalNode:
-		err = root.InsertStem(stem, values, t.flatdbNodeResolver)
+		err = root.InsertStem(stem, values, t.FlatdbNodeResolver)
 	default:
 		return errInvalidRootType
 	}
@@ -192,7 +192,7 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount)
 func (trie *VerkleTrie) UpdateStem(key []byte, values [][]byte) error {
 	switch root := trie.root.(type) {
 	case *verkle.InternalNode:
-		return root.InsertStem(key, values, trie.flatdbNodeResolver)
+		return root.InsertStem(key, values, trie.FlatdbNodeResolver)
 	default:
 		panic("invalid root type")
 	}
@@ -206,7 +206,7 @@ func (trie *VerkleTrie) UpdateStorage(address common.Address, key, value []byte)
 	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(trie.pointCache.GetTreeKeyHeader(address[:]), key)
 	var v [32]byte
 	copy(v[:], value[:])
-	return trie.root.Insert(k, v[:], trie.flatdbNodeResolver)
+	return trie.root.Insert(k, v[:], trie.FlatdbNodeResolver)
 }
 
 func (t *VerkleTrie) DeleteAccount(addr common.Address) error {
@@ -222,7 +222,7 @@ func (t *VerkleTrie) DeleteAccount(addr common.Address) error {
 
 	switch root := t.root.(type) {
 	case *verkle.InternalNode:
-		err = root.InsertStem(stem, values, t.flatdbNodeResolver)
+		err = root.InsertStem(stem, values, t.FlatdbNodeResolver)
 	default:
 		return errInvalidRootType
 	}
@@ -240,7 +240,7 @@ func (trie *VerkleTrie) DeleteStorage(addr common.Address, key []byte) error {
 	pointEval := trie.pointCache.GetTreeKeyHeader(addr[:])
 	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(pointEval, key)
 	var zero [32]byte
-	return trie.root.Insert(k, zero[:], trie.flatdbNodeResolver)
+	return trie.root.Insert(k, zero[:], trie.FlatdbNodeResolver)
 }
 
 // Hash returns the root hash of the trie. It does not write to the database and
@@ -390,11 +390,7 @@ func DeserializeAndVerifyVerkleProof(vp *verkle.VerkleProof, root []byte, stated
 		return fmt.Errorf("error rebuilding the post-tree from proof: %w", err)
 	}
 
-	if verkle.VerifyVerkleProofWithPreAndPostTrie(proof, pretree, posttree, proof.Keys, nil /* no resolver needed TODO: remove it from the interface */, verkle.GetConfig()) {
-		return nil
-	}
-
-	return errors.New("could not verify proof")
+	return verkle.VerifyVerkleProofWithPreAndPostTrie(proof, pretree, posttree, nil /* no resolver needed TODO: remove it from the interface */)
 }
 
 // ChunkedCode represents a sequence of 32-bytes chunks of code (31 bytes of which
