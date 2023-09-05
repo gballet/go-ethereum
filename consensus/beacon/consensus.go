@@ -384,36 +384,40 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	header.Root = state.IntermediateRoot(true)
 
 	var (
-		p *verkle.VerkleProof
-		k verkle.StateDiff
+		p    *verkle.VerkleProof
+		k    verkle.StateDiff
+		keys = state.Witness().Keys()
 	)
 	if chain.Config().IsVerkle(header.Number, header.Time) {
 		// Open the pre-tree to prove the pre-state against
 		parent := chain.GetHeaderByNumber(header.Number.Uint64() - 1)
 		if parent == nil {
-			panic("nil parent")
+			return nil, fmt.Errorf("nil parent header for block %d", header.Number)
 		}
+
 		preTrie, err := state.Database().OpenTrie(parent.Root)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("error opening pre-state tree root: %w", err)
 		}
-		if vtr, ok := preTrie.(*trie.VerkleTrie); ok {
-			keys := state.Witness().Keys()
-			kvs := state.Witness().KeyVals()
+
+		vtrpre, okpre := preTrie.(*trie.VerkleTrie)
+		vtrpost, okpost := state.GetTrie().(*trie.VerkleTrie)
+		if okpre && okpost {
+			// Resolve values from the pre state, the post
+			// state should already have the values in memory.
+			// TODO: see if this can be captured at the witness
+			// level, like it used to.
 			for _, key := range keys {
-				// XXX workaround - there is a problem in the witness creation
-				// so fix the witness creation as well.
-				v, err := vtr.GetWithHashedKey(key)
+				_, err := vtrpre.GetWithHashedKey(key)
 				if err != nil {
 					panic(err)
 				}
-				kvs[string(key)] = v
 			}
 
-			if len(state.Witness().Keys()) > 0 {
-				p, k, err = vtr.ProveAndSerialize(state.Witness().Keys(), kvs)
+			if len(keys) > 0 {
+				p, k, err = trie.ProveAndSerialize(vtrpre, vtrpost, keys, vtrpre.FlatdbNodeResolver)
 				if err != nil {
-					return nil, err
+					return nil, fmt.Errorf("error generating verkle proof for block %d: %w", header.Number, err)
 				}
 			}
 		}
