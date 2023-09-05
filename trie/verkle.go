@@ -342,7 +342,7 @@ func addKey(s set, key []byte) {
 
 func DeserializeAndVerifyVerkleProof(vp *verkle.VerkleProof, root []byte, statediff verkle.StateDiff) error {
 	rootC := new(verkle.Point)
-	rootC.SetBytesTrusted(root)
+	rootC.SetBytesUnsafe(root)
 
 	var others set = set{} // Mark when an "other" stem has been seen
 
