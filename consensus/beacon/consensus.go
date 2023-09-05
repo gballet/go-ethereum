@@ -425,7 +425,6 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 
 	// Assemble and return the final block.
 	block := types.NewBlockWithWithdrawals(header, txs, uncles, receipts, withdrawals, trie.NewStackTrie(nil))
-	fmt.Println(p, k)
 	block.SetVerkleProof(p, k)
 	return block, nil
 }
