@@ -567,7 +567,7 @@ func accumulateRewards(config *params.ChainConfig, state *state.StateDB, header 
 		r.Div(r, big8)
 
 		// This should not happen, but it's useful for replay tests
-		if config.IsVerkle(header.Number, header.Time) {
+		if config.IsPrague(header.Number, header.Time) {
 			uncleCoinbase := utils.GetTreeKeyBalance(uncle.Coinbase.Bytes())
 			state.Witness().TouchAddressOnReadAndComputeGas(uncleCoinbase)
 		}
@@ -576,7 +576,7 @@ func accumulateRewards(config *params.ChainConfig, state *state.StateDB, header 
 		r.Div(blockReward, big32)
 		reward.Add(reward, r)
 	}
-	if config.IsVerkle(header.Number, header.Time) {
+	if config.IsPrague(header.Number, header.Time) {
 		coinbase := utils.GetTreeKeyBalance(header.Coinbase.Bytes())
 		state.Witness().TouchAddressOnReadAndComputeGas(coinbase)
 		coinbase[31] = utils.VersionLeafKey // mark version
