@@ -451,7 +451,7 @@ func TestProcessVerkle(t *testing.T) {
 			LondonBlock:                   big.NewInt(0),
 			Ethash:                        new(params.EthashConfig),
 			ShanghaiTime:                  u64(0),
-			VerkleTime:                    u64(0),
+			PragueTime:                    u64(0),
 			TerminalTotalDifficulty:       common.Big0,
 			TerminalTotalDifficultyPassed: true,
 		}
