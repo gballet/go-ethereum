@@ -390,7 +390,7 @@ func DeserializeAndVerifyVerkleProof(vp *verkle.VerkleProof, root []byte, stated
 		return fmt.Errorf("error rebuilding the post-tree from proof: %w", err)
 	}
 
-	return verkle.VerifyVerkleProofWithPreAndPostTrie(proof, pretree, posttree, nil /* no resolver needed TODO: remove it from the interface */)
+	return verkle.VerifyVerkleProofWithPreAndPostTrie(proof, pretree, posttree)
 }
 
 // ChunkedCode represents a sequence of 32-bytes chunks of code (31 bytes of which

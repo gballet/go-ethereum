@@ -86,6 +86,8 @@ github.com/cpuguy83/go-md2man/v2 v2.0.2 h1:p1EgwI/C7NhT0JmVkwCD2ZBK8j4aeHQX2pMHH
 github.com/cpuguy83/go-md2man/v2 v2.0.2/go.mod h1:tgQtvFlXSQOSOSIRvRPT7W67SCa46tRHOmNcaadrF8o=
 github.com/crate-crypto/go-ipa v0.0.0-20230904185759-9f7637e8ddd0 h1:MztzKYOxMeC8HlWGXvq2wizas+QT0FgITjGThfmbh/0=
 github.com/crate-crypto/go-ipa v0.0.0-20230904185759-9f7637e8ddd0/go.mod h1:7fZtshzGQ3dxVpDpF51K9mX8oziq8Xd5AoM/UT9fF5o=
+github.com/crate-crypto/go-ipa v0.0.0-20230905211650-63ccabc1a949 h1:m73KBJvYRMuaUth425v6nKeEu6GSq9Zij01+jc2r2Y0=
+github.com/crate-crypto/go-ipa v0.0.0-20230905211650-63ccabc1a949/go.mod h1:7fZtshzGQ3dxVpDpF51K9mX8oziq8Xd5AoM/UT9fF5o=
 github.com/crate-crypto/go-kzg-4844 v0.3.0 h1:UBlWE0CgyFqqzTI+IFyCzA7A3Zw4iip6uzRv5NIXG0A=
 github.com/crate-crypto/go-kzg-4844 v0.3.0/go.mod h1:SBP7ikXEgDnUPONgm33HtuDZEDtWa3L4QtN1ocJSEQ4=
 github.com/creack/pty v1.1.9/go.mod h1:oKZEueFk5CKHvIhNR5MUki03XCEU+Q6VDXinZuGJ33E=
@@ -148,6 +150,10 @@ github.com/gballet/go-verkle v0.0.0-20230905121642-6764a0cc51cf h1:nEiCdFdoQz4rD
 github.com/gballet/go-verkle v0.0.0-20230905121642-6764a0cc51cf/go.mod h1:vYx+8/EoJeRLJ3R5sCVhmAdpsZIqzxF6Tr5p+8kbJrg=
 github.com/gballet/go-verkle v0.0.0-20230905122518-d220d72630e6 h1:o1G+rbcG/jWZWv+kWwwvE+TmFwXamUDEbvMUA6xR5fk=
 github.com/gballet/go-verkle v0.0.0-20230905122518-d220d72630e6/go.mod h1:TPmzzGQJd4ZZxR3+hIn6SGnm9aYauFHkuYCOcTvzI6A=
+github.com/gballet/go-verkle v0.0.0-20230906092655-319e750ea891 h1:nsdB5gaCl3J98ZRGHCDy3LSomfpY4fA5BvGa3Ux1e4A=
+github.com/gballet/go-verkle v0.0.0-20230906092655-319e750ea891/go.mod h1:TPmzzGQJd4ZZxR3+hIn6SGnm9aYauFHkuYCOcTvzI6A=
+github.com/gballet/go-verkle v0.0.0-20230906110906-5ce291aceda2 h1:qxP6c7XUjMScf/IzBJc3LdJ7+94UsVJJlYmowCqGkFQ=
+github.com/gballet/go-verkle v0.0.0-20230906110906-5ce291aceda2/go.mod h1:g5tqVx8nLwDrC6Gki3pTRO4+VgusEMBJnDaQvi3A15g=
 github.com/getkin/kin-openapi v0.53.0/go.mod h1:7Yn5whZr5kJi6t+kShccXS8ae1APpYTW6yheSwk8Yi4=
 github.com/getkin/kin-openapi v0.61.0/go.mod h1:7Yn5whZr5kJi6t+kShccXS8ae1APpYTW6yheSwk8Yi4=
 github.com/getsentry/sentry-go v0.12.0/go.mod h1:NSap0JBYWzHND8oMbyi0+XZhUalc1TBdRL1M71JZW2c=
