@@ -323,11 +323,12 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 	// find a Verkle trie where is expects a Transitoion trie.
 	if db.started || db.ended {
 		var r common.Hash
-		if db.ended {
-			r = root
-		} else {
-			r = db.getTranslation(root)
-		}
+		// NOTE this is a kaustinen-only change, it will break replay
+		// if db.ended {
+		r = root
+		// } else {
+		// r = db.getTranslation(root)
+		// }
 		vkt, err := db.openVKTrie(r)
 		if err != nil {
 			return nil, err
