@@ -210,7 +210,7 @@ func (db *cachingDB) Transitioned() bool {
 }
 
 // Fork implements the fork
-func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, cancunTime *uint64) {
+func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, pragueTime *uint64) {
 	fmt.Println(`
 	__________.__                       .__                .__                   __       .__                               .__          ____         
 	\__    ___|  |__   ____        ____ |  |   ____ ______ |  |__ _____    _____/  |_     |  |__ _____    ______    __  _  _|__| ____   / ___\ ______
@@ -223,7 +223,9 @@ func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.H
 	db.baseRoot = originalRoot
 	// initialize so that the first storage-less accounts are processed
 	db.StorageProcessed = true
-	chainConfig.CancunTime = cancunTime
+	if pragueTime != nil {
+		chainConfig.PragueTime = pragueTime
+	}
 }
 
 func (db *cachingDB) EndVerkleTransition() {

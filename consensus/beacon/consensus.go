@@ -343,7 +343,7 @@ func (beacon *Beacon) Prepare(chain consensus.ChainHeaderReader, header *types.H
 	if chain.Config().IsPrague(header.Number, header.Time) {
 		parent := chain.GetHeaderByNumber(header.Number.Uint64() - 1)
 		if !chain.Config().IsPrague(parent.Number, parent.Time) {
-			statedb.Database().StartVerkleTransition(common.Hash{}, common.Hash{}, chain.Config(), &parent.Time)
+			statedb.Database().StartVerkleTransition(common.Hash{}, common.Hash{}, chain.Config(), nil)
 		}
 	}
 
