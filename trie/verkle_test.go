@@ -72,9 +72,9 @@ func TestReproduceTree(t *testing.T) {
 		kv[string(key)] = values[i]
 	}
 
-	proof, Cs, zis, yis, _ := verkle.MakeVerkleMultiProof(root, append(presentKeys, absentKeys...))
+	proof, Cs, zis, yis, _ := verkle.MakeVerkleMultiProof(root, nil, append(presentKeys, absentKeys...), nil)
 	cfg := verkle.GetConfig()
-	if !verkle.VerifyVerkleProof(proof, Cs, zis, yis, cfg) {
+	if ok, err := verkle.VerifyVerkleProof(proof, Cs, zis, yis, cfg); !ok || err != nil {
 		t.Fatal("could not verify proof")
 	}
 
@@ -293,9 +293,9 @@ func TestReproduceCondrieuStemAggregationInProofOfAbsence(t *testing.T) {
 		kv[string(key)] = values[i]
 	}
 
-	proof, Cs, zis, yis, _ := verkle.MakeVerkleMultiProof(root, append(presentKeys, absentKeys...))
+	proof, Cs, zis, yis, _ := verkle.MakeVerkleMultiProof(root, nil, append(presentKeys, absentKeys...), nil)
 	cfg := verkle.GetConfig()
-	if !verkle.VerifyVerkleProof(proof, Cs, zis, yis, cfg) {
+	if ok, err := verkle.VerifyVerkleProof(proof, Cs, zis, yis, cfg); !ok || err != nil {
 		t.Fatal("could not verify proof")
 	}
 
@@ -340,9 +340,9 @@ func TestReproduceCondrieuPoAStemConflictWithAnotherStem(t *testing.T) {
 		kv[string(key)] = values[i]
 	}
 
-	proof, Cs, zis, yis, _ := verkle.MakeVerkleMultiProof(root, append(presentKeys, absentKeys...))
+	proof, Cs, zis, yis, _ := verkle.MakeVerkleMultiProof(root, nil, append(presentKeys, absentKeys...), nil)
 	cfg := verkle.GetConfig()
-	if !verkle.VerifyVerkleProof(proof, Cs, zis, yis, cfg) {
+	if ok, err := verkle.VerifyVerkleProof(proof, Cs, zis, yis, cfg); !ok || err != nil {
 		t.Fatal("could not verify proof")
 	}
 
@@ -366,7 +366,7 @@ func TestReproduceCondrieuPoAStemConflictWithAnotherStem(t *testing.T) {
 
 func TestEmptyKeySetInProveAndSerialize(t *testing.T) {
 	tree := verkle.New()
-	verkle.MakeVerkleMultiProof(tree, [][]byte{})
+	verkle.MakeVerkleMultiProof(tree, nil, [][]byte{}, nil)
 }
 
 func TestGetTreeKeys(t *testing.T) {

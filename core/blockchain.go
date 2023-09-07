@@ -2531,8 +2531,8 @@ func (bc *BlockChain) GetTrieFlushInterval() time.Duration {
 	return time.Duration(bc.flushInterval.Load())
 }
 
-func (bc *BlockChain) StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, cancunTime *uint64) {
-	bc.stateCache.StartVerkleTransition(originalRoot, translatedRoot, chainConfig, cancunTime)
+func (bc *BlockChain) StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, pragueTime *uint64) {
+	bc.stateCache.StartVerkleTransition(originalRoot, translatedRoot, chainConfig, pragueTime)
 }
 
 func (bc *BlockChain) EndVerkleTransition() {
