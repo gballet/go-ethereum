@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -341,10 +342,7 @@ func (beacon *Beacon) Prepare(chain consensus.ChainHeaderReader, header *types.H
 
 	// Trigger the start of the verkle conversion if we're at the right block
 	if chain.Config().IsPrague(header.Number, header.Time) {
-		parent := chain.GetHeaderByNumber(header.Number.Uint64() - 1)
-		if !chain.Config().IsPrague(parent.Number, parent.Time) {
-			statedb.Database().StartVerkleTransition(common.Hash{}, common.Hash{}, chain.Config(), nil)
-		}
+		core.VerkleTransition(statedb)
 	}
 
 	return nil
@@ -409,8 +407,21 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 			return nil, fmt.Errorf("error opening pre-state tree root: %w", err)
 		}
 
-		vtrpre, okpre := preTrie.(*trie.VerkleTrie)
-		vtrpost, okpost := state.GetTrie().(*trie.VerkleTrie)
+		var okpre, okpost bool
+		var vtrpre, vtrpost *trie.VerkleTrie
+		switch pre := preTrie.(type) {
+		case *trie.VerkleTrie:
+			vtrpre, okpre = preTrie.(*trie.VerkleTrie)
+			vtrpost, okpost = state.GetTrie().(*trie.VerkleTrie)
+		case *trie.TransitionTrie:
+			vtrpre = pre.Overlay()
+			okpre = true
+			post, _ := state.GetTrie().(*trie.TransitionTrie)
+			vtrpost = post.Overlay()
+			okpost = true
+		default:
+			panic("invalid tree type")
+		}
 		if okpre && okpost {
 			// Resolve values from the pre state, the post
 			// state should already have the values in memory.

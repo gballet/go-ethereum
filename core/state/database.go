@@ -219,7 +219,7 @@ func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.H
 	  |____|  |___|  /\___        \___  |____/\___  |   __/|___|  (____  |___|  |__|      |___|  (____  /_____/       \/\_/ |__|___|  /_____//_____/
                                                     |__|`)
 	db.started = true
-	db.AddTranslation(originalRoot, translatedRoot)
+	// db.AddTranslation(originalRoot, translatedRoot)
 	db.baseRoot = originalRoot
 	// initialize so that the first storage-less accounts are processed
 	db.StorageProcessed = true
@@ -243,25 +243,6 @@ func (db *cachingDB) EndVerkleTransition() {
 	db.ended = true
 }
 
-func (db *cachingDB) AddTranslation(orig, trans common.Hash) {
-	// TODO make this persistent
-	db.translatedRootsLock.Lock()
-	defer db.translatedRootsLock.Unlock()
-	db.translatedRoots[db.translationIndex] = trans
-	db.origRoots[db.translationIndex] = orig
-	db.translationIndex = (db.translationIndex + 1) % len(db.translatedRoots)
-}
-
-func (db *cachingDB) getTranslation(orig common.Hash) common.Hash {
-	db.translatedRootsLock.RLock()
-	defer db.translatedRootsLock.RUnlock()
-	for i, o := range db.origRoots {
-		if o == orig {
-			return db.translatedRoots[i]
-		}
-	}
-	return common.Hash{}
-}
 
 type cachingDB struct {
 	disk          ethdb.KeyValueStore
@@ -322,14 +303,8 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 	// TODO separate both cases when I can be certain that it won't
 	// find a Verkle trie where is expects a Transitoion trie.
 	if db.started || db.ended {
-		var r common.Hash
 		// NOTE this is a kaustinen-only change, it will break replay
-		// if db.ended {
-		r = root
-		// } else {
-		// r = db.getTranslation(root)
-		// }
-		vkt, err := db.openVKTrie(r)
+		vkt, err := db.openVKTrie(root)
 		if err != nil {
 			return nil, err
 		}
