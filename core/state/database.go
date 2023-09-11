@@ -490,7 +490,6 @@ func (db *cachingDB) GetStorageProcessed() bool {
 }
 
 func (db *cachingDB) AddRootTranslation(originalRoot, translatedRoot common.Hash) {
-	db.AddTranslation(originalRoot, translatedRoot)
 }
 
 func (db *cachingDB) SetLastMerkleRoot(root common.Hash) {
