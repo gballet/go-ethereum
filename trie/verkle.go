@@ -307,8 +307,9 @@ func (trie *VerkleTrie) Prove(key []byte, proofDb ethdb.KeyValueWriter) error {
 
 func (trie *VerkleTrie) Copy() *VerkleTrie {
 	return &VerkleTrie{
-		root: trie.root.Copy(),
-		db:   trie.db,
+		root:       trie.root.Copy(),
+		db:         trie.db,
+		pointCache: trie.pointCache,
 	}
 }
 
