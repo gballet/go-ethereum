@@ -904,6 +904,9 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 	if err != nil {
 		return nil, err
 	}
+	if w.chain.Config().IsPrague(header.Number, header.Time) {
+		core.VerkleTransition(state)
+	}
 	// Run the consensus preparation with the default or customized consensus engine.
 	if err := w.engine.Prepare(w.chain, header, state); err != nil {
 		log.Error("Failed to prepare header for sealing", "err", err)
