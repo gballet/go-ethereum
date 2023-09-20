@@ -386,7 +386,7 @@ func DeserializeAndVerifyVerkleProof(vp *verkle.VerkleProof, root []byte, stated
 		}
 	}
 
-	posttree, err := verkle.PostStateTreeFromStateDiff(pretree, statediff)
+	posttree, err := verkle.PostStateTreeFromProof(pretree, statediff)
 	if err != nil {
 		return fmt.Errorf("error rebuilding the post-tree from proof: %w", err)
 	}
