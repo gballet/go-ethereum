@@ -67,6 +67,8 @@ type Database interface {
 
 	StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, cancunTime *uint64)
 
+	ReorgThroughVerkleTransition()
+
 	EndVerkleTransition()
 
 	InTransition() bool
@@ -219,6 +221,7 @@ func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.H
 	  |____|  |___|  /\___        \___  |____/\___  |   __/|___|  (____  |___|  |__|      |___|  (____  /_____/       \/\_/ |__|___|  /_____//_____/
                                                     |__|`)
 	db.started = true
+	db.ended = false
 	// db.AddTranslation(originalRoot, translatedRoot)
 	db.baseRoot = originalRoot
 	// initialize so that the first storage-less accounts are processed
@@ -226,6 +229,10 @@ func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.H
 	if pragueTime != nil {
 		chainConfig.PragueTime = pragueTime
 	}
+}
+
+func (db *cachingDB) ReorgThroughVerkleTransition() {
+	db.ended, db.started = false, false
 }
 
 func (db *cachingDB) EndVerkleTransition() {
