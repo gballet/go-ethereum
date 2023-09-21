@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/gballet/go-verkle"
 )
 
@@ -358,7 +359,16 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 		state.AddBalance(w.Address, amount)
 
 		// The returned gas is not charged
-		state.Witness().TouchAddressOnWriteAndComputeGas(w.Address[:])
+		waddr := utils.GetTreeKeyVersion(w.Address[:])
+		state.Witness().TouchAddressOnWriteAndComputeGas(waddr)
+		waddr[31] = utils.BalanceLeafKey
+		state.Witness().TouchAddressOnWriteAndComputeGas(waddr)
+		waddr[31] = utils.NonceLeafKey
+		state.Witness().TouchAddressOnWriteAndComputeGas(waddr)
+		waddr[31] = utils.CodeKeccakLeafKey
+		state.Witness().TouchAddressOnWriteAndComputeGas(waddr)
+		waddr[31] = utils.CodeSizeLeafKey
+		state.Witness().TouchAddressOnWriteAndComputeGas(waddr)
 	}
 	// No block reward which is issued by consensus layer instead.
 }
