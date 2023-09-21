@@ -65,46 +65,10 @@ type ExecutionWitness struct {
 }
 
 func (ew *ExecutionWitness) Copy() *ExecutionWitness {
-	ret := &ExecutionWitness{
-		StateDiff:   make([]verkle.StemStateDiff, len(ew.StateDiff)),
-		VerkleProof: &verkle.VerkleProof{},
+	return &ExecutionWitness{
+		StateDiff:   ew.StateDiff.Copy(),
+		VerkleProof: ew.VerkleProof.Copy(),
 	}
-	for i := range ew.StateDiff {
-		copy(ret.StateDiff[i].Stem[:], ew.StateDiff[i].Stem[:])
-		ret.StateDiff[i].SuffixDiffs = make([]verkle.SuffixStateDiff, len(ew.StateDiff[i].SuffixDiffs))
-		for j := range ew.StateDiff[i].SuffixDiffs {
-			ret.StateDiff[i].SuffixDiffs[j].Suffix = ew.StateDiff[i].SuffixDiffs[j].Suffix
-			if ew.StateDiff[i].SuffixDiffs[j].CurrentValue != nil {
-				ret.StateDiff[i].SuffixDiffs[j].CurrentValue = &[32]byte{}
-				copy((*ret.StateDiff[i].SuffixDiffs[j].CurrentValue)[:], (*ew.StateDiff[i].SuffixDiffs[j].CurrentValue)[:])
-			}
-		}
-	}
-	if ew.VerkleProof != nil {
-		ret.VerkleProof.OtherStems = make([][31]byte, len(ew.VerkleProof.OtherStems))
-		ret.VerkleProof.DepthExtensionPresent = make([]byte, len(ew.VerkleProof.DepthExtensionPresent))
-		ret.VerkleProof.CommitmentsByPath = make([][32]byte, len(ew.VerkleProof.CommitmentsByPath))
-		ret.VerkleProof.IPAProof = &verkle.IPAProof{}
-
-		for i := range ew.VerkleProof.OtherStems {
-			copy(ret.VerkleProof.OtherStems[i][:], ew.VerkleProof.OtherStems[i][:])
-		}
-
-		copy(ret.VerkleProof.DepthExtensionPresent, ew.VerkleProof.DepthExtensionPresent)
-		for i := range ew.VerkleProof.CommitmentsByPath {
-			copy(ret.VerkleProof.CommitmentsByPath[i][:], ew.VerkleProof.CommitmentsByPath[i][:])
-		}
-		copy(ret.VerkleProof.D[:], ew.VerkleProof.D[:])
-
-		if ew.VerkleProof.IPAProof != nil {
-			for i := range ew.VerkleProof.IPAProof.CL {
-				copy(ret.VerkleProof.IPAProof.CL[i][:], ew.VerkleProof.IPAProof.CL[i][:])
-				copy(ret.VerkleProof.IPAProof.CR[i][:], ew.VerkleProof.IPAProof.CR[i][:])
-			}
-			copy(ret.VerkleProof.IPAProof.FinalEvaluation[:], ew.VerkleProof.IPAProof.FinalEvaluation[:])
-		}
-	}
-	return ret
 }
 
 //go:generate go run github.com/fjl/gencodec -type Header -field-override headerMarshaling -out gen_header_json.go

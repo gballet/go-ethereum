@@ -343,7 +343,7 @@ func addKey(s set, key []byte) {
 
 func DeserializeAndVerifyVerkleProof(vp *verkle.VerkleProof, root []byte, statediff verkle.StateDiff) error {
 	rootC := new(verkle.Point)
-	rootC.SetBytesUnsafe(root)
+	rootC.SetBytes(root)
 
 	var others set = set{} // Mark when an "other" stem has been seen
 
@@ -356,14 +356,12 @@ func DeserializeAndVerifyVerkleProof(vp *verkle.VerkleProof, root []byte, stated
 		addKey(others, stem)
 	}
 
-	if len(proof.Keys) != len(proof.PreValues) {
-		return fmt.Errorf("keys and values are of different length %d != %d", len(proof.Keys), len(proof.PreValues))
-	}
-
 	pretree, err := verkle.PreStateTreeFromProof(proof, rootC)
 	if err != nil {
 		return fmt.Errorf("error rebuilding the pre-tree from proof: %w", err)
 	}
+	// TODO this should not be necessary, remove it
+	// after the new proof generation code has stabilized.
 	for _, stemdiff := range statediff {
 		for _, suffixdiff := range stemdiff.SuffixDiffs {
 			var key [32]byte
