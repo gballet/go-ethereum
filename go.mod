@@ -14,7 +14,7 @@ require (
 	github.com/cloudflare/cloudflare-go v0.14.0
 	github.com/cockroachdb/pebble v0.0.0-20230209160836-829675f94811
 	github.com/consensys/gnark-crypto v0.11.3-0.20230906172141-49815a21349a
-	github.com/crate-crypto/go-ipa v0.0.0-20230911163631-de5e505e95bf
+	github.com/crate-crypto/go-ipa v0.0.0-20230914135612-d1b03fcb8e58
 	github.com/crate-crypto/go-kzg-4844 v0.3.0
 	github.com/davecgh/go-spew v1.1.1
 	github.com/deckarep/golang-set/v2 v2.1.0
@@ -26,7 +26,7 @@ require (
 	github.com/fjl/memsize v0.0.0-20190710130421-bcb5799ab5e5
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/gballet/go-libpcsclite v0.0.0-20190607065134-2772fd86a8ff
-	github.com/gballet/go-verkle v0.0.0-20230912095614-9ed4dce197cc
+	github.com/gballet/go-verkle v0.1.0
 	github.com/go-stack/stack v1.8.1
 	github.com/gofrs/flock v0.8.1
 	github.com/golang-jwt/jwt/v4 v4.3.0
