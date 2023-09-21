@@ -310,7 +310,7 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 	// Make sure the state associated with the block is available
 	head := bc.CurrentBlock()
 
-	// Declare the end of the verkle transition is need be
+	// Declare the end of the verkle transition if need be
 	if bc.chainConfig.Rules(head.Number, false /* XXX */, head.Time).IsPrague {
 		bc.stateCache.EndVerkleTransition()
 	}
