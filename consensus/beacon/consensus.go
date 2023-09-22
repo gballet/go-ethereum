@@ -359,7 +359,16 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 		state.AddBalance(w.Address, amount)
 
 		// The returned gas is not charged
-		state.Witness().TouchAddressOnWriteAndComputeGas(w.Address[:])
+		waddr := utils.GetTreeKeyVersion(w.Address[:])
+		state.Witness().TouchAddressOnWriteAndComputeGas(waddr)
+		waddr[31] = utils.BalanceLeafKey
+		state.Witness().TouchAddressOnWriteAndComputeGas(waddr)
+		waddr[31] = utils.NonceLeafKey
+		state.Witness().TouchAddressOnWriteAndComputeGas(waddr)
+		waddr[31] = utils.CodeKeccakLeafKey
+		state.Witness().TouchAddressOnWriteAndComputeGas(waddr)
+		waddr[31] = utils.CodeSizeLeafKey
+		state.Witness().TouchAddressOnWriteAndComputeGas(waddr)
 	}
 
 	// Add the fee recipient to the witness
