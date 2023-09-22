@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/gballet/go-verkle"
 )
 
@@ -360,7 +361,18 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 		// The returned gas is not charged
 		state.Witness().TouchAddressOnWriteAndComputeGas(w.Address[:])
 	}
-	// No block reward which is issued by consensus layer instead.
+
+	// Add the fee recipient to the witness
+	coinbaseKey := utils.GetTreeKeyVersion(header.Coinbase[:])
+	state.Witness().TouchAddressOnWriteAndComputeGas(coinbaseKey)
+	coinbaseKey[31] = utils.BalanceLeafKey
+	state.Witness().TouchAddressOnWriteAndComputeGas(coinbaseKey)
+	coinbaseKey[31] = utils.NonceLeafKey
+	state.Witness().TouchAddressOnWriteAndComputeGas(coinbaseKey)
+	coinbaseKey[31] = utils.CodeKeccakLeafKey
+	state.Witness().TouchAddressOnWriteAndComputeGas(coinbaseKey)
+	coinbaseKey[31] = utils.CodeSizeLeafKey
+	state.Witness().TouchAddressOnWriteAndComputeGas(coinbaseKey)
 }
 
 // FinalizeAndAssemble implements consensus.Engine, setting the final state and
