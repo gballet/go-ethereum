@@ -314,7 +314,6 @@ func CopyHeader(h *Header) *Header {
 	}
 	if h.ExecutionWitness != nil {
 		cpy.ExecutionWitness = h.ExecutionWitness.Copy()
-
 	}
 	return &cpy
 }
