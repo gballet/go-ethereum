@@ -19,8 +19,11 @@ package utils
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"math/big"
 	"math/rand"
+	"runtime"
+	"sync"
 	"testing"
 
 	"github.com/gballet/go-verkle"
@@ -41,6 +44,53 @@ func TestGetTreeKey(t *testing.T) {
 	exp := "f42f932f43faf5d14b292b9009c45c28da61dbf66e20dbedc2e02dfd64ff5a01"
 	if got != exp {
 		t.Fatalf("Generated trie key is incorrect: %s != %s", got, exp)
+	}
+}
+
+func TestPedersenHashDistribution(t *testing.T) {
+	maxRoutines := runtime.NumCPU()
+	histogramBuckets := make([]map[byte]int64, maxRoutines)
+
+	const numIterations = 1_000_000
+	fmt.Printf("Generating...\n")
+	var wg sync.WaitGroup
+	for i := 0; i < maxRoutines; i++ {
+		wg.Add(1)
+		go func(buckNum int) {
+			defer wg.Done()
+
+			histogramBuckets[buckNum] = make(map[byte]int64, 256)
+			rseed := rand.NewSource(int64(buckNum + 42))
+			r := rand.New(rseed)
+
+			var randTreeIndex uint256.Int
+			var randAddr [32]byte
+			for i := 0; i < numIterations; i++ {
+				r.Read(randAddr[:]) // Read 32 bytes (guaranteed) to generate rand tree index.
+				randTreeIndex.SetBytes(randAddr[:])
+				r.Read(randAddr[:])                               // Guaranteed to read 32 bytes, to have rand addr.
+				key := GetTreeKey(randAddr[:], &randTreeIndex, 0) // subIndex is irrelevant.
+
+				for i := 0; i < 256; i++ {
+					bit := (key[i/8] >> (i % 8)) & 1
+					histogramBuckets[buckNum][byte(i)] += int64(bit) // No concurrent access, so it's safe (and fast).
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	fmt.Printf("Aggregating...\n")
+	histogram := make(map[byte]int64, 256-8)
+	for i := range histogramBuckets {
+		for bn, count := range histogramBuckets[i] {
+			histogram[bn] += count
+		}
+	}
+
+	expCountPerBit := int64(numIterations * maxRoutines / 2)
+	for i := 0; i < 256-8; i++ {
+		fmt.Printf("Bit %d: %d (deviation from expected %.02f%%)\n", i, histogram[byte(i)], float64(histogram[byte(i)]-expCountPerBit)/float64(expCountPerBit)*100)
 	}
 }
 
