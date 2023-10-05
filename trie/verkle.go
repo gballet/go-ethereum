@@ -318,7 +318,7 @@ func (trie *VerkleTrie) Copy() *VerkleTrie {
 }
 
 func (trie *VerkleTrie) GetAndLoadForProof(hashedKey []byte) ([]byte, error) {
-	return trie.root.(*verkle.InternalNode).GetAndLoadForProof(hashedKey, trie.flatdbNodeResolver)
+	return trie.root.(*verkle.InternalNode).GetAndLoadForProof(hashedKey, trie.FlatdbNodeResolver)
 }
 
 func (trie *VerkleTrie) IsVerkle() bool {
@@ -326,6 +326,7 @@ func (trie *VerkleTrie) IsVerkle() bool {
 }
 
 func ProveAndSerialize(pretrie, posttrie *VerkleTrie, keys [][]byte, resolver verkle.NodeResolverFn) (*verkle.VerkleProof, verkle.StateDiff, error) {
+	startProofGen := time.Now()
 	var postroot verkle.VerkleNode
 	if posttrie != nil {
 		postroot = posttrie.root

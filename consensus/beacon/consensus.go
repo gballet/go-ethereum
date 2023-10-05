@@ -394,9 +394,10 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	header.Root = state.IntermediateRoot(true)
 
 	var (
-		p    *verkle.VerkleProof
-		k    verkle.StateDiff
-		keys = state.Witness().Keys()
+		p       *verkle.VerkleProof
+		k       verkle.StateDiff
+		witness = state.Witness()
+		keys    = witness.Keys() // TODO: can we remove this?
 	)
 	if chain.Config().IsPrague(header.Number, header.Time) && chain.Config().ProofInBlocks {
 		// Open the pre-tree to prove the pre-state against
@@ -411,13 +412,12 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 		}
 
 		var okpre, okpost bool
-		var vtrpre, vtrpost *trie.VerkleTrie
-		switch pre := preTrie.(type) {
+		var vtrpost *trie.VerkleTrie
+		switch preTrie.(type) {
 		case *trie.VerkleTrie:
-			vtrpre, okpre = preTrie.(*trie.VerkleTrie)
+			_, okpre = preTrie.(*trie.VerkleTrie)
 			vtrpost, okpost = state.GetTrie().(*trie.VerkleTrie)
 		case *trie.TransitionTrie:
-			vtrpre = pre.Overlay()
 			okpre = true
 			post, _ := state.GetTrie().(*trie.TransitionTrie)
 			vtrpost = post.Overlay()
@@ -426,16 +426,8 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 			panic("invalid tree type")
 		}
 		if okpre && okpost {
-			// Resolve values from the pre state, the post
-			// state should already have the values in memory.
-			// TODO: see if this can be captured at the witness
-			// level, like it used to.
+			// TODO: add explanation here about code below.
 			for _, key := range keys {
-				_, err := vtrpre.GetWithHashedKey(key)
-				if err != nil {
-					panic(err)
-				}
-
 				// WORKAROUND: the post trie would normally not
 				// need to be searched for keys, as all of them
 				// were resolved during block execution.
@@ -451,7 +443,7 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 			}
 
 			if len(keys) > 0 {
-				p, k, err = trie.ProveAndSerialize(vtrpre, vtrpost, keys, vtrpre.FlatdbNodeResolver)
+				p, k, err = witness.GenerateProofAndSerialize(vtrpost)
 				if err != nil {
 					return nil, fmt.Errorf("error generating verkle proof for block %d: %w", header.Number, err)
 				}

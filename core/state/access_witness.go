@@ -274,7 +274,7 @@ func (aw *AccessWitness) touchAddress(addr []byte, treeIndex uint256.Int, subInd
 	return branchRead, chunkRead, branchWrite, chunkWrite, chunkFill
 }
 
-func (aw *AccessWitness) GenerateProofAndSerialize() (*verkle.VerkleProof, verkle.StateDiff, error) {
+func (aw *AccessWitness) GenerateProofAndSerialize(postState *trie.VerkleTrie) (*verkle.VerkleProof, verkle.StateDiff, error) {
 	start := time.Now()
 	// Signal that we are done sending chunks to load the tree.
 	aw.treeLoaderQuit <- struct{}{}
@@ -288,7 +288,7 @@ func (aw *AccessWitness) GenerateProofAndSerialize() (*verkle.VerkleProof, verkl
 	}
 
 	// The tree is fully loaded and ready to support proof generation.
-	proof, stateDiff, err := aw.tree.ProveAndSerialize(aw.witnessKeys, aw.witnessKeyValues)
+	proof, stateDiff, err := trie.ProveAndSerialize(aw.tree, postState, aw.witnessKeys, nil)
 	if err != nil {
 		return nil, nil, fmt.Errorf("generating the witness proof failed: %s", err)
 	}
