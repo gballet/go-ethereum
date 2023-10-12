@@ -125,7 +125,7 @@ func (ga *GenesisAlloc) deriveHash(cfg *params.ChainConfig, timestamp uint64) (c
 	// Create an ephemeral in-memory database for computing hash,
 	// all the derived states will be discarded to not pollute disk.
 	db := state.NewDatabase(rawdb.NewMemoryDatabase())
-	if cfg.IsPrague(big.NewInt(int64(0)), timestamp) {
+	if /* cfg.IsPrague(big.NewInt(int64(0)), timestamp) */ true {
 		db.EndVerkleTransition()
 	}
 	statedb, err := state.New(types.EmptyRootHash, db, nil)
@@ -153,7 +153,7 @@ func (ga *GenesisAlloc) flush(db ethdb.Database, triedb *trie.Database, blockhas
 	}
 
 	// End the verkle conversion at genesis if the fork block is 0
-	if triedb.IsVerkle() {
+	if /*triedb.IsVerkle() */ true {
 		statedb.Database().EndVerkleTransition()
 	}
 
