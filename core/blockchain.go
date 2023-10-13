@@ -311,7 +311,7 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 	head := bc.CurrentBlock()
 
 	// Declare the end of the verkle transition if need be
-	if bc.chainConfig.Rules(head.Number, false /* XXX */, head.Time).IsPrague {
+	if /* bc.chainConfig.Rules(head.Number, false /* XXX *, head.Time).IsPrague */ head.Number.Uint64() == 0 {
 		bc.stateCache.EndVerkleTransition()
 	}
 
@@ -1558,10 +1558,10 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 		return 0, nil
 	}
 
-	conversionBlock, err := findVerkleConversionBlock()
-	if err != nil {
-		return 0, err
-	}
+	// conversionBlock, err := findVerkleConversionBlock()
+	// if err != nil {
+	// 	return 0, err
+	// }
 
 	// Start a parallel signature recovery (signer will fluke on fork transition, minimal perf loss)
 	SenderCacher.RecoverFromBlocks(types.MakeSigner(bc.chainConfig, chain[0].Number(), chain[0].Time()), chain)
@@ -1745,10 +1745,10 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			parent = bc.GetHeader(block.ParentHash(), block.NumberU64()-1)
 		}
 
-		if parent.Number.Uint64() == conversionBlock {
-			bc.StartVerkleTransition(parent.Root, emptyVerkleRoot, bc.Config(), &parent.Time)
-			bc.stateCache.SetLastMerkleRoot(parent.Root)
-		}
+		// if parent.Number.Uint64() == conversionBlock {
+		// 	bc.StartVerkleTransition(parent.Root, emptyVerkleRoot, bc.Config(), &parent.Time)
+		// 	bc.stateCache.SetLastMerkleRoot(parent.Root)
+		// }
 		statedb, err := state.New(parent.Root, bc.stateCache, bc.snaps)
 		if err != nil {
 			return it.index, err

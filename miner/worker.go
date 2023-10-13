@@ -891,12 +891,12 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 	}
 
 	// Trigger the start of the verkle conversion if we're at the right block
-	if w.chain.Config().IsPrague(header.Number, header.Time) {
-		parent := w.chain.GetHeaderByNumber(header.Number.Uint64() - 1)
-		if !w.chain.Config().IsPrague(parent.Number, parent.Time) {
-			w.chain.StartVerkleTransition(parent.Root, common.Hash{}, w.chain.Config(), nil)
-		}
-	}
+	// if w.chain.Config().IsPrague(header.Number, header.Time) {
+	// 	parent := w.chain.GetHeaderByNumber(header.Number.Uint64() - 1)
+	// 	if !w.chain.Config().IsPrague(parent.Number, parent.Time) {
+	// 		w.chain.StartVerkleTransition(parent.Root, common.Hash{}, w.chain.Config(), nil)
+	// 	}
+	// }
 
 	// Retrieve the parent state to execute on top and start a prefetcher for
 	// the miner to speed block sealing up a bit.
@@ -904,9 +904,9 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 	if err != nil {
 		return nil, err
 	}
-	if w.chain.Config().IsPrague(header.Number, header.Time) {
-		core.OverlayVerkleTransition(state)
-	}
+	// if w.chain.Config().IsPrague(header.Number, header.Time) {
+	// 	core.OverlayVerkleTransition(state)
+	// }
 	// Run the consensus preparation with the default or customized consensus engine.
 	if err := w.engine.Prepare(w.chain, header); err != nil {
 		log.Error("Failed to prepare header for sealing", "err", err)
