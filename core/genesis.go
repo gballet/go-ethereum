@@ -368,7 +368,7 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *trie.Database, gen
 	// Get the existing chain configuration.
 	newcfg := genesis.configOrDefault(stored)
 	applyOverrides(newcfg)
-	// WORKAROUND it looks like this is broken, becasue overriding
+	// WORKAROUND it looks like this is broken, because overriding
 	// pragueTime will cause an error here, claiming that shanghaiTime
 	// wasn't set (it is).
 	// if err := newcfg.CheckConfigForkOrder(); err != nil {
