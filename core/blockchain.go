@@ -47,6 +47,7 @@ import (
 	"github.com/ethereum/go-ethereum/event"
 	"github.com/ethereum/go-ethereum/internal/syncx"
 	"github.com/ethereum/go-ethereum/internal/version"
+	"github.com/ethereum/go-ethereum/kaustinenanalytics"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
@@ -1774,6 +1775,11 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 					}
 				}(time.Now(), followup, throwaway)
 			}
+		}
+
+		// Analytics: collect block related metrics
+		if err := kaustinenanalytics.CollectWitnessMetrics(block); err != nil {
+			return 0, fmt.Errorf("failed to collect witness metrics: %w", err)
 		}
 
 		// Process block using the parent state as reference point
