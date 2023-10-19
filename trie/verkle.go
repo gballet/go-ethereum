@@ -361,6 +361,12 @@ func DeserializeAndVerifyVerkleProof(vp *verkle.VerkleProof, root []byte, stated
 	if err != nil {
 		return fmt.Errorf("error rebuilding the pre-tree from proof: %w", err)
 	}
+
+	// fmt.Printf("jsign keys:\n")
+	// for i := range proof.Keys {
+	// 	fmt.Printf("\t%x\n", proof.Keys[i])
+	// }
+
 	// TODO this should not be necessary, remove it
 	// after the new proof generation code has stabilized.
 	for _, stemdiff := range statediff {

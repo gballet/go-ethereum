@@ -18,9 +18,11 @@
 package state
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
 	"sort"
 	"time"
 
@@ -1219,6 +1221,45 @@ func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, er
 	}
 	// Finalize any pending changes and merge everything into the tries
 	s.IntermediateRoot(deleteEmptyObjects)
+
+	// Verify proof generation
+	stateTrie, err := s.Database().OpenTrie(s.originalRoot)
+	if err != nil {
+		panic(err)
+	}
+	preTrie := stateTrie.(*trie.VerkleTrie)
+
+	postTrie := s.GetTrie().(*trie.VerkleTrie)
+
+	keys := s.Witness().Keys()
+
+	if len(keys) > 0 {
+		for _, key := range keys {
+			_, err = postTrie.GetWithHashedKey(key)
+			if err != nil {
+				panic(err)
+			}
+		}
+
+		proof, statediff, err := trie.ProveAndSerialize(preTrie, postTrie, keys, preTrie.FlatdbNodeResolver)
+		if err != nil {
+			panic(err)
+		}
+
+		postTreeRoot := postTrie.Hash().Bytes()
+		if !bytes.Equal(postTreeRoot[:], s.originalRoot[:]) {
+			fmt.Printf("pre -trie root: %x\n", s.originalRoot.Bytes())
+			fmt.Printf("post-trie root: %x\n", postTreeRoot)
+
+			// Verify proofs in blocks
+			err = trie.DeserializeAndVerifyVerkleProof(proof, s.originalRoot.Bytes(), statediff)
+			if err != nil {
+				fmt.Printf("FATAL: %s\n", err)
+				os.Exit(-1)
+			}
+			fmt.Printf("Verified!\n")
+		}
+	}
 
 	// Commit objects to the trie, measuring the elapsed time
 	var (
