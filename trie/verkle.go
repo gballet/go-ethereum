@@ -559,3 +559,7 @@ func (trie *VerkleTrie) trackPostStateValues(stem []byte, values [][]byte) {
 		trie.treeWrites[string(addr)] = values[i]
 	}
 }
+
+func (trie *VerkleTrie) TreeStats() (int, int, int, int, int, error) {
+	return verkle.TreeWitness(trie.root, trie.FlatdbNodeResolver, []byte{})
+}

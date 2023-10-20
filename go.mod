@@ -141,3 +141,5 @@ require (
 )
 
 replace github.com/attestantio/go-eth2-client => github.com/gballet/go-eth2-client v0.0.0-20231020124311-0e6710060c93
+
+replace github.com/gballet/go-verkle => /home/ignacio/code/go-verkle

@@ -9,6 +9,9 @@ import (
 
 func CollectWitnessMetrics(block *types.Block) error {
 	witness := block.ExecutionWitness()
+	if witness == nil {
+		return nil
+	}
 
 	sszWitness := eth2client.ExecutionWitness{
 		StateDiff: make([]*eth2client.StemStateDiff, len(witness.StateDiff)),

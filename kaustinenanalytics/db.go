@@ -33,4 +33,22 @@ func init() {
 	`); err != nil {
 		panic(err)
 	}
+
+	if _, err := db.Exec(`
+	CREATE TABLE IF NOT EXISTS tree_stats (
+		block_number INTEGER NOT NULL,
+
+		depth_min INTEGER NOT NULL,
+		depth_max INTEGER NOT NULL,
+
+		leaf_node_count INTEGER NOT NULL,
+		internal_node_count INTEGER NOT NULL,
+
+		keyvalue_count INTEGER NOT NULL,
+
+		PRIMARY KEY(block_number)
+	) STRICT
+	`); err != nil {
+		panic(err)
+	}
 }
