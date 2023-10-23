@@ -25,7 +25,11 @@ require (
 	github.com/fjl/memsize v0.0.0-20190710130421-bcb5799ab5e5
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/gballet/go-libpcsclite v0.0.0-20190607065134-2772fd86a8ff
+<<<<<<< HEAD
 	github.com/gballet/go-verkle v0.0.0-20230725193842-b2d852dc666b
+=======
+	github.com/gballet/go-verkle v0.1.1-0.20231020124853-d124d1998b1a
+>>>>>>> 2414b32bf (Update go-verkle (#296))
 	github.com/go-stack/stack v1.8.1
 	github.com/gofrs/flock v0.8.1
 	github.com/golang-jwt/jwt/v4 v4.3.0
