@@ -337,7 +337,7 @@ func ProveAndSerialize(pretrie, posttrie *VerkleTrie, keys [][]byte, resolver ve
 }
 
 func DeserializeAndVerifyVerkleProof(vp *verkle.VerkleProof, preStateRoot []byte, postStateRoot []byte, statediff verkle.StateDiff) error {
-	// TODO: check that `others` have expected length and values.
+	// TODO: check that `OtherStems` have expected length and values.
 
 	proof, err := verkle.DeserializeProof(vp, statediff)
 	if err != nil {
