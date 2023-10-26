@@ -556,7 +556,6 @@ func (trie *VerkleTrie) trackPostStateValues(stem []byte, values [][]byte) {
 			continue
 		}
 		addr[verkle.StemSize] = byte(i)
-		fmt.Printf("Tracking %x: %x\n", string(addr), values[i])
 		trie.treeWrites[string(addr)] = values[i]
 	}
 }
