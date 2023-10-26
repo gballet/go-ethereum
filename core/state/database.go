@@ -64,37 +64,37 @@ type Database interface {
 	// TrieDB retrieves the low level trie database used for data storage.
 	TrieDB() *trie.Database
 
-	StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, cancunTime *uint64)
+	StartVerkleTransition(originalRoot common.Hash, chainConfig *params.ChainConfig, cancunTime *uint64, root common.Hash)
 
 	ReorgThroughVerkleTransition()
 
-	EndVerkleTransition()
+	EndVerkleTransition(common.Hash)
 
-	InTransition() bool
+	InTransition(common.Hash) bool
 
-	Transitioned() bool
+	Transitioned(common.Hash) bool
 
-	SetCurrentSlotHash(hash common.Hash)
+	SetCurrentSlotHash(common.Hash, common.Hash)
 
-	GetCurrentAccountAddress() *common.Address
+	GetCurrentAccountAddress(common.Hash) *common.Address
 
-	SetCurrentAccountAddress(common.Address)
+	SetCurrentAccountAddress(common.Address, common.Hash)
 
-	GetCurrentAccountHash() common.Hash
+	GetCurrentAccountHash(common.Hash) common.Hash
 
-	GetCurrentSlotHash() common.Hash
+	GetCurrentSlotHash(common.Hash) common.Hash
 
-	SetStorageProcessed(bool)
+	SetStorageProcessed(bool, common.Hash)
 
-	GetStorageProcessed() bool
+	GetStorageProcessed(common.Hash) bool
 
-	GetCurrentPreimageOffset() int64
+	GetCurrentPreimageOffset(common.Hash) int64
 
-	SetCurrentPreimageOffset(int64)
+	SetCurrentPreimageOffset(int64, common.Hash)
 
 	AddRootTranslation(originalRoot, translatedRoot common.Hash)
 
-	SetLastMerkleRoot(root common.Hash)
+	SetLastMerkleRoot(common.Hash)
 }
 
 // Trie is a Ethereum Merkle Patricia trie.
@@ -182,36 +182,46 @@ func NewDatabase(db ethdb.Database) Database {
 // large memory cache.
 func NewDatabaseWithConfig(db ethdb.Database, config *trie.Config) Database {
 	return &cachingDB{
-		disk:          db,
-		codeSizeCache: lru.NewCache[common.Hash, int](codeSizeCacheSize),
-		codeCache:     lru.NewSizeConstrainedCache[common.Hash, []byte](codeCacheSize),
-		triedb:        trie.NewDatabaseWithConfig(db, config),
-		addrToPoint:   utils.NewPointCache(),
+		disk:                  db,
+		codeSizeCache:         lru.NewCache[common.Hash, int](codeSizeCacheSize),
+		codeCache:             lru.NewSizeConstrainedCache[common.Hash, []byte](codeCacheSize),
+		triedb:                trie.NewDatabaseWithConfig(db, config),
+		addrToPoint:           utils.NewPointCache(),
+		StorageProcessed:      map[common.Hash]bool{},
+		CurrentAccountAddress: map[common.Hash]*common.Address{},
+		CurrentSlotHash:       map[common.Hash]common.Hash{},
+		CurrentPreimageOffset: map[common.Hash]int64{}, started: map[common.Hash]bool{},
+		ended: map[common.Hash]bool{},
 	}
 }
 
 // NewDatabaseWithNodeDB creates a state database with an already initialized node database.
 func NewDatabaseWithNodeDB(db ethdb.Database, triedb *trie.Database) Database {
 	return &cachingDB{
-		disk:          db,
-		codeSizeCache: lru.NewCache[common.Hash, int](codeSizeCacheSize),
-		codeCache:     lru.NewSizeConstrainedCache[common.Hash, []byte](codeCacheSize),
-		triedb:        triedb,
-		addrToPoint:   utils.NewPointCache(),
-		ended:         triedb.IsVerkle(),
+		disk:                  db,
+		codeSizeCache:         lru.NewCache[common.Hash, int](codeSizeCacheSize),
+		codeCache:             lru.NewSizeConstrainedCache[common.Hash, []byte](codeCacheSize),
+		triedb:                triedb,
+		addrToPoint:           utils.NewPointCache(),
+		StorageProcessed:      map[common.Hash]bool{},
+		CurrentAccountAddress: map[common.Hash]*common.Address{},
+		CurrentSlotHash:       map[common.Hash]common.Hash{},
+		CurrentPreimageOffset: map[common.Hash]int64{},
+		started:               map[common.Hash]bool{},
+		ended:                 map[common.Hash]bool{},
 	}
 }
 
-func (db *cachingDB) InTransition() bool {
-	return db.started && !db.ended
+func (db *cachingDB) InTransition(root common.Hash) bool {
+	return db.started[root] && !db.ended[root]
 }
 
-func (db *cachingDB) Transitioned() bool {
-	return db.ended
+func (db *cachingDB) Transitioned(root common.Hash) bool {
+	return db.ended[root]
 }
 
 // Fork implements the fork
-func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, pragueTime *uint64) {
+func (db *cachingDB) StartVerkleTransition(originalRoot common.Hash, chainConfig *params.ChainConfig, pragueTime *uint64, root common.Hash) {
 	fmt.Println(`
 	__________.__                       .__                .__                   __       .__                               .__          ____         
 	\__    ___|  |__   ____        ____ |  |   ____ ______ |  |__ _____    _____/  |_     |  |__ _____    ______    __  _  _|__| ____   / ___\ ______
@@ -219,24 +229,27 @@ func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.H
 	  |    |  |   Y  \  ___/     \  ___/|  |_\  ___/|  |_> |   Y  \/ __ \|   |  |  |      |   Y  \/ __ \_\___ \      \     /|  |   |  \\___  /\___ \
 	  |____|  |___|  /\___        \___  |____/\___  |   __/|___|  (____  |___|  |__|      |___|  (____  /_____/       \/\_/ |__|___|  /_____//_____/
                                                     |__|`)
-	db.started = true
-	db.ended = false
+	db.started[root] = true
+	db.ended[root] = false
 	// db.AddTranslation(originalRoot, translatedRoot)
 	db.baseRoot = originalRoot
 	// initialize so that the first storage-less accounts are processed
-	db.StorageProcessed = true
+	db.StorageProcessed[root] = true
 	if pragueTime != nil {
 		chainConfig.PragueTime = pragueTime
 	}
 }
 
 func (db *cachingDB) ReorgThroughVerkleTransition() {
-	db.ended, db.started = false, false
+	for k := range db.ended {
+		delete(db.ended, k)
+		delete(db.started, k)
+	}
 }
 
-func (db *cachingDB) EndVerkleTransition() {
-	if !db.started {
-		db.started = true
+func (db *cachingDB) EndVerkleTransition(root common.Hash) {
+	if !db.started[root] {
+		db.started[root] = true
 	}
 
 	fmt.Println(`
@@ -246,7 +259,7 @@ func (db *cachingDB) EndVerkleTransition() {
 	  |    |  |   Y  \  ___/     \  ___/|  |_\  ___/|  |_> |   Y  \/ __ \|   |  |  |      |   Y  \/ __ \_\___ \     |  |__/ __ \|   |  / /_/ \  ___// /_/ |
 	  |____|  |___|  /\___        \___  |____/\___  |   __/|___|  (____  |___|  |__|      |___|  (____  /_____/     |____(____  |___|  \____ |\___  \____ |
                                                     |__|`)
-	db.ended = true
+	db.ended[root] = true
 }
 
 type cachingDB struct {
@@ -257,20 +270,21 @@ type cachingDB struct {
 
 	// Verkle specific fields
 	// TODO ensure that this info is in the DB
-	started, ended bool
+	started, ended map[common.Hash]bool
 	LastMerkleRoot common.Hash // root hash of the read-only base tree
 
 	addrToPoint *utils.PointCache
 
-	baseRoot              common.Hash     // hash of the read-only base tree
-	CurrentAccountAddress *common.Address // addresss of the last translated account
-	CurrentSlotHash       common.Hash     // hash of the last translated storage slot
-	CurrentPreimageOffset int64           // next byte to read from the preimage file
+	baseRoot              common.Hash                     // hash of the read-only base tree
+	CurrentAccountAddress map[common.Hash]*common.Address // addresss of the last translated account
+	CurrentSlotHash       map[common.Hash]common.Hash     // hash of the last translated storage slot
+	CurrentPreimageOffset map[common.Hash]int64           // next byte to read from the preimage file
 
 	// Mark whether the storage for an account has been processed. This is useful if the
 	// maximum number of leaves of the conversion is reached before the whole storage is
 	// processed.
-	StorageProcessed bool
+	StorageProcessed map[common.Hash]bool
+	currentBlock     uint64
 }
 
 func (db *cachingDB) openMPTTrie(root common.Hash) (Trie, error) {
@@ -284,14 +298,14 @@ func (db *cachingDB) openMPTTrie(root common.Hash) (Trie, error) {
 func (db *cachingDB) openVKTrie(root common.Hash) (Trie, error) {
 	payload, err := db.DiskDB().Get(trie.FlatDBVerkleNodeKeyPrefix)
 	if err != nil {
-		return trie.NewVerkleTrie(verkle.New(), db.triedb, db.addrToPoint, db.ended), nil
+		return trie.NewVerkleTrie(verkle.New(), db.triedb, db.addrToPoint, db.ended[root]), nil
 	}
 
 	r, err := verkle.ParseNode(payload, 0)
 	if err != nil {
 		panic(err)
 	}
-	return trie.NewVerkleTrie(r, db.triedb, db.addrToPoint, db.ended), err
+	return trie.NewVerkleTrie(r, db.triedb, db.addrToPoint, db.ended[root]), err
 }
 
 // OpenTrie opens the main account trie at a specific root hash.
@@ -303,7 +317,7 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 
 	// TODO separate both cases when I can be certain that it won't
 	// find a Verkle trie where is expects a Transitoion trie.
-	if db.started || db.ended {
+	if db.started[root] || db.ended[root] {
 		// NOTE this is a kaustinen-only change, it will break replay
 		vkt, err := db.openVKTrie(root)
 		if err != nil {
@@ -312,7 +326,7 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 
 		// If the verkle conversion has ended, return a single
 		// verkle trie.
-		if db.ended {
+		if db.ended[root] {
 			return vkt, nil
 		}
 
@@ -345,7 +359,7 @@ func (db *cachingDB) openStorageMPTrie(stateRoot common.Hash, address common.Add
 // OpenStorageTrie opens the storage trie of an account
 func (db *cachingDB) OpenStorageTrie(stateRoot common.Hash, address common.Address, root common.Hash, self Trie) (Trie, error) {
 	// TODO this should only return a verkle tree
-	if db.ended {
+	if db.ended[root] {
 		mpt, err := db.openStorageMPTrie(types.EmptyRootHash, address, common.Hash{}, self)
 		if err != nil {
 			return nil, err
@@ -361,7 +375,7 @@ func (db *cachingDB) OpenStorageTrie(stateRoot common.Hash, address common.Addre
 			panic("unexpected trie type")
 		}
 	}
-	if db.started {
+	if db.started[root] {
 		mpt, err := db.openStorageMPTrie(db.LastMerkleRoot, address, root, nil)
 		if err != nil {
 			return nil, err
@@ -450,49 +464,49 @@ func (db *cachingDB) GetTreeKeyHeader(addr []byte) *verkle.Point {
 	return db.addrToPoint.GetTreeKeyHeader(addr)
 }
 
-func (db *cachingDB) SetCurrentAccountAddress(addr common.Address) {
-	db.CurrentAccountAddress = &addr
+func (db *cachingDB) SetCurrentAccountAddress(addr common.Address, root common.Hash) {
+	db.CurrentAccountAddress[root] = &addr
 }
 
-func (db *cachingDB) GetCurrentAccountHash() common.Hash {
+func (db *cachingDB) GetCurrentAccountHash(root common.Hash) common.Hash {
 	var addrHash common.Hash
-	if db.CurrentAccountAddress != nil {
-		addrHash = crypto.Keccak256Hash(db.CurrentAccountAddress[:])
+	if db.CurrentAccountAddress[root] != nil {
+		addrHash = crypto.Keccak256Hash(db.CurrentAccountAddress[root][:])
 	}
 	return addrHash
 }
 
-func (db *cachingDB) GetCurrentAccountAddress() *common.Address {
-	return db.CurrentAccountAddress
+func (db *cachingDB) GetCurrentAccountAddress(root common.Hash) *common.Address {
+	return db.CurrentAccountAddress[root]
 }
 
-func (db *cachingDB) GetCurrentPreimageOffset() int64 {
-	return db.CurrentPreimageOffset
+func (db *cachingDB) GetCurrentPreimageOffset(root common.Hash) int64 {
+	return db.CurrentPreimageOffset[root]
 }
 
-func (db *cachingDB) SetCurrentPreimageOffset(offset int64) {
-	db.CurrentPreimageOffset = offset
+func (db *cachingDB) SetCurrentPreimageOffset(offset int64, root common.Hash) {
+	db.CurrentPreimageOffset[root] = offset
 }
 
-func (db *cachingDB) SetCurrentSlotHash(hash common.Hash) {
-	db.CurrentSlotHash = hash
+func (db *cachingDB) SetCurrentSlotHash(hash common.Hash, root common.Hash) {
+	db.CurrentSlotHash[root] = hash
 }
 
-func (db *cachingDB) GetCurrentSlotHash() common.Hash {
-	return db.CurrentSlotHash
+func (db *cachingDB) GetCurrentSlotHash(root common.Hash) common.Hash {
+	return db.CurrentSlotHash[root]
 }
 
-func (db *cachingDB) SetStorageProcessed(processed bool) {
-	db.StorageProcessed = processed
+func (db *cachingDB) SetStorageProcessed(processed bool, root common.Hash) {
+	db.StorageProcessed[root] = processed
 }
 
-func (db *cachingDB) GetStorageProcessed() bool {
-	return db.StorageProcessed
+func (db *cachingDB) GetStorageProcessed(root common.Hash) bool {
+	return db.StorageProcessed[root]
 }
 
 func (db *cachingDB) AddRootTranslation(originalRoot, translatedRoot common.Hash) {
 }
 
-func (db *cachingDB) SetLastMerkleRoot(root common.Hash) {
-	db.LastMerkleRoot = root
+func (db *cachingDB) SetLastMerkleRoot(merkleRoot common.Hash) {
+	db.LastMerkleRoot = merkleRoot
 }

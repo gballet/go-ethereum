@@ -1039,7 +1039,7 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 	root := s.trie.Hash()
 
 	// Save the root of the MPT so that it can be used during the transition
-	if !s.Database().InTransition() && !s.Database().Transitioned() {
+	if !s.Database().InTransition(root) && !s.Database().Transitioned(root) {
 		s.Database().SetLastMerkleRoot(root)
 	}
 

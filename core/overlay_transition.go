@@ -35,19 +35,19 @@ import (
 )
 
 // OverlayVerkleTransition contains the overlay conversion logic
-func OverlayVerkleTransition(statedb *state.StateDB) error {
+func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash) error {
 	migrdb := statedb.Database()
 
 	// verkle transition: if the conversion process is in progress, move
 	// N values from the MPT into the verkle tree.
-	if migrdb.InTransition() {
+	if migrdb.InTransition(root) {
 		var (
 			now             = time.Now()
 			tt              = statedb.GetTrie().(*trie.TransitionTrie)
 			mpt             = tt.Base()
 			vkt             = tt.Overlay()
 			hasPreimagesBin = false
-			preimageSeek    = migrdb.GetCurrentPreimageOffset()
+			preimageSeek    = migrdb.GetCurrentPreimageOffset(root)
 			fpreimages      *bufio.Reader
 		)
 
@@ -65,7 +65,7 @@ func OverlayVerkleTransition(statedb *state.StateDB) error {
 			hasPreimagesBin = true
 		}
 
-		accIt, err := statedb.Snaps().AccountIterator(mpt.Hash(), migrdb.GetCurrentAccountHash())
+		accIt, err := statedb.Snaps().AccountIterator(mpt.Hash(), migrdb.GetCurrentAccountHash(root))
 		if err != nil {
 			return err
 		}
@@ -73,7 +73,7 @@ func OverlayVerkleTransition(statedb *state.StateDB) error {
 		accIt.Next()
 
 		// If we're about to start with the migration process, we have to read the first account hash preimage.
-		if migrdb.GetCurrentAccountAddress() == nil {
+		if migrdb.GetCurrentAccountAddress(root) == nil {
 			var addr common.Address
 			if hasPreimagesBin {
 				if _, err := io.ReadFull(fpreimages, addr[:]); err != nil {
@@ -85,8 +85,8 @@ func OverlayVerkleTransition(statedb *state.StateDB) error {
 					return fmt.Errorf("addr len is zero is not 32: %d", len(addr))
 				}
 			}
-			migrdb.SetCurrentAccountAddress(addr)
-			if migrdb.GetCurrentAccountHash() != accIt.Hash() {
+			migrdb.SetCurrentAccountAddress(addr, root)
+			if migrdb.GetCurrentAccountHash(root) != accIt.Hash() {
 				return fmt.Errorf("preimage file does not match account hash: %s != %s", crypto.Keccak256Hash(addr[:]), accIt.Hash())
 			}
 			preimageSeek += int64(len(addr))
@@ -108,7 +108,7 @@ func OverlayVerkleTransition(statedb *state.StateDB) error {
 				log.Error("Invalid account encountered during traversal", "error", err)
 				return err
 			}
-			vkt.SetStorageRootConversion(*migrdb.GetCurrentAccountAddress(), acc.Root)
+			vkt.SetStorageRootConversion(*migrdb.GetCurrentAccountAddress(root), acc.Root)
 
 			// Start with processing the storage, because once the account is
 			// converted, the `stateRoot` field loses its meaning. Which means
@@ -120,7 +120,7 @@ func OverlayVerkleTransition(statedb *state.StateDB) error {
 			// to during normal block execution. A mitigation strategy has been
 			// introduced with the `*StorageRootConversion` fields in VerkleDB.
 			if acc.HasStorage() {
-				stIt, err := statedb.Snaps().StorageIterator(mpt.Hash(), accIt.Hash(), migrdb.GetCurrentSlotHash())
+				stIt, err := statedb.Snaps().StorageIterator(mpt.Hash(), accIt.Hash(), migrdb.GetCurrentSlotHash(root))
 				if err != nil {
 					return err
 				}
@@ -132,7 +132,7 @@ func OverlayVerkleTransition(statedb *state.StateDB) error {
 				// processing the storage for that account where we left off.
 				// If the entire storage was processed, then the iterator was
 				// created in vain, but it's ok as this will not happen often.
-				for ; !migrdb.GetStorageProcessed() && count < maxMovedCount; count++ {
+				for ; !migrdb.GetStorageProcessed(root) && count < maxMovedCount; count++ {
 					var (
 						value     []byte   // slot value after RLP decoding
 						safeValue [32]byte // 32-byte aligned value
@@ -160,12 +160,12 @@ func OverlayVerkleTransition(statedb *state.StateDB) error {
 					}
 					preimageSeek += int64(len(slotnr))
 
-					mkv.addStorageSlot(migrdb.GetCurrentAccountAddress().Bytes(), slotnr, safeValue[:])
+					mkv.addStorageSlot(migrdb.GetCurrentAccountAddress(root).Bytes(), slotnr, safeValue[:])
 
 					// advance the storage iterator
-					migrdb.SetStorageProcessed(!stIt.Next())
-					if !migrdb.GetStorageProcessed() {
-						migrdb.SetCurrentSlotHash(stIt.Hash())
+					migrdb.SetStorageProcessed(!stIt.Next(), root)
+					if !migrdb.GetStorageProcessed(root) {
+						migrdb.SetCurrentSlotHash(stIt.Hash(), root)
 					}
 				}
 				stIt.Release()
@@ -178,20 +178,20 @@ func OverlayVerkleTransition(statedb *state.StateDB) error {
 			if count < maxMovedCount {
 				count++ // count increase for the account itself
 
-				mkv.addAccount(migrdb.GetCurrentAccountAddress().Bytes(), acc)
-				vkt.ClearStrorageRootConversion(*migrdb.GetCurrentAccountAddress())
+				mkv.addAccount(migrdb.GetCurrentAccountAddress(root).Bytes(), acc)
+				vkt.ClearStrorageRootConversion(*migrdb.GetCurrentAccountAddress(root))
 
 				// Store the account code if present
 				if !bytes.Equal(acc.CodeHash, types.EmptyCodeHash[:]) {
 					code := rawdb.ReadCode(statedb.Database().DiskDB(), common.BytesToHash(acc.CodeHash))
 					chunks := trie.ChunkifyCode(code)
 
-					mkv.addAccountCode(migrdb.GetCurrentAccountAddress().Bytes(), uint64(len(code)), chunks)
+					mkv.addAccountCode(migrdb.GetCurrentAccountAddress(root).Bytes(), uint64(len(code)), chunks)
 				}
 
 				// reset storage iterator marker for next account
-				migrdb.SetStorageProcessed(false)
-				migrdb.SetCurrentSlotHash(common.Hash{})
+				migrdb.SetStorageProcessed(false, root)
+				migrdb.SetCurrentSlotHash(common.Hash{}, root)
 
 				// Move to the next account, if available - or end
 				// the transition otherwise.
@@ -212,18 +212,18 @@ func OverlayVerkleTransition(statedb *state.StateDB) error {
 						return fmt.Errorf("preimage file does not match account hash: %s != %s", crypto.Keccak256Hash(addr[:]), accIt.Hash())
 					}
 					preimageSeek += int64(len(addr))
-					migrdb.SetCurrentAccountAddress(addr)
+					migrdb.SetCurrentAccountAddress(addr, root)
 				} else {
 					// case when the account iterator has
 					// reached the end but count < maxCount
-					migrdb.EndVerkleTransition()
+					migrdb.EndVerkleTransition(root)
 					break
 				}
 			}
 		}
-		migrdb.SetCurrentPreimageOffset(preimageSeek)
+		migrdb.SetCurrentPreimageOffset(preimageSeek, root)
 
-		log.Info("Collected key values from base tree", "count", count, "duration", time.Since(now), "last account", statedb.Database().GetCurrentAccountHash())
+		log.Info("Collected key values from base tree", "count", count, "duration", time.Since(now), "last account", statedb.Database().GetCurrentAccountHash(root))
 
 		// Take all the collected key-values and prepare the new leaf values.
 		// This fires a background routine that will start doing the work that
