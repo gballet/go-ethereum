@@ -39,6 +39,8 @@ type VerkleTrie struct {
 	db         *Database
 	pointCache *utils.PointCache
 	ended      bool
+
+	treeWrites map[string][]byte
 }
 
 func (vt *VerkleTrie) ToDot() string {
@@ -51,6 +53,7 @@ func NewVerkleTrie(root verkle.VerkleNode, db *Database, pointCache *utils.Point
 		db:         db,
 		pointCache: pointCache,
 		ended:      ended,
+		treeWrites: make(map[string][]byte),
 	}
 }
 
@@ -59,6 +62,7 @@ func (trie *VerkleTrie) FlatdbNodeResolver(path []byte) ([]byte, error) {
 }
 
 func (trie *VerkleTrie) InsertMigratedLeaves(leaves []verkle.LeafNode) error {
+	// Note: these values intentionally not inserted in the postValues map.
 	return trie.root.(*verkle.InternalNode).InsertMigratedLeaves(leaves, trie.FlatdbNodeResolver)
 }
 
@@ -185,16 +189,22 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount)
 	}
 	// TODO figure out if the code size needs to be updated, too
 
+	t.trackPostStateValues(stem, values)
+
 	return nil
 }
 
-func (trie *VerkleTrie) UpdateStem(key []byte, values [][]byte) error {
+func (trie *VerkleTrie) UpdateStem(stem []byte, values [][]byte) error {
 	switch root := trie.root.(type) {
 	case *verkle.InternalNode:
-		return root.InsertStem(key, values, trie.FlatdbNodeResolver)
+		if err := root.InsertStem(stem, values, trie.FlatdbNodeResolver); err != nil {
+			return fmt.Errorf("updating stem: %v", err)
+		}
+		trie.trackPostStateValues(stem, values)
 	default:
 		panic("invalid root type")
 	}
+	return nil
 }
 
 // Update associates key with value in the trie. If value has length zero, any
@@ -209,7 +219,13 @@ func (trie *VerkleTrie) UpdateStorage(address common.Address, key, value []byte)
 	} else {
 		copy(v[32-len(value):], value[:])
 	}
-	return trie.root.Insert(k, v[:], trie.FlatdbNodeResolver)
+	if err := trie.root.Insert(k, v[:], trie.FlatdbNodeResolver); err != nil {
+		return fmt.Errorf("inserting key: %s", err)
+	}
+
+	trie.treeWrites[string(k)] = v[:]
+
+	return nil
 }
 
 func (t *VerkleTrie) DeleteAccount(addr common.Address) error {
@@ -234,6 +250,8 @@ func (t *VerkleTrie) DeleteAccount(addr common.Address) error {
 	}
 	// TODO figure out if the code size needs to be updated, too
 
+	t.trackPostStateValues(stem, values)
+
 	return nil
 }
 
@@ -243,7 +261,12 @@ func (trie *VerkleTrie) DeleteStorage(addr common.Address, key []byte) error {
 	pointEval := trie.pointCache.GetTreeKeyHeader(addr[:])
 	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(pointEval, key)
 	var zero [32]byte
-	return trie.root.Insert(k, zero[:], trie.FlatdbNodeResolver)
+	if err := trie.root.Insert(k, zero[:], trie.FlatdbNodeResolver); err != nil {
+		return fmt.Errorf("inserting key: %s", err)
+	}
+	trie.treeWrites[string(k)] = zero[:]
+
+	return nil
 }
 
 // Hash returns the root hash of the trie. It does not write to the database and
@@ -306,6 +329,13 @@ func (trie *VerkleTrie) Prove(key []byte, proofDb ethdb.KeyValueWriter) error {
 	panic("not implemented")
 }
 
+// GetTreeWrites returns the a map that contains the addresses and values that were
+// written to the trie. The returned map **is not** a copy, so any mutation to it
+// can affect further calls. It's recommended to treat it as read-only.
+func (trie *VerkleTrie) GetTreeWrites() map[string][]byte {
+	return trie.treeWrites
+}
+
 func (trie *VerkleTrie) Copy() *VerkleTrie {
 	return &VerkleTrie{
 		root:       trie.root.Copy(),
@@ -336,14 +366,48 @@ func ProveAndSerialize(pretrie, posttrie *VerkleTrie, keys [][]byte, resolver ve
 	return p, kvps, nil
 }
 
-func DeserializeAndVerifyVerkleProof(vp *verkle.VerkleProof, preStateRoot []byte, postStateRoot []byte, statediff verkle.StateDiff) error {
-	// TODO: check that `OtherStems` have expected length and values.
-
+func DeserializeAndVerifyVerkleProof(
+	vp *verkle.VerkleProof,
+	statediff verkle.StateDiff,
+	preStateRoot []byte,
+	computedKeys [][]byte,
+	computedPreStateValues [][]byte,
+	computedPostStateValues [][]byte) error {
 	proof, err := verkle.DeserializeProof(vp, statediff)
 	if err != nil {
 		return fmt.Errorf("verkle proof deserialization error: %w", err)
 	}
 
+	// Verify the provided `statediff` by checking that the keys, pre-values and post-values match exactly
+	// with the ones provided from the EVM block execution witness.
+	if len(computedKeys) != len(proof.Keys) {
+		return fmt.Errorf("witness keys length doesn't match proof keys length: expected %d, got %d", len(computedKeys), len(proof.Keys))
+	}
+	for i := range computedKeys {
+		if !bytes.Equal(computedKeys[i], proof.Keys[i]) {
+			return fmt.Errorf("witness keys don't match proof keys: expected %x, got %x", computedKeys[i], proof.Keys[i])
+		}
+	}
+	if len(computedPreStateValues) != len(proof.PreValues) {
+		return fmt.Errorf("witness pre-values length doesn't match proof pre-values length: expected %d, got %d", len(computedPreStateValues), len(proof.PreValues))
+	}
+	for i := range computedPreStateValues {
+		if !bytes.Equal(computedPreStateValues[i], proof.PreValues[i]) {
+			return fmt.Errorf("witness pre-values don't match proof pre-values: expected %x, got %x", computedPreStateValues[i], proof.PreValues[i])
+		}
+	}
+	if len(computedPostStateValues) != len(proof.PostValues) {
+		return fmt.Errorf("witness post-values length doesn't match proof post-values length: expected %d, got %d", len(computedPostStateValues), len(proof.PostValues))
+
+	}
+	for i := range computedPostStateValues {
+		if !bytes.Equal(computedPostStateValues[i], proof.PostValues[i]) {
+			return fmt.Errorf("witness post-values don't match proof post-values: expected %x, got %x", computedPostStateValues[i], proof.PostValues[i])
+		}
+	}
+
+	// At the point we know that the pre and post values are correct, we we proceed with reconstructing
+	// the pre-state tree, and getting the elements to verify the cryptographic proof.
 	rootC := new(verkle.Point)
 	rootC.SetBytes(preStateRoot)
 	pretree, err := verkle.PreStateTreeFromProof(proof, rootC)
@@ -372,19 +436,6 @@ func DeserializeAndVerifyVerkleProof(vp *verkle.VerkleProof, preStateRoot []byte
 				}
 			}
 		}
-	}
-
-	// TODO: this is necessary to verify that the post-values are the correct ones.
-	// But all this can be avoided with a even faster way. The EVM block execution can
-	// keep track of the written keys, and compare that list with this post-values list.
-	// This can avoid regenerating the post-tree which is somewhat expensive.
-	posttree, err := verkle.PostStateTreeFromStateDiff(pretree, statediff)
-	if err != nil {
-		return fmt.Errorf("error rebuilding the post-tree from proof: %w", err)
-	}
-	regeneratedPostTreeRoot := posttree.Commitment().Bytes()
-	if !bytes.Equal(regeneratedPostTreeRoot[:], postStateRoot) {
-		return fmt.Errorf("post tree root mismatch: %x != %x", regeneratedPostTreeRoot, postStateRoot)
 	}
 
 	return verkle.VerifyVerkleProofWithPreState(proof, pretree)
@@ -495,4 +546,17 @@ func (t *VerkleTrie) UpdateContractCode(addr common.Address, codeHash common.Has
 		}
 	}
 	return nil
+}
+
+func (trie *VerkleTrie) trackPostStateValues(stem []byte, values [][]byte) {
+	addr := make([]byte, verkle.StemSize+1)
+	copy(addr[:verkle.StemSize], stem)
+	for i := range values {
+		if len(values[i]) == 0 {
+			continue
+		}
+		addr[verkle.StemSize] = byte(i)
+		fmt.Printf("Tracking %x: %x\n", string(addr), values[i])
+		trie.treeWrites[string(addr)] = values[i]
+	}
 }
