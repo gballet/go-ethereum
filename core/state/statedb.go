@@ -1222,18 +1222,16 @@ func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, er
 	// Finalize any pending changes and merge everything into the tries
 	s.IntermediateRoot(deleteEmptyObjects)
 
-	// Verify proof generation
-	stateTrie, err := s.Database().OpenTrie(s.originalRoot)
-	if err != nil {
-		panic(err)
-	}
-	preTrie := stateTrie.(*trie.VerkleTrie)
-
 	postTrie := s.GetTrie().(*trie.VerkleTrie)
 
 	keys := s.Witness().Keys()
-
 	if len(keys) > 0 {
+		e2eGenerationStart := time.Now()
+		stateTrie, err := s.Database().OpenTrie(s.originalRoot)
+		if err != nil {
+			panic(err)
+		}
+		preTrie := stateTrie.(*trie.VerkleTrie)
 		proof, statediff, err := trie.ProveAndSerialize(preTrie, postTrie, keys, preTrie.FlatdbNodeResolver)
 		if err != nil {
 			panic(err)
@@ -1241,11 +1239,18 @@ func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, er
 
 		postTreeRoot := postTrie.Hash().Bytes()
 		if !bytes.Equal(postTreeRoot[:], s.originalRoot[:]) {
-			if err := kaustinenanalytics2.ProofGenStats(); err != nil {
+			if err := kaustinenanalytics2.ProofGenStats(time.Since(e2eGenerationStart)); err != nil {
 				return common.Hash{}, fmt.Errorf("failed to generate proof gen stats: %v", err)
 			}
 
-			computedKeys := s.Witness().Keys()
+			e2eVerificationStart := time.Now()
+			stateTrie, err := s.Database().OpenTrie(s.originalRoot)
+			if err != nil {
+				panic(err)
+			}
+			preTrie := stateTrie.(*trie.VerkleTrie)
+
+			computedKeys := keys
 			sort.Slice(computedKeys, func(i, j int) bool { return bytes.Compare(computedKeys[i], computedKeys[j]) < 0 })
 
 			// Get the pre-state values from the database.
@@ -1276,7 +1281,7 @@ func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, er
 			if err != nil {
 				panic(err)
 			}
-			if err := kaustinenanalytics2.ProofVerifStats(); err != nil {
+			if err := kaustinenanalytics2.ProofVerifStats(time.Since(e2eVerificationStart)); err != nil {
 				return common.Hash{}, fmt.Errorf("failed to generate proof verif stats: %v", err)
 			}
 		}

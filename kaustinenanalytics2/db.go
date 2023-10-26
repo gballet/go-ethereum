@@ -58,9 +58,10 @@ func init() {
 	if _, err := Db.Exec(`
 	CREATE TABLE IF NOT EXISTS proof_gens (
 		num_keys INTEGER NOT NULL,
+		numopenings INTEGER NOT NULL,
 		prestate_getelementsforproof_ms INTEGER NOT NULL,
-		prestate_numopenings INTEGER NOT NULL,
-		create_multiproof_ms INTEGER NOT NULL
+		create_multiproof_ms INTEGER NOT NULL,
+		e2e_gen_time_ms INTEGER NOT NULL
 	) STRICT
 	`); err != nil {
 		panic(err)
@@ -69,9 +70,10 @@ func init() {
 	if _, err := Db.Exec(`
 	CREATE TABLE IF NOT EXISTS proof_verifs (
 		num_keys INTEGER NOT NULL,
+		numopenings INTEGER NOT NULL,
 		prestate_getelementsforproof_ms INTEGER NOT NULL,
-		prestate_numopenings INTEGER NOT NULL,
-		verify_multiproof_ms INTEGER NOT NULL
+		verify_multiproof_ms INTEGER NOT NULL,
+		e2e_verif_time_ms INTEGER NOT NULL
 	) STRICT
 	`); err != nil {
 		panic(err)
