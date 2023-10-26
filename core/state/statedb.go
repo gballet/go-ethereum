@@ -18,6 +18,7 @@
 package state
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math/big"
@@ -29,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state/snapshot"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/kaustinenanalytics2"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
@@ -1219,6 +1221,66 @@ func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, er
 	}
 	// Finalize any pending changes and merge everything into the tries
 	s.IntermediateRoot(deleteEmptyObjects)
+
+	// Verify proof generation
+	stateTrie, err := s.Database().OpenTrie(s.originalRoot)
+	if err != nil {
+		panic(err)
+	}
+	preTrie := stateTrie.(*trie.VerkleTrie)
+
+	postTrie := s.GetTrie().(*trie.VerkleTrie)
+
+	keys := s.Witness().Keys()
+
+	if len(keys) > 0 {
+		proof, statediff, err := trie.ProveAndSerialize(preTrie, postTrie, keys, preTrie.FlatdbNodeResolver)
+		if err != nil {
+			panic(err)
+		}
+
+		postTreeRoot := postTrie.Hash().Bytes()
+		if !bytes.Equal(postTreeRoot[:], s.originalRoot[:]) {
+			if err := kaustinenanalytics2.ProofGenStats(); err != nil {
+				return common.Hash{}, fmt.Errorf("failed to generate proof gen stats: %v", err)
+			}
+
+			computedKeys := s.Witness().Keys()
+			sort.Slice(computedKeys, func(i, j int) bool { return bytes.Compare(computedKeys[i], computedKeys[j]) < 0 })
+
+			// Get the pre-state values from the database.
+			computedPreStateValues := make([][]byte, len(computedKeys))
+			for i := range computedKeys {
+				computedPreStateValues[i], err = preTrie.GetWithHashedKey(computedKeys[i])
+				if err != nil {
+					panic(err)
+				}
+			}
+
+			computedPostStateValues := make([][]byte, len(computedKeys))
+			treeWrites := postTrie.GetTreeWrites()
+			for i := range computedKeys {
+				treeWrittenValue, ok := treeWrites[string(computedKeys[i])]
+				// If we didn't tracked this key, it means it was never written to the post-state tree,
+				// thus the newValue must be `nil`. (i.e: same as currentValue)
+				// Additionally, if we wrote to this key but it has the same pre-state value, then must
+				// also be `nil`.
+				if !ok || bytes.Equal(treeWrittenValue, computedPreStateValues[i]) {
+					continue
+				}
+				computedPostStateValues[i] = treeWrittenValue
+			}
+
+			// Verify proofs in blocks
+			err = trie.DeserializeAndVerifyVerkleProof(proof, statediff, s.originalRoot.Bytes(), computedKeys, computedPreStateValues, computedPostStateValues)
+			if err != nil {
+				panic(err)
+			}
+			if err := kaustinenanalytics2.ProofVerifStats(); err != nil {
+				return common.Hash{}, fmt.Errorf("failed to generate proof verif stats: %v", err)
+			}
+		}
+	}
 
 	// Commit objects to the trie, measuring the elapsed time
 	var (

@@ -5,6 +5,7 @@ import (
 
 	eth2client "github.com/attestantio/go-eth2-client/spec/verkle"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/kaustinenanalytics2"
 )
 
 func CollectWitnessMetrics(block *types.Block) error {
@@ -79,7 +80,7 @@ func CollectWitnessMetrics(block *types.Block) error {
 		}
 	}
 
-	if _, err := db.Exec(`INSERT OR IGNORE INTO witness values (?, ?, ?, ?, ?, ?, ?, ?)`,
+	if _, err := kaustinenanalytics2.Db.Exec(`INSERT OR IGNORE INTO witness values (?, ?, ?, ?, ?, ?, ?, ?)`,
 		block.NumberU64(),
 		block.GasUsed(),
 		sszTotalSize,

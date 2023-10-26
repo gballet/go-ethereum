@@ -6,6 +6,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/kaustinenanalytics2"
 	"github.com/ethereum/go-ethereum/trie"
 )
 
@@ -17,16 +18,19 @@ func CollectTreeMetrics(blockNum uint64, state *state.StateDB, root common.Hash)
 	vktTree := tree.(*trie.VerkleTrie)
 
 	now := time.Now()
-	depthMin, depthMax, leafNodeCount, internalNodeCount, keyValueCount, err := vktTree.TreeStats()
+	depthCount, leafNodeCount, internalNodeCount, keyValueCount, err := vktTree.TreeStats()
 	if err != nil {
 		return fmt.Errorf("error collecting tree metrics: %w", err)
 	}
 	fmt.Printf("tree stats took %v\n", time.Since(now))
 
-	if _, err := db.Exec(`INSERT OR IGNORE INTO tree_stats values (?, ?, ?, ?, ?, ?)`,
+	if _, err := kaustinenanalytics2.Db.Exec(`INSERT OR IGNORE INTO tree_stats values (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		blockNum,
-		depthMin,
-		depthMax,
+		depthCount[1],
+		depthCount[2],
+		depthCount[3],
+		depthCount[4],
+		depthCount[5],
 		leafNodeCount,
 		internalNodeCount,
 		keyValueCount); err != nil {

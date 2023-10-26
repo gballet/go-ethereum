@@ -1782,7 +1782,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			return 0, fmt.Errorf("failed to collect witness metrics: %w", err)
 		}
 		// Analytics: collect tree related metrics.
-		if block.NumberU64()%100 == 0 {
+		if block.NumberU64()%200 == 0 {
 			h := bc.GetHeaderByHash(block.ParentHash())
 			if err := kaustinenanalytics.CollectTreeMetrics(block.NumberU64(), statedb, h.Root); err != nil {
 				return 0, fmt.Errorf("failed to collect tree metrics: %w", err)

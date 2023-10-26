@@ -560,6 +560,11 @@ func (trie *VerkleTrie) trackPostStateValues(stem []byte, values [][]byte) {
 	}
 }
 
-func (trie *VerkleTrie) TreeStats() (int, int, int, int, int, error) {
-	return verkle.TreeWitness(trie.root, trie.FlatdbNodeResolver, []byte{})
+func (trie *VerkleTrie) TreeStats() ([]uint64, int, int, int, error) {
+	depthCount := make([]uint64, 6)
+	leafNodeCount, internalNodeCount, keyValueCount, err := verkle.TreeWitness(trie.root, trie.FlatdbNodeResolver, []byte{}, depthCount)
+	if err != nil {
+		return nil, 0, 0, 0, fmt.Errorf("error collecting tree metrics: %w", err)
+	}
+	return depthCount, leafNodeCount, internalNodeCount, keyValueCount, nil
 }
