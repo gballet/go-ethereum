@@ -64,7 +64,7 @@ type Database interface {
 	// TrieDB retrieves the low level trie database used for data storage.
 	TrieDB() *trie.Database
 
-	StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, cancunTime *uint64)
+	StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, cancunTime *uint64, root common.Hash)
 
 	ReorgThroughVerkleTransition()
 
@@ -74,27 +74,27 @@ type Database interface {
 
 	Transitioned() bool
 
-	SetCurrentSlotHash(hash common.Hash)
+	SetCurrentSlotHash(common.Hash, common.Hash)
 
-	GetCurrentAccountAddress() *common.Address
+	GetCurrentAccountAddress(common.Hash) *common.Address
 
-	SetCurrentAccountAddress(common.Address)
+	SetCurrentAccountAddress(common.Address, common.Hash)
 
-	GetCurrentAccountHash() common.Hash
+	GetCurrentAccountHash(common.Hash) common.Hash
 
-	GetCurrentSlotHash() common.Hash
+	GetCurrentSlotHash(common.Hash) common.Hash
 
-	SetStorageProcessed(bool)
+	SetStorageProcessed(bool, common.Hash)
 
-	GetStorageProcessed() bool
+	GetStorageProcessed(common.Hash) bool
 
-	GetCurrentPreimageOffset() int64
+	GetCurrentPreimageOffset(common.Hash) int64
 
-	SetCurrentPreimageOffset(int64)
+	SetCurrentPreimageOffset(int64, common.Hash)
 
 	AddRootTranslation(originalRoot, translatedRoot common.Hash)
 
-	SetLastMerkleRoot(root common.Hash)
+	SetLastMerkleRoot(common.Hash)
 }
 
 // Trie is a Ethereum Merkle Patricia trie.
@@ -187,6 +187,10 @@ func NewDatabaseWithConfig(db ethdb.Database, config *trie.Config) Database {
 		codeCache:     lru.NewSizeConstrainedCache[common.Hash, []byte](codeCacheSize),
 		triedb:        trie.NewDatabaseWithConfig(db, config),
 		addrToPoint:   utils.NewPointCache(),
+		StorageProcessed:      map[common.Hash]bool{},
+		CurrentAccountAddress: map[common.Hash]*common.Address{},
+		CurrentSlotHash:       map[common.Hash]common.Hash{},
+		CurrentPreimageOffset: map[common.Hash]int64{},
 	}
 }
 
@@ -199,6 +203,10 @@ func NewDatabaseWithNodeDB(db ethdb.Database, triedb *trie.Database) Database {
 		triedb:        triedb,
 		addrToPoint:   utils.NewPointCache(),
 		ended:         triedb.IsVerkle(),
+		StorageProcessed:      map[common.Hash]bool{},
+		CurrentAccountAddress: map[common.Hash]*common.Address{},
+		CurrentSlotHash:       map[common.Hash]common.Hash{},
+		CurrentPreimageOffset: map[common.Hash]int64{},
 	}
 }
 
@@ -211,7 +219,7 @@ func (db *cachingDB) Transitioned() bool {
 }
 
 // Fork implements the fork
-func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, pragueTime *uint64) {
+func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, pragueTime *uint64, root common.Hash) {
 	fmt.Println(`
 	__________.__                       .__                .__                   __       .__                               .__          ____         
 	\__    ___|  |__   ____        ____ |  |   ____ ______ |  |__ _____    _____/  |_     |  |__ _____    ______    __  _  _|__| ____   / ___\ ______
@@ -224,7 +232,13 @@ func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.H
 	// db.AddTranslation(originalRoot, translatedRoot)
 	db.baseRoot = originalRoot
 	// initialize so that the first storage-less accounts are processed
-	db.StorageProcessed = true
+	db.StorageProcessed[root] = true
+
+	// Reinitialize values in case of a reorg
+	db.CurrentAccountAddress[root] = &(common.Address{})
+	db.CurrentSlotHash[root] = common.Hash{}
+	db.CurrentPreimageOffset[root] = 0
+
 	if pragueTime != nil {
 		chainConfig.PragueTime = pragueTime
 	}
@@ -263,14 +277,14 @@ type cachingDB struct {
 	addrToPoint *utils.PointCache
 
 	baseRoot              common.Hash     // hash of the read-only base tree
-	CurrentAccountAddress *common.Address // addresss of the last translated account
-	CurrentSlotHash       common.Hash     // hash of the last translated storage slot
-	CurrentPreimageOffset int64           // next byte to read from the preimage file
+	CurrentAccountAddress map[common.Hash]*common.Address // addresss of the last translated account
+	CurrentSlotHash       map[common.Hash]common.Hash     // hash of the last translated storage slot
+	CurrentPreimageOffset map[common.Hash]int64           // next byte to read from the preimage file
 
 	// Mark whether the storage for an account has been processed. This is useful if the
 	// maximum number of leaves of the conversion is reached before the whole storage is
 	// processed.
-	StorageProcessed bool
+	StorageProcessed map[common.Hash]bool
 }
 
 func (db *cachingDB) openMPTTrie(root common.Hash) (Trie, error) {
@@ -450,49 +464,49 @@ func (db *cachingDB) GetTreeKeyHeader(addr []byte) *verkle.Point {
 	return db.addrToPoint.GetTreeKeyHeader(addr)
 }
 
-func (db *cachingDB) SetCurrentAccountAddress(addr common.Address) {
-	db.CurrentAccountAddress = &addr
+func (db *cachingDB) SetCurrentAccountAddress(addr common.Address, root common.Hash) {
+	db.CurrentAccountAddress[root] = &addr
 }
 
-func (db *cachingDB) GetCurrentAccountHash() common.Hash {
+func (db *cachingDB) GetCurrentAccountHash(root common.Hash) common.Hash {
 	var addrHash common.Hash
-	if db.CurrentAccountAddress != nil {
-		addrHash = crypto.Keccak256Hash(db.CurrentAccountAddress[:])
+	if db.CurrentAccountAddress[root] != nil {
+		addrHash = crypto.Keccak256Hash(db.CurrentAccountAddress[root][:])
 	}
 	return addrHash
 }
 
-func (db *cachingDB) GetCurrentAccountAddress() *common.Address {
-	return db.CurrentAccountAddress
+func (db *cachingDB) GetCurrentAccountAddress(root common.Hash) *common.Address {
+	return db.CurrentAccountAddress[root]
 }
 
-func (db *cachingDB) GetCurrentPreimageOffset() int64 {
-	return db.CurrentPreimageOffset
+func (db *cachingDB) GetCurrentPreimageOffset(root common.Hash) int64 {
+	return db.CurrentPreimageOffset[root]
 }
 
-func (db *cachingDB) SetCurrentPreimageOffset(offset int64) {
-	db.CurrentPreimageOffset = offset
+func (db *cachingDB) SetCurrentPreimageOffset(offset int64, root common.Hash) {
+	db.CurrentPreimageOffset[root] = offset
 }
 
-func (db *cachingDB) SetCurrentSlotHash(hash common.Hash) {
-	db.CurrentSlotHash = hash
+func (db *cachingDB) SetCurrentSlotHash(hash common.Hash, root common.Hash) {
+	db.CurrentSlotHash[root] = hash
 }
 
-func (db *cachingDB) GetCurrentSlotHash() common.Hash {
-	return db.CurrentSlotHash
+func (db *cachingDB) GetCurrentSlotHash(root common.Hash) common.Hash {
+	return db.CurrentSlotHash[root]
 }
 
-func (db *cachingDB) SetStorageProcessed(processed bool) {
-	db.StorageProcessed = processed
+func (db *cachingDB) SetStorageProcessed(processed bool, root common.Hash) {
+	db.StorageProcessed[root] = processed
 }
 
-func (db *cachingDB) GetStorageProcessed() bool {
-	return db.StorageProcessed
+func (db *cachingDB) GetStorageProcessed(root common.Hash) bool {
+	return db.StorageProcessed[root]
 }
 
 func (db *cachingDB) AddRootTranslation(originalRoot, translatedRoot common.Hash) {
 }
 
-func (db *cachingDB) SetLastMerkleRoot(root common.Hash) {
-	db.LastMerkleRoot = root
+func (db *cachingDB) SetLastMerkleRoot(merkleRoot common.Hash) {
+	db.LastMerkleRoot = merkleRoot
 }

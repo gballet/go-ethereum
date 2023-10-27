@@ -1746,7 +1746,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 		}
 
 		if parent.Number.Uint64() == conversionBlock {
-			bc.StartVerkleTransition(parent.Root, emptyVerkleRoot, bc.Config(), &parent.Time)
+			bc.StartVerkleTransition(parent.Root, emptyVerkleRoot, bc.Config(), &parent.Time, parent.Root)
 			bc.stateCache.SetLastMerkleRoot(parent.Root)
 		}
 		statedb, err := state.New(parent.Root, bc.stateCache, bc.snaps)
@@ -2532,8 +2532,8 @@ func (bc *BlockChain) GetTrieFlushInterval() time.Duration {
 	return time.Duration(bc.flushInterval.Load())
 }
 
-func (bc *BlockChain) StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, pragueTime *uint64) {
-	bc.stateCache.StartVerkleTransition(originalRoot, translatedRoot, chainConfig, pragueTime)
+func (bc *BlockChain) StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, pragueTime *uint64, root common.Hash) {
+	bc.stateCache.StartVerkleTransition(originalRoot, translatedRoot, chainConfig, pragueTime, root)
 }
 func (bc *BlockChain) ReorgThroughVerkleTransition() {
 	bc.stateCache.ReorgThroughVerkleTransition()

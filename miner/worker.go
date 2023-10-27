@@ -905,7 +905,7 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 		return nil, err
 	}
 	if w.chain.Config().IsPrague(header.Number, header.Time) {
-		core.OverlayVerkleTransition(state)
+		core.OverlayVerkleTransition(state, parent.Root)
 	}
 	// Run the consensus preparation with the default or customized consensus engine.
 	if err := w.engine.Prepare(w.chain, header); err != nil {
