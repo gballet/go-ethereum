@@ -126,7 +126,7 @@ func (ga *GenesisAlloc) deriveHash(cfg *params.ChainConfig, timestamp uint64) (c
 	// all the derived states will be discarded to not pollute disk.
 	db := state.NewDatabase(rawdb.NewMemoryDatabase())
 	if cfg.IsPrague(big.NewInt(int64(0)), timestamp) {
-		db.EndVerkleTransition(common.Hash{})
+		db.EndVerkleTransition(types.EmptyRootHash)
 	}
 	statedb, err := state.New(types.EmptyRootHash, db, nil)
 	if err != nil {

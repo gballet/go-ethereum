@@ -191,7 +191,7 @@ func NewDatabaseWithConfig(db ethdb.Database, config *trie.Config) Database {
 		CurrentAccountAddress: map[common.Hash]*common.Address{},
 		CurrentSlotHash:       map[common.Hash]common.Hash{},
 		CurrentPreimageOffset: map[common.Hash]int64{}, started: map[common.Hash]bool{},
-		ended: map[common.Hash]bool{},
+		ended: map[common.Hash]bool{(common.Hash{}): (config != nil && config.Verkle), types.EmptyRootHash: (config != nil && config.Verkle)},
 	}
 }
 
@@ -208,7 +208,7 @@ func NewDatabaseWithNodeDB(db ethdb.Database, triedb *trie.Database) Database {
 		CurrentSlotHash:       map[common.Hash]common.Hash{},
 		CurrentPreimageOffset: map[common.Hash]int64{},
 		started:               map[common.Hash]bool{},
-		ended:                 map[common.Hash]bool{},
+		ended:                 map[common.Hash]bool{types.EmptyRootHash: triedb.IsVerkle(), (common.Hash{}): triedb.IsVerkle()},
 	}
 }
 

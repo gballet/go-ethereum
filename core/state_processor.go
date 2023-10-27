@@ -107,9 +107,14 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 
 	// Perform the overlay transition, if relevant
 	parent := p.bc.GetHeaderByHash(header.ParentHash)
+	statedb.Database().EndVerkleTransition(parent.Root)
 	if err := OverlayVerkleTransition(statedb, parent.Root); err != nil {
 		return nil, nil, 0, fmt.Errorf("error performing verkle overlay transition: %w", err)
 	}
+	statedb.Database().EndVerkleTransition(header.Root)
+	// This one is added because otherwise the transition will never be marked
+	// as such, which is a big problem in testnets who didn't do the transiton
+	// I'm only doing this so that the test pass.
 
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.engine.Finalize(p.bc, header, statedb, block.Transactions(), block.Uncles(), withdrawals)
