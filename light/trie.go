@@ -101,7 +101,7 @@ func (db *odrDatabase) DiskDB() ethdb.KeyValueStore {
 	panic("not implemented")
 }
 
-func (db *odrDatabase) StartVerkleTransition(originalRoot common.Hash, translatedRoot common.Hash, chainConfig *params.ChainConfig, _ *uint64) {
+func (db *odrDatabase) StartVerkleTransition(originalRoot common.Hash, translatedRoot common.Hash, chainConfig *params.ChainConfig, _ *uint64, _ common.Hash) {
 	panic("not implemented") // TODO: Implement
 }
 
