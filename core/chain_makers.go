@@ -17,8 +17,10 @@
 package core
 
 import (
+	"bytes"
 	"fmt"
 	"math/big"
+	"sort"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -358,20 +360,23 @@ func GenerateChainWithGenesis(genesis *Genesis, engine consensus.Engine, n int, 
 		panic(err)
 	}
 	if genesis.Config != nil && genesis.Config.IsPrague(genesis.ToBlock().Number(), genesis.ToBlock().Time()) {
-		blocks, receipts, _, _ := GenerateVerkleChain(genesis.Config, genesis.ToBlock(), engine, db, n, gen)
+		blocks, receipts, _, _, _, _, _ := GenerateVerkleChain(genesis.Config, genesis.ToBlock(), engine, db, n, gen)
 		return db, blocks, receipts
 	}
 	blocks, receipts := GenerateChain(genesis.Config, genesis.ToBlock(), engine, db, n, gen)
 	return db, blocks, receipts
 }
 
-func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine consensus.Engine, db ethdb.Database, n int, gen func(int, *BlockGen)) ([]*types.Block, []types.Receipts, []*verkle.VerkleProof, []verkle.StateDiff) {
+func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine consensus.Engine, db ethdb.Database, n int, gen func(int, *BlockGen)) ([]*types.Block, []types.Receipts, []*verkle.VerkleProof, []verkle.StateDiff, [][][]byte, [][][]byte, [][][]byte) {
 	if config == nil {
 		config = params.TestChainConfig
 	}
 	proofs := make([]*verkle.VerkleProof, 0, n)
 	keyvals := make([]verkle.StateDiff, 0, n)
 	blocks, receipts := make(types.Blocks, n), make([]types.Receipts, n)
+	computedKeys := make([][][]byte, n)
+	computedPreStateValues := make([][][]byte, n)
+	computedPostStateValues := make([][][]byte, n)
 	chainreader := &generatedLinearChainReader{
 		config: config,
 		// GenerateVerkleChain should only be called with the genesis block
@@ -379,11 +384,11 @@ func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine
 		genesis: parent,
 		chain:   blocks,
 	}
-	genblock := func(i int, parent *types.Block, statedb *state.StateDB) (*types.Block, types.Receipts) {
+	genblock := func(i int, parent *types.Block, statedb *state.StateDB) (*types.Block, types.Receipts, [][]byte, [][]byte, [][]byte) {
 		b := &BlockGen{i: i, chain: blocks, parent: parent, statedb: statedb, config: config, engine: engine}
 		b.header = makeHeader(chainreader, parent, statedb, b.engine)
-		preState := statedb.Copy()
-		fmt.Println("prestate", preState.GetTrie().(*trie.VerkleTrie).ToDot())
+		preStateTree := statedb.Copy().GetTrie().(*trie.VerkleTrie)
+		fmt.Println("prestate", preStateTree.ToDot())
 
 		// Mutate the state and block according to any hard-fork specs
 		if daoBlock := config.DAOForkBlock; daoBlock != nil {
@@ -408,6 +413,19 @@ func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine
 				panic(err)
 			}
 
+			// Get the keys collected in the witness in the witness.
+			computedKeys := statedb.Witness().Keys()
+			sort.Slice(computedKeys, func(i, j int) bool { return bytes.Compare(computedKeys[i], computedKeys[j]) < 0 })
+
+			// Get the pre-state values from the database.
+			computedPreStateValues := make([][]byte, len(computedKeys))
+			for i := range computedKeys {
+				computedPreStateValues[i], err = preStateTree.GetWithHashedKey(computedKeys[i])
+				if err != nil {
+					panic(err)
+				}
+			}
+
 			// Write state changes to db
 			root, err := statedb.Commit(b.header.Number.Uint64(), config.IsEIP158(b.header.Number))
 			if err != nil {
@@ -420,9 +438,23 @@ func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine
 			proofs = append(proofs, block.ExecutionWitness().VerkleProof)
 			keyvals = append(keyvals, block.ExecutionWitness().StateDiff)
 
-			return block, b.receipts
+			computedPostStateValues := make([][]byte, len(computedKeys))
+			treeWrites := statedb.GetTrie().(*trie.VerkleTrie).GetTreeWrites()
+			for i := range computedKeys {
+				treeWrittenValue, ok := treeWrites[string(computedKeys[i])]
+				// If we didn't tracked this key, it means it was never written to the post-state tree,
+				// thus the newValue must be `nil`. (i.e: same as currentValue)
+				// Additionally, if we wrote to this key but it has the same pre-state value, then must
+				// also be `nil`.
+				if !ok || bytes.Equal(treeWrittenValue, computedPreStateValues[i]) {
+					continue
+				}
+				computedPostStateValues[i] = treeWrittenValue
+			}
+
+			return block, b.receipts, computedKeys, computedPreStateValues, computedPostStateValues
 		}
-		return nil, nil
+		return nil, nil, nil, nil, nil
 	}
 	var snaps *snapshot.Tree
 	for i := 0; i < n; i++ {
@@ -432,13 +464,16 @@ func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine
 		if err != nil {
 			panic(fmt.Sprintf("could not find state for block %d: err=%v, parent root=%x", i, err, parent.Root()))
 		}
-		block, receipt := genblock(i, parent, statedb)
+		block, receipt, keys, preStateValues, postStateValues := genblock(i, parent, statedb)
 		blocks[i] = block
 		receipts[i] = receipt
+		computedKeys[i] = keys
+		computedPreStateValues[i] = preStateValues
+		computedPostStateValues[i] = postStateValues
 		parent = block
 		snaps = statedb.Snaps()
 	}
-	return blocks, receipts, proofs, keyvals
+	return blocks, receipts, proofs, keyvals, computedKeys, computedPreStateValues, computedPostStateValues
 }
 
 func makeHeader(chain consensus.ChainReader, parent *types.Block, state *state.StateDB, engine consensus.Engine) *types.Header {

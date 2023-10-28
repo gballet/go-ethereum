@@ -18,6 +18,7 @@ package core
 
 import (
 	//"bytes"
+
 	"crypto/ecdsa"
 
 	//"fmt"
@@ -490,7 +491,7 @@ func TestProcessVerkle(t *testing.T) {
 		txCost1*2 + txCost2 + contractCreationCost + codeWithExtCodeCopyGas,
 	}
 	// TODO utiliser GenerateChainWithGenesis pour le rendre plus pratique
-	chain, _, proofs, keyvals := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 2, func(i int, gen *BlockGen) {
+	chain, _, proofs, statediff, computedKeys, computedPreStateValues, computedPostStateValues := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 2, func(i int, gen *BlockGen) {
 		gen.SetPoS()
 		// TODO need to check that the tx cost provided is the exact amount used (no remaining left-over)
 		tx, _ := types.SignTx(types.NewTransaction(uint64(i)*3, common.Address{byte(i), 2, 3}, big.NewInt(999), txCost1, big.NewInt(875000000), nil), signer, testKey)
@@ -518,11 +519,13 @@ func TestProcessVerkle(t *testing.T) {
 	//f.Write(buf.Bytes())
 	//fmt.Printf("root= %x\n", chain[0].Root())
 	// check the proof for the last block
-	err := trie.DeserializeAndVerifyVerkleProof(proofs[1], chain[0].Root().Bytes(), chain[1].Root().Bytes(), keyvals[1])
-	if err != nil {
-		t.Fatal(err)
+
+	for i := 1; i < len(proofs); i++ {
+		if err := trie.DeserializeAndVerifyVerkleProof(proofs[i], statediff[i], chain[i-1].Root().Bytes(), computedKeys[i], computedPreStateValues[i], computedPostStateValues[i]); err != nil {
+			t.Fatal(err)
+		}
+		t.Log("verfied verkle proof")
 	}
-	t.Log("verfied verkle proof")
 
 	endnum, err := blockchain.InsertChain(chain)
 	if err != nil {
