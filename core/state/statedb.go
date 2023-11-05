@@ -1234,7 +1234,7 @@ func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, er
 		preTrie := stateTrie.(*trie.VerkleTrie)
 		proof, statediff, err := trie.ProveAndSerialize(preTrie, postTrie, keys, preTrie.FlatdbNodeResolver)
 		if err != nil {
-			panic(err)
+			return common.Hash{}, fmt.Errorf("failed to generate proof: %v", err)
 		}
 
 		postTreeRoot := postTrie.Hash().Bytes()
@@ -1279,7 +1279,7 @@ func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, er
 			// Verify proofs in blocks
 			err = trie.DeserializeAndVerifyVerkleProof(proof, statediff, s.originalRoot.Bytes(), computedKeys, computedPreStateValues, computedPostStateValues)
 			if err != nil {
-				panic(err)
+				return common.Hash{}, fmt.Errorf("failed to verify proof: %v", err)
 			}
 			if err := kaustinenanalytics2.ProofVerifStats(time.Since(e2eVerificationStart)); err != nil {
 				return common.Hash{}, fmt.Errorf("failed to generate proof verif stats: %v", err)
