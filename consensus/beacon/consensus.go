@@ -410,7 +410,19 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 		switch pre := preTrie.(type) {
 		case *trie.VerkleTrie:
 			vtrpre, okpre = preTrie.(*trie.VerkleTrie)
-			vtrpost, okpost = state.GetTrie().(*trie.VerkleTrie)
+			switch tr := state.GetTrie().(type) {
+			case *trie.VerkleTrie:
+				vtrpost = tr
+				okpost = true
+			// This is to handle a situation right at the start of the conversion:
+			// the post trie is a transition tree when the pre tree is an empty
+			// verkle tree.
+			case *trie.TransitionTrie:
+				vtrpost = tr.Overlay()
+				okpost = true
+			default:
+				okpost = false
+			}
 		case *trie.TransitionTrie:
 			vtrpre = pre.Overlay()
 			okpre = true
