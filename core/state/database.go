@@ -182,11 +182,11 @@ func NewDatabase(db ethdb.Database) Database {
 // large memory cache.
 func NewDatabaseWithConfig(db ethdb.Database, config *trie.Config) Database {
 	return &cachingDB{
-		disk:          db,
-		codeSizeCache: lru.NewCache[common.Hash, int](codeSizeCacheSize),
-		codeCache:     lru.NewSizeConstrainedCache[common.Hash, []byte](codeCacheSize),
-		triedb:        trie.NewDatabaseWithConfig(db, config),
-		addrToPoint:   utils.NewPointCache(),
+		disk:                  db,
+		codeSizeCache:         lru.NewCache[common.Hash, int](codeSizeCacheSize),
+		codeCache:             lru.NewSizeConstrainedCache[common.Hash, []byte](codeCacheSize),
+		triedb:                trie.NewDatabaseWithConfig(db, config),
+		addrToPoint:           utils.NewPointCache(),
 		StorageProcessed:      map[common.Hash]bool{},
 		CurrentAccountAddress: map[common.Hash]*common.Address{},
 		CurrentSlotHash:       map[common.Hash]common.Hash{},
@@ -197,12 +197,12 @@ func NewDatabaseWithConfig(db ethdb.Database, config *trie.Config) Database {
 // NewDatabaseWithNodeDB creates a state database with an already initialized node database.
 func NewDatabaseWithNodeDB(db ethdb.Database, triedb *trie.Database) Database {
 	return &cachingDB{
-		disk:          db,
-		codeSizeCache: lru.NewCache[common.Hash, int](codeSizeCacheSize),
-		codeCache:     lru.NewSizeConstrainedCache[common.Hash, []byte](codeCacheSize),
-		triedb:        triedb,
-		addrToPoint:   utils.NewPointCache(),
-		ended:         triedb.IsVerkle(),
+		disk:                  db,
+		codeSizeCache:         lru.NewCache[common.Hash, int](codeSizeCacheSize),
+		codeCache:             lru.NewSizeConstrainedCache[common.Hash, []byte](codeCacheSize),
+		triedb:                triedb,
+		addrToPoint:           utils.NewPointCache(),
+		ended:                 triedb.IsVerkle(),
 		StorageProcessed:      map[common.Hash]bool{},
 		CurrentAccountAddress: map[common.Hash]*common.Address{},
 		CurrentSlotHash:       map[common.Hash]common.Hash{},
@@ -275,7 +275,7 @@ type cachingDB struct {
 
 	addrToPoint *utils.PointCache
 
-	baseRoot              common.Hash     // hash of the read-only base tree
+	baseRoot              common.Hash                     // hash of the read-only base tree
 	CurrentAccountAddress map[common.Hash]*common.Address // addresss of the last translated account
 	CurrentSlotHash       map[common.Hash]common.Hash     // hash of the last translated storage slot
 	CurrentPreimageOffset map[common.Hash]int64           // next byte to read from the preimage file
