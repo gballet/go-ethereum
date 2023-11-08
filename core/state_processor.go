@@ -114,7 +114,8 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	}
 
 	// Perform the overlay transition, if relevant
-	if err := OverlayVerkleTransition(statedb); err != nil {
+	parent := p.bc.GetHeaderByHash(header.ParentHash)
+	if err := OverlayVerkleTransition(statedb, parent.Root); err != nil {
 		return nil, nil, 0, fmt.Errorf("error performing verkle overlay transition: %w", err)
 	}
 
@@ -328,7 +329,7 @@ func (kvm *keyValueMigrator) prepare() {
 				var currAddr common.Address
 				var currPoint *verkle.Point
 				for i := range batch {
-					if batch[i].branchKey.addr != currAddr {
+					if batch[i].branchKey.addr != currAddr || currAddr == (common.Address{}) {
 						currAddr = batch[i].branchKey.addr
 						currPoint = tutils.EvaluateAddressPoint(currAddr[:])
 					}

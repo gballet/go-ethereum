@@ -176,10 +176,11 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 	if tr.IsVerkle() {
 		sdb.witness = sdb.NewAccessWitness()
 	}
-	// if sdb.snaps != nil {
-	// 	if sdb.snap = sdb.snaps.Snapshot(root); sdb.snap == nil {
-	// 	}
-	// }
+	if sdb.snaps != nil {
+		// 	if sdb.snap = sdb.snaps.Snapshot(root); sdb.snap == nil {
+		// 	}
+		sdb.snap = sdb.snaps.Snapshot(root)
+	}
 	return sdb, nil
 }
 
