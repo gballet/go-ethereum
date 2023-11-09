@@ -235,7 +235,7 @@ func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.H
 	db.StorageProcessed[root] = true
 
 	// Reinitialize values in case of a reorg
-	db.CurrentAccountAddress[root] = &(common.Address{})
+	db.CurrentAccountAddress[root] = nil // force nil as overlay expects an uninitialized
 	db.CurrentSlotHash[root] = common.Hash{}
 	db.CurrentPreimageOffset[root] = 0
 	if pragueTime != nil {

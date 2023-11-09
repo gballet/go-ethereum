@@ -321,7 +321,7 @@ func (kvm *keyValueMigrator) prepare() {
 				var currAddr common.Address
 				var currPoint *verkle.Point
 				for i := range batch {
-					if batch[i].branchKey.addr != currAddr || currAddr == (common.Address{}) {
+					if batch[i].branchKey.addr != currAddr {
 						currAddr = batch[i].branchKey.addr
 						currPoint = tutils.EvaluateAddressPoint(currAddr[:])
 					}
