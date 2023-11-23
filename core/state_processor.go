@@ -105,11 +105,6 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		return nil, nil, 0, errors.New("withdrawals before shanghai")
 	}
 
-	// Perform the overlay transition, if relevant
-	if err := OverlayVerkleTransition(statedb); err != nil {
-		return nil, nil, 0, fmt.Errorf("error performing verkle overlay transition: %w", err)
-	}
-
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.engine.Finalize(p.bc, header, statedb, block.Transactions(), block.Uncles(), withdrawals)
 

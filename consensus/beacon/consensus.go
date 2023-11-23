@@ -25,8 +25,10 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
@@ -363,11 +365,18 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 		state.Witness().TouchAddressOnWriteAndComputeGas(w.Address[:], uint256.Int{}, utils.CodeKeccakLeafKey)
 		state.Witness().TouchAddressOnWriteAndComputeGas(w.Address[:], uint256.Int{}, utils.CodeSizeLeafKey)
 	}
-	state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.VersionLeafKey)
-	state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.BalanceLeafKey)
-	state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.NonceLeafKey)
-	state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.CodeKeccakLeafKey)
-	state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.CodeSizeLeafKey)
+
+	if chain.Config().IsPrague(header.Number, header.Time) {
+		state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.VersionLeafKey)
+		state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.BalanceLeafKey)
+		state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.NonceLeafKey)
+		state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.CodeKeccakLeafKey)
+		state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.CodeSizeLeafKey)
+
+		if err := core.OverlayVerkleTransition(state); err != nil {
+			log.Error("error performing verkle overlay transition", "error", err)
+		}
+	}
 }
 
 // FinalizeAndAssemble implements consensus.Engine, setting the final state and
