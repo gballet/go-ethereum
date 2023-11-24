@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -368,6 +369,12 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 	state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.NonceLeafKey)
 	state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.CodeKeccakLeafKey)
 	state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.CodeSizeLeafKey)
+
+	if chain.Config().IsPrague(header.Number, header.Time) {
+		fmt.Println("at block", header.Number, "performing transition?", state.Database().InTransition())
+		parent := chain.GetHeaderByHash(header.ParentHash)
+		core.OverlayVerkleTransition(state, parent.Root)
+	}
 }
 
 // FinalizeAndAssemble implements consensus.Engine, setting the final state and
@@ -392,6 +399,7 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 
 	// Assign the final state root to header.
 	header.Root = state.IntermediateRoot(true)
+	state.Database().SaveTransitionState(header.Root)
 
 	var (
 		p    *verkle.VerkleProof
@@ -405,6 +413,7 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 			return nil, fmt.Errorf("nil parent header for block %d", header.Number)
 		}
 
+		state.Database().LoadTransitionState(parent.Root)
 		preTrie, err := state.Database().OpenTrie(parent.Root)
 		if err != nil {
 			return nil, fmt.Errorf("error opening pre-state tree root: %w", err)
@@ -435,7 +444,14 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 			vtrpost = post.Overlay()
 			okpost = true
 		default:
-			panic("invalid tree type")
+			// This should only happen for the first block,
+			// so the previous tree is a merkle tree. Logically,
+			// the "previous" verkle tree is an empty tree.
+			okpre = true
+			vtrpre = trie.NewVerkleTrie(verkle.New(), state.Database().TrieDB(), utils.NewPointCache(), false)
+			post := state.GetTrie().(*trie.TransitionTrie)
+			vtrpost = post.Overlay()
+			okpost = true
 		}
 		if okpre && okpost {
 			if len(keys) > 0 {
