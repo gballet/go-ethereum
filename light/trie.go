@@ -121,10 +121,6 @@ func (db *odrDatabase) Transitioned() bool {
 	panic("not implemented") // TODO: Implement
 }
 
-func (db *odrDatabase) ReEnterTransition() {
-	panic("not implemented") // TODO: Implement
-}
-
 func (db *odrDatabase) SetCurrentSlotHash(common.Hash) {
 	panic("not implemented") // TODO: Implement
 }

@@ -75,8 +75,6 @@ type Database interface {
 
 	Transitioned() bool
 
-	ReEnterTransition()
-
 	SetCurrentSlotHash(common.Hash)
 
 	GetCurrentAccountAddress() *common.Address
