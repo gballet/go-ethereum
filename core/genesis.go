@@ -126,6 +126,7 @@ func (ga *GenesisAlloc) deriveHash(cfg *params.ChainConfig, timestamp uint64) (c
 	// all the derived states will be discarded to not pollute disk.
 	db := state.NewDatabase(rawdb.NewMemoryDatabase())
 	if cfg.IsPrague(big.NewInt(int64(0)), timestamp) {
+		db.StartVerkleTransition(common.Hash{}, common.Hash{}, cfg, &timestamp, common.Hash{})
 		db.EndVerkleTransition()
 	}
 	statedb, err := state.New(types.EmptyRootHash, db, nil)
@@ -146,15 +147,17 @@ func (ga *GenesisAlloc) deriveHash(cfg *params.ChainConfig, timestamp uint64) (c
 // flush is very similar with deriveHash, but the main difference is
 // all the generated states will be persisted into the given database.
 // Also, the genesis state specification will be flushed as well.
-func (ga *GenesisAlloc) flush(db ethdb.Database, triedb *trie.Database, blockhash common.Hash, cfg *params.ChainConfig) error {
-	statedb, err := state.New(types.EmptyRootHash, state.NewDatabaseWithNodeDB(db, triedb), nil)
-	if err != nil {
-		return err
+func (ga *GenesisAlloc) flush(db ethdb.Database, triedb *trie.Database, blockhash common.Hash, cfg *params.ChainConfig, timestamp *uint64) error {
+	database := state.NewDatabaseWithNodeDB(db, triedb)
+	// End the verkle conversion at genesis if the fork block is 0
+	if timestamp != nil && cfg.IsPrague(big.NewInt(int64(0)), *timestamp) {
+		database.StartVerkleTransition(common.Hash{}, common.Hash{}, cfg, timestamp, common.Hash{})
+		database.EndVerkleTransition()
 	}
 
-	// End the verkle conversion at genesis if the fork block is 0
-	if triedb.IsVerkle() {
-		statedb.Database().EndVerkleTransition()
+	statedb, err := state.New(types.EmptyRootHash, database, nil)
+	if err != nil {
+		return err
 	}
 
 	for addr, account := range *ga {
@@ -221,7 +224,7 @@ func CommitGenesisState(db ethdb.Database, triedb *trie.Database, blockhash comm
 			return errors.New("not found")
 		}
 	}
-	return alloc.flush(db, triedb, blockhash, config)
+	return alloc.flush(db, triedb, blockhash, config, nil)
 }
 
 // GenesisAccount is an account in the state of the genesis block.
@@ -456,6 +459,12 @@ func (g *Genesis) configOrDefault(ghash common.Hash) *params.ChainConfig {
 	}
 }
 
+// IsVerkle indicates whether the state is already stored in a verkle
+// tree at genesis time.
+func (g *Genesis) IsVerkle() bool {
+	return g.Config.IsPrague(new(big.Int).SetUint64(g.Number), g.Timestamp)
+}
+
 // ToBlock returns the genesis block according to genesis specification.
 func (g *Genesis) ToBlock() *types.Block {
 	root, err := g.Alloc.deriveHash(g.Config, g.Timestamp)
@@ -530,7 +539,7 @@ func (g *Genesis) Commit(db ethdb.Database, triedb *trie.Database) (*types.Block
 	// All the checks has passed, flush the states derived from the genesis
 	// specification as well as the specification itself into the provided
 	// database.
-	if err := g.Alloc.flush(db, triedb, block.Hash(), g.Config); err != nil {
+	if err := g.Alloc.flush(db, triedb, block.Hash(), g.Config, &g.Timestamp); err != nil {
 		return nil, err
 	}
 	rawdb.WriteTd(db, block.Hash(), block.NumberU64(), block.Difficulty())
