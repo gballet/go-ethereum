@@ -25,7 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
-	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/overlay"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
@@ -373,7 +373,7 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 	if chain.Config().IsPrague(header.Number, header.Time) {
 		fmt.Println("at block", header.Number, "performing transition?", state.Database().InTransition())
 		parent := chain.GetHeaderByHash(header.ParentHash)
-		core.OverlayVerkleTransition(state, parent.Root)
+		overlay.OverlayVerkleTransition(state, parent.Root)
 	}
 }
 
