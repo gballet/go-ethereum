@@ -121,39 +121,43 @@ func (db *odrDatabase) Transitioned() bool {
 	panic("not implemented") // TODO: Implement
 }
 
-func (db *odrDatabase) SetCurrentSlotHash(common.Hash, common.Hash) {
+func (db *odrDatabase) InitTransitionStatus(bool, bool) {
 	panic("not implemented") // TODO: Implement
 }
 
-func (db *odrDatabase) GetCurrentAccountAddress(common.Hash) *common.Address {
+func (db *odrDatabase) SetCurrentSlotHash(common.Hash) {
 	panic("not implemented") // TODO: Implement
 }
 
-func (db *odrDatabase) SetCurrentAccountAddress(common.Address, common.Hash) {
+func (db *odrDatabase) GetCurrentAccountAddress() *common.Address {
 	panic("not implemented") // TODO: Implement
 }
 
-func (db *odrDatabase) GetCurrentAccountHash(common.Hash) common.Hash {
+func (db *odrDatabase) SetCurrentAccountAddress(common.Address) {
 	panic("not implemented") // TODO: Implement
 }
 
-func (db *odrDatabase) GetCurrentSlotHash(common.Hash) common.Hash {
+func (db *odrDatabase) GetCurrentAccountHash() common.Hash {
 	panic("not implemented") // TODO: Implement
 }
 
-func (db *odrDatabase) SetStorageProcessed(bool, common.Hash) {
+func (db *odrDatabase) GetCurrentSlotHash() common.Hash {
 	panic("not implemented") // TODO: Implement
 }
 
-func (db *odrDatabase) GetStorageProcessed(common.Hash) bool {
+func (db *odrDatabase) SetStorageProcessed(bool) {
 	panic("not implemented") // TODO: Implement
 }
 
-func (db *odrDatabase) GetCurrentPreimageOffset(common.Hash) int64 {
+func (db *odrDatabase) GetStorageProcessed() bool {
 	panic("not implemented") // TODO: Implement
 }
 
-func (db *odrDatabase) SetCurrentPreimageOffset(int64, common.Hash) {
+func (db *odrDatabase) GetCurrentPreimageOffset() int64 {
+	panic("not implemented") // TODO: Implement
+}
+
+func (db *odrDatabase) SetCurrentPreimageOffset(int64) {
 	panic("not implemented") // TODO: Implement
 }
 
@@ -162,6 +166,14 @@ func (db *odrDatabase) AddRootTranslation(common.Hash, common.Hash) {
 }
 
 func (db *odrDatabase) SetLastMerkleRoot(common.Hash) {
+	panic("not implemented") // TODO: Implement
+}
+
+func (db *odrDatabase) SaveTransitionState(common.Hash) {
+	panic("not implemented") // TODO: Implement
+}
+
+func (db *odrDatabase) LoadTransitionState(common.Hash) {
 	panic("not implemented") // TODO: Implement
 }
 
