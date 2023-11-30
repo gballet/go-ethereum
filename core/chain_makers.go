@@ -435,8 +435,15 @@ func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine
 	}
 	var snaps *snapshot.Tree
 	triedb := state.NewDatabaseWithConfig(db, nil)
+	triedb.StartVerkleTransition(common.Hash{}, common.Hash{}, config, config.PragueTime, common.Hash{})
 	triedb.EndVerkleTransition()
+	//statedb, err := state.New(parent.Root(), triedb, snaps)
+	//if err != nil {
+	//	panic(fmt.Sprintf("could not find state for block %d: err=%v, parent root=%x", parent.NumberU64(), err, parent.Root()))
+	//}
+	statedb.Database().SaveTransitionState(parent.Root())
 	for i := 0; i < n; i++ {
+		// XXX merge uncommment
 		statedb, err := state.New(parent.Root(), triedb, snaps)
 		if err != nil {
 			panic(fmt.Sprintf("could not find state for block %d: err=%v, parent root=%x", i, err, parent.Root()))
