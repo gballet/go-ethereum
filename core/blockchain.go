@@ -312,6 +312,12 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 
 	// Declare the end of the verkle transition if need be
 	if bc.chainConfig.Rules(head.Number, false /* XXX */, head.Time).IsPrague {
+		// TODO this only works when resuming a chain that has already gone
+		// through the conversion. All pointers should be saved to the DB
+		// for it to be able to recover if interrupted during the transition
+   // but that's left out to a later PR since there's not really a need
+   // right now.
+		bc.stateCache.InitTransitionStatus(true, true)
 		bc.stateCache.EndVerkleTransition()
 	}
 
