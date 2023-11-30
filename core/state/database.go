@@ -384,7 +384,7 @@ func (db *cachingDB) openStorageMPTrie(stateRoot common.Hash, address common.Add
 // OpenStorageTrie opens the storage trie of an account
 func (db *cachingDB) OpenStorageTrie(stateRoot common.Hash, address common.Address, root common.Hash, self Trie) (Trie, error) {
 	// TODO this should only return a verkle tree
-	if db.CurrentTransitionState.ended {
+	if db.Transitioned() {
 		mpt, err := db.openStorageMPTrie(types.EmptyRootHash, address, common.Hash{}, self)
 		if err != nil {
 			return nil, err
@@ -400,7 +400,7 @@ func (db *cachingDB) OpenStorageTrie(stateRoot common.Hash, address common.Addre
 			panic("unexpected trie type")
 		}
 	}
-	if db.CurrentTransitionState.started {
+	if db.InTransition() {
 		mpt, err := db.openStorageMPTrie(db.LastMerkleRoot, address, root, nil)
 		if err != nil {
 			return nil, err
