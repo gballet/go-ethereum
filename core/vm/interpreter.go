@@ -148,6 +148,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		logged  bool   // deferred EVMLogger should ignore already logged steps
 		res     []byte // result of the opcode execution function
 		debug   = in.evm.Config.Tracer != nil
+		witness uint64
 	)
 	// Don't move this deferred function, it's placed before the capturestate-deferred method,
 	// so that it get's executed _after_: the capturestate needs the stacks before
@@ -161,9 +162,9 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		defer func() {
 			if err != nil {
 				if !logged {
-					in.evm.Config.Tracer.CaptureState(pcCopy, op, gasCopy, cost, callContext, in.returnData, in.evm.depth, err)
+					in.evm.Config.Tracer.CaptureState(pcCopy, op, gasCopy, cost, 0, callContext, in.returnData, in.evm.depth, err)
 				} else {
-					in.evm.Config.Tracer.CaptureFault(pcCopy, op, gasCopy, cost, callContext, in.evm.depth, err)
+					in.evm.Config.Tracer.CaptureFault(pcCopy, op, gasCopy, cost, 0, callContext, in.evm.depth, err)
 				}
 			}
 		}()
@@ -176,14 +177,16 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 	for {
 		if debug {
 			// Capture pre-execution values for tracing.
-			logged, pcCopy, gasCopy = false, pc, contract.Gas
+			logged, pcCopy, gasCopy, witness = false, pc, contract.Gas, 0
 		}
 
 		if in.evm.chainRules.IsPrague && !contract.IsDeployment {
 			// if the PC ends up in a new "chunk" of verkleized code, charge the
 			// associated costs.
 			contractAddr := contract.Address()
-			contract.Gas -= touchCodeChunksRangeOnReadAndChargeGas(contractAddr[:], pc, 1, uint64(len(contract.Code)), in.evm.TxContext.Accesses)
+			w := touchCodeChunksRangeOnReadAndChargeGas(contractAddr[:], pc, 1, uint64(len(contract.Code)), in.evm.TxContext.Accesses)
+			contract.Gas -= w
+			witness += w
 		}
 
 		// Get the operation from the jump table and validate the stack to ensure there are
@@ -228,14 +231,14 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			}
 			// Do tracing before memory expansion
 			if debug {
-				in.evm.Config.Tracer.CaptureState(pc, op, gasCopy, cost, callContext, in.returnData, in.evm.depth, err)
+				in.evm.Config.Tracer.CaptureState(pc, op, gasCopy, cost, witness, callContext, in.returnData, in.evm.depth, err)
 				logged = true
 			}
 			if memorySize > 0 {
 				mem.Resize(memorySize)
 			}
 		} else if debug {
-			in.evm.Config.Tracer.CaptureState(pc, op, gasCopy, cost, callContext, in.returnData, in.evm.depth, err)
+			in.evm.Config.Tracer.CaptureState(pc, op, gasCopy, cost, witness, callContext, in.returnData, in.evm.depth, err)
 			logged = true
 		}
 		// execute the operation

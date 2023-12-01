@@ -21,6 +21,7 @@ func (s StructLog) MarshalJSON() ([]byte, error) {
 		Op            vm.OpCode                   `json:"op"`
 		Gas           math.HexOrDecimal64         `json:"gas"`
 		GasCost       math.HexOrDecimal64         `json:"gasCost"`
+		WitnessCost   math.HexOrDecimal64         `json:"witnessCost"`
 		Memory        hexutil.Bytes               `json:"memory,omitempty"`
 		MemorySize    int                         `json:"memSize"`
 		Stack         []uint256.Int               `json:"stack"`
@@ -37,6 +38,7 @@ func (s StructLog) MarshalJSON() ([]byte, error) {
 	enc.Op = s.Op
 	enc.Gas = math.HexOrDecimal64(s.Gas)
 	enc.GasCost = math.HexOrDecimal64(s.GasCost)
+	enc.WitnessCost = math.HexOrDecimal64(s.WitnessCost)
 	enc.Memory = s.Memory
 	enc.MemorySize = s.MemorySize
 	enc.Stack = s.Stack
@@ -57,6 +59,7 @@ func (s *StructLog) UnmarshalJSON(input []byte) error {
 		Op            *vm.OpCode                  `json:"op"`
 		Gas           *math.HexOrDecimal64        `json:"gas"`
 		GasCost       *math.HexOrDecimal64        `json:"gasCost"`
+		WitnessCost   *math.HexOrDecimal64        `json:"witnessCost"`
 		Memory        *hexutil.Bytes              `json:"memory,omitempty"`
 		MemorySize    *int                        `json:"memSize"`
 		Stack         []uint256.Int               `json:"stack"`
@@ -81,6 +84,9 @@ func (s *StructLog) UnmarshalJSON(input []byte) error {
 	}
 	if dec.GasCost != nil {
 		s.GasCost = uint64(*dec.GasCost)
+	}
+	if dec.WitnessCost != nil {
+		s.WitnessCost = uint64(*dec.WitnessCost)
 	}
 	if dec.Memory != nil {
 		s.Memory = *dec.Memory

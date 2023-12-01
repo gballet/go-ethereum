@@ -157,13 +157,13 @@ func (t *flatCallTracer) CaptureEnd(output []byte, gasUsed uint64, err error) {
 }
 
 // CaptureState implements the EVMLogger interface to trace a single step of VM execution.
-func (t *flatCallTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, rData []byte, depth int, err error) {
-	t.tracer.CaptureState(pc, op, gas, cost, scope, rData, depth, err)
+func (t *flatCallTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost, witness uint64, scope *vm.ScopeContext, rData []byte, depth int, err error) {
+	t.tracer.CaptureState(pc, op, gas, cost, witness, scope, rData, depth, err)
 }
 
 // CaptureFault implements the EVMLogger interface to trace an execution fault.
-func (t *flatCallTracer) CaptureFault(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, depth int, err error) {
-	t.tracer.CaptureFault(pc, op, gas, cost, scope, depth, err)
+func (t *flatCallTracer) CaptureFault(pc uint64, op vm.OpCode, gas, cost, witness uint64, scope *vm.ScopeContext, depth int, err error) {
+	t.tracer.CaptureFault(pc, op, gas, cost, witness, scope, depth, err)
 }
 
 // CaptureEnter is called when EVM enters a new scope (via call, create or selfdestruct).

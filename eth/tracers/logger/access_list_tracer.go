@@ -136,7 +136,7 @@ func (a *AccessListTracer) CaptureStart(env *vm.EVM, from common.Address, to com
 }
 
 // CaptureState captures all opcodes that touch storage or addresses and adds them to the accesslist.
-func (a *AccessListTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, rData []byte, depth int, err error) {
+func (a *AccessListTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost, _ uint64, scope *vm.ScopeContext, rData []byte, depth int, err error) {
 	stack := scope.Stack
 	stackData := stack.Data()
 	stackLen := len(stackData)
@@ -158,7 +158,7 @@ func (a *AccessListTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint6
 	}
 }
 
-func (*AccessListTracer) CaptureFault(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, depth int, err error) {
+func (*AccessListTracer) CaptureFault(pc uint64, op vm.OpCode, gas, cost, _ uint64, scope *vm.ScopeContext, depth int, err error) {
 }
 
 func (*AccessListTracer) CaptureEnd(output []byte, gasUsed uint64, err error) {}

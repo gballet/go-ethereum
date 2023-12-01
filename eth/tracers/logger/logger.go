@@ -67,6 +67,7 @@ type StructLog struct {
 	Op            vm.OpCode                   `json:"op"`
 	Gas           uint64                      `json:"gas"`
 	GasCost       uint64                      `json:"gasCost"`
+	WitnessCost   uint64                      `json:"witnessCost"`
 	Memory        []byte                      `json:"memory,omitempty"`
 	MemorySize    int                         `json:"memSize"`
 	Stack         []uint256.Int               `json:"stack"`
@@ -81,6 +82,7 @@ type StructLog struct {
 type structLogMarshaling struct {
 	Gas         math.HexOrDecimal64
 	GasCost     math.HexOrDecimal64
+	WitnessCost math.HexOrDecimal64
 	Memory      hexutil.Bytes
 	ReturnData  hexutil.Bytes
 	OpName      string `json:"opName"`          // adds call to OpName() in MarshalJSON
@@ -147,7 +149,7 @@ func (l *StructLogger) CaptureStart(env *vm.EVM, from common.Address, to common.
 // CaptureState logs a new structured log message and pushes it out to the environment
 //
 // CaptureState also tracks SLOAD/SSTORE ops to track storage change.
-func (l *StructLogger) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, rData []byte, depth int, err error) {
+func (l *StructLogger) CaptureState(pc uint64, op vm.OpCode, gas, cost, witness uint64, scope *vm.ScopeContext, rData []byte, depth int, err error) {
 	// If tracing was interrupted, set the error and stop
 	if l.interrupt.Load() {
 		return
@@ -208,13 +210,13 @@ func (l *StructLogger) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, s
 		copy(rdata, rData)
 	}
 	// create a new snapshot of the EVM.
-	log := StructLog{pc, op, gas, cost, mem, memory.Len(), stck, rdata, storage, depth, l.env.StateDB.GetRefund(), err}
+	log := StructLog{pc, op, gas, cost, witness, mem, memory.Len(), stck, rdata, storage, depth, l.env.StateDB.GetRefund(), err}
 	l.logs = append(l.logs, log)
 }
 
 // CaptureFault implements the EVMLogger interface to trace an execution fault
 // while running an opcode.
-func (l *StructLogger) CaptureFault(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, depth int, err error) {
+func (l *StructLogger) CaptureFault(pc uint64, op vm.OpCode, gas, cost, _ uint64, scope *vm.ScopeContext, depth int, err error) {
 }
 
 // CaptureEnd is called after the call finishes to finalize the tracing.
@@ -360,7 +362,7 @@ func (t *mdLogger) CaptureStart(env *vm.EVM, from common.Address, to common.Addr
 }
 
 // CaptureState also tracks SLOAD/SSTORE ops to track storage change.
-func (t *mdLogger) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, rData []byte, depth int, err error) {
+func (t *mdLogger) CaptureState(pc uint64, op vm.OpCode, gas, cost, _ uint64, scope *vm.ScopeContext, rData []byte, depth int, err error) {
 	stack := scope.Stack
 	fmt.Fprintf(t.out, "| %4d  | %10v  |  %3d |", pc, op, cost)
 
@@ -380,7 +382,7 @@ func (t *mdLogger) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, scope
 	}
 }
 
-func (t *mdLogger) CaptureFault(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, depth int, err error) {
+func (t *mdLogger) CaptureFault(pc uint64, op vm.OpCode, gas, cost, _ uint64, scope *vm.ScopeContext, depth int, err error) {
 	fmt.Fprintf(t.out, "\nError: at pc=%d, op=%v: %v\n", pc, op, err)
 }
 

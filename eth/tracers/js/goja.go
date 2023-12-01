@@ -250,7 +250,7 @@ func (t *jsTracer) CaptureStart(env *vm.EVM, from common.Address, to common.Addr
 }
 
 // CaptureState implements the Tracer interface to trace a single step of VM execution.
-func (t *jsTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, rData []byte, depth int, err error) {
+func (t *jsTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost, _ uint64, scope *vm.ScopeContext, rData []byte, depth int, err error) {
 	if !t.traceStep {
 		return
 	}
@@ -275,7 +275,7 @@ func (t *jsTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, scope
 }
 
 // CaptureFault implements the Tracer interface to trace an execution fault
-func (t *jsTracer) CaptureFault(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, depth int, err error) {
+func (t *jsTracer) CaptureFault(pc uint64, op vm.OpCode, gas, cost, _ uint64, scope *vm.ScopeContext, depth int, err error) {
 	if t.err != nil {
 		return
 	}
