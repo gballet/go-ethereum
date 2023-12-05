@@ -158,6 +158,9 @@ type Config struct {
 
 	// OverrideVerkle (TODO: remove after the fork)
 	OverridePrague *uint64 `toml:",omitempty"`
+
+	// OverrideProofInBlock
+	OverrideProofInBlock *bool `toml:",omitempty"`
 }
 
 // CreateConsensusEngine creates a consensus engine for the given chain config.
