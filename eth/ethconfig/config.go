@@ -161,6 +161,9 @@ type Config struct {
 
 	// OverrideProofInBlock
 	OverrideProofInBlock *bool `toml:",omitempty"`
+
+	// OverrideOverlayStride
+	OverrideOverlayStride *uint64 `toml:",omitempty"`
 }
 
 // CreateConsensusEngine creates a consensus engine for the given chain config.
