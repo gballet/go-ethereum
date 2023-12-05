@@ -254,6 +254,9 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 	if overrides.OverrideProofInBlock != nil {
 		chainConfig.ProofInBlocks = *overrides.OverrideProofInBlock
 	}
+	if overrides.OverrideOverlayStride != nil {
+		chainConfig.OverlayStride = *overrides.OverrideOverlayStride
+	}
 	log.Info("")
 	log.Info(strings.Repeat("-", 153))
 	for _, line := range strings.Split(chainConfig.Description(), "\n") {
