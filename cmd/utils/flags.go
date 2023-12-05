@@ -273,6 +273,11 @@ var (
 		Usage:    "Manually specify the Verkle fork timestamp, overriding the bundled setting",
 		Category: flags.EthCategory,
 	}
+	OverrideProofInBlock = &cli.BoolFlag{
+		Name:     "override.blockproof",
+		Usage:    "Manually specify the proof-in-block setting",
+		Category: flags.EthCategory,
+	}
 	// Light server and client settings
 	LightServeFlag = &cli.IntFlag{
 		Name:     "light.serve",
