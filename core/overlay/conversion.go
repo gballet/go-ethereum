@@ -217,7 +217,7 @@ func (kvm *keyValueMigrator) migrateCollectedKeyValues(tree *trie.VerkleTrie) er
 }
 
 // OverlayVerkleTransition contains the overlay conversion logic
-func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash) error {
+func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedCount uint64) error {
 	migrdb := statedb.Database()
 
 	// verkle transition: if the conversion process is in progress, move
@@ -274,14 +274,13 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash) error {
 			preimageSeek += int64(len(addr))
 		}
 
-		const maxMovedCount = 10000
 		// mkv will be assiting in the collection of up to maxMovedCount key values to be migrated to the VKT.
 		// It has internal caches to do efficient MPT->VKT key calculations, which will be discarded after
 		// this function.
 		mkv := newKeyValueMigrator()
 		// move maxCount accounts into the verkle tree, starting with the
 		// slots from the previous account.
-		count := 0
+		count := uint64(0)
 
 		// if less than maxCount slots were moved, move to the next account
 		for count < maxMovedCount {

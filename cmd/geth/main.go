@@ -67,6 +67,7 @@ var (
 		utils.NoUSBFlag,
 		utils.USBFlag,
 		utils.SmartCardDaemonPathFlag,
+		utils.OverrideOverlayStride,
 		utils.OverrideCancun,
 		utils.OverridePrague,
 		utils.OverrideProofInBlock,
