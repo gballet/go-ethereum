@@ -266,6 +266,7 @@ var (
 	OverrideOverlayStride = &cli.Uint64Flag{
 		Name:     "override.overlay-stride",
 		Usage:    "Manually specify the stride of the overlay transition, overriding the bundled setting",
+		Value:    10000,
 		Category: flags.EthCategory,
 	}
 	OverrideCancun = &cli.Uint64Flag{
