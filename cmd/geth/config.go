@@ -175,6 +175,10 @@ func makeFullNode(ctx *cli.Context) (*node.Node, ethapi.Backend) {
 		v := ctx.Uint64(utils.OverridePrague.Name)
 		cfg.Eth.OverridePrague = &v
 	}
+	if ctx.IsSet(utils.OverrideProofInBlock.Name) {
+		v := ctx.Bool(utils.OverrideProofInBlock.Name)
+		cfg.Eth.OverrideProofInBlock = &v
+	}
 	backend, eth := utils.RegisterEthService(stack, &cfg.Eth)
 
 	// Configure log filter RPC API.
