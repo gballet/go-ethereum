@@ -413,7 +413,7 @@ func (db *cachingDB) OpenStorageTrie(stateRoot common.Hash, address common.Addre
 		case *trie.TransitionTrie:
 			return trie.NewTransitionTree(mpt.(*trie.SecureTrie), self.Overlay(), true), nil
 		default:
-			panic("unexpected trie type")
+			return nil, errors.New("expected a verkle account tree, and found another type")
 		}
 	}
 	mpt, err := db.openStorageMPTrie(stateRoot, address, root, nil)
