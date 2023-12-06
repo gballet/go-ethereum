@@ -204,6 +204,9 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	if config.OverrideProofInBlock != nil {
 		overrides.OverrideProofInBlock = config.OverrideProofInBlock
 	}
+	if config.OverrideOverlayStride != nil {
+		overrides.OverrideOverlayStride = config.OverrideOverlayStride
+	}
 	eth.blockchain, err = core.NewBlockChain(chainDb, cacheConfig, config.Genesis, &overrides, eth.engine, vmConfig, eth.shouldPreserve, &config.TxLookupLimit)
 	if err != nil {
 		return nil, err
