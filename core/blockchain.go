@@ -1757,6 +1757,9 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			parent = bc.GetHeader(block.ParentHash(), block.NumberU64()-1)
 		}
 
+		if bc.Config().IsPrague(block.Number(), block.Time()) {
+			bc.stateCache.LoadTransitionState(parent.Root)
+		}
 		if parent.Number.Uint64() == conversionBlock {
 			bc.StartVerkleTransition(parent.Root, emptyVerkleRoot, bc.Config(), &parent.Time, parent.Root)
 			bc.stateCache.SetLastMerkleRoot(parent.Root)

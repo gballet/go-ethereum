@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"runtime/debug"
 	"sort"
 	"time"
 
@@ -1040,8 +1041,16 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 	root := s.trie.Hash()
 
 	// Save the root of the MPT so that it can be used during the transition
-	if !s.Database().InTransition() && !s.Database().Transitioned() {
-		s.Database().SetLastMerkleRoot(root)
+	// if !s.Database().InTransition() && !s.Database().Transitioned() {
+	// 	s.Database().SetLastMerkleRoot(root)
+	// 	fmt.Printf("computed root=%x\n", root)
+	// }
+	_, ismpt := s.trie.(*trie.StateTrie)
+	_, isvkt := s.trie.(*trie.VerkleTrie)
+	_, istrn := s.trie.(*trie.TransitionTrie)
+	fmt.Println("is MPT?", ismpt, isvkt, istrn)
+	if ismpt {
+		debug.PrintStack()
 	}
 
 	return root
