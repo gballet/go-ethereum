@@ -554,7 +554,7 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 	}
 
 	db.TransitionStatePerRoot[root] = db.CurrentTransitionState
-	fmt.Printf("saved transition state %x\n", root)
+	fmt.Printf("saved transition state root=%x address=%x\n", root, *db.CurrentTransitionState.CurrentAccountAddress)
 }
 
 func (db *cachingDB) LoadTransitionState(root common.Hash) {
@@ -574,6 +574,6 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 	db.CurrentTransitionState = ts.Copy()
 
 	if db.CurrentTransitionState != nil {
-		fmt.Println("address", db.CurrentTransitionState.CurrentAccountAddress)
+		fmt.Println("address", db.CurrentTransitionState.CurrentAccountAddress, crypto.Keccak256Hash(db.CurrentTransitionState.CurrentAccountAddress[:]))
 	}
 }
