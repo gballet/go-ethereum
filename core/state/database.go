@@ -19,6 +19,7 @@ package state
 import (
 	"errors"
 	"fmt"
+	"runtime/debug"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/lru"
@@ -564,6 +565,7 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 
 	ts, ok := db.TransitionStatePerRoot[root]
 	if !ok || ts == nil {
+		debug.PrintStack()
 		fmt.Println("starting with a fresh state", db.triedb.IsVerkle())
 		// Start with a fresh state
 		ts = &TransitionState{ended: db.triedb.IsVerkle()}

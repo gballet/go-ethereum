@@ -1757,8 +1757,15 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			parent = bc.GetHeader(block.ParentHash(), block.NumberU64()-1)
 		}
 
+		fmt.Println("in insertChain is prague?", bc.Config().IsPrague(block.Number(), block.Time()))
 		if bc.Config().IsPrague(block.Number(), block.Time()) {
 			bc.stateCache.LoadTransitionState(parent.Root)
+
+			// pragueTime has been reached. If the transition isn't active, it means this
+			// is the fork block and that the conversion needs to be marked at started.
+			if !bc.stateCache.InTransition() && !bc.stateCache.Transitioned() {
+				bc.stateCache.StartVerkleTransition(parent.Root, emptyVerkleRoot, bc.Config(), bc.Config().PragueTime, parent.Root)
+			}
 		}
 		if parent.Number.Uint64() == conversionBlock {
 			bc.StartVerkleTransition(parent.Root, emptyVerkleRoot, bc.Config(), &parent.Time, parent.Root)
