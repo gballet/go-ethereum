@@ -577,6 +577,10 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 	db.CurrentTransitionState = ts.Copy()
 
 	if db.CurrentTransitionState != nil {
-		fmt.Println("address", db.CurrentTransitionState.CurrentAccountAddress, crypto.Keccak256Hash(db.CurrentTransitionState.CurrentAccountAddress[:]))
+		if db.CurrentTransitionState.CurrentAccountAddress != nil {
+			fmt.Println("address", db.CurrentTransitionState.CurrentAccountAddress, crypto.Keccak256Hash(db.CurrentTransitionState.CurrentAccountAddress[:]))
+		} else {
+			fmt.Println("address", db.CurrentTransitionState.CurrentAccountAddress, "nil")
+		}
 	}
 }
