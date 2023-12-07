@@ -1045,13 +1045,6 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 	// 	s.Database().SetLastMerkleRoot(root)
 	// 	fmt.Printf("computed root=%x\n", root)
 	// }
-	_, ismpt := s.trie.(*trie.StateTrie)
-	_, isvkt := s.trie.(*trie.VerkleTrie)
-	_, istrn := s.trie.(*trie.TransitionTrie)
-	fmt.Println("is MPT?", ismpt, isvkt, istrn)
-	if ismpt {
-		debug.PrintStack()
-	}
 
 	return root
 }
