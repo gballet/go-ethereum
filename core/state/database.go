@@ -564,7 +564,7 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 
 	ts, ok := db.TransitionStatePerRoot[root]
 	if !ok || ts == nil {
-		fmt.Println("starting with a fresh state")
+		fmt.Println("starting with a fresh state", db.triedb.IsVerkle())
 		// Start with a fresh state
 		ts = &TransitionState{ended: db.triedb.IsVerkle()}
 	}
