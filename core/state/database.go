@@ -342,7 +342,7 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 
 	// TODO separate both cases when I can be certain that it won't
 	// find a Verkle trie where is expects a Transitoion trie.
-	if db.CurrentTransitionState != nil && (db.CurrentTransitionState.started || db.CurrentTransitionState.ended) {
+	if db.InTransition() || db.Transitioned() {
 		// NOTE this is a kaustinen-only change, it will break replay
 		vkt, err := db.openVKTrie(root)
 		if err != nil {
@@ -542,7 +542,11 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 		db.TransitionStatePerRoot = make(map[common.Hash]*TransitionState)
 	}
 
-	db.TransitionStatePerRoot[root] = db.CurrentTransitionState
+	if db.CurrentTransitionState != nil {
+		// Copy so that the address pointer isn't updated after
+		// it has been saved.
+		db.TransitionStatePerRoot[root] = db.CurrentTransitionState.Copy()
+	}
 }
 
 func (db *cachingDB) LoadTransitionState(root common.Hash) {
@@ -556,9 +560,7 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 		ts = &TransitionState{ended: db.triedb.IsVerkle()}
 	}
 
+	// Copy so that the CurrentAddress pointer in the map
+	// doesn't get overwritten.
 	db.CurrentTransitionState = ts.Copy()
-
-	if db.CurrentTransitionState != nil {
-		fmt.Println("address", db.CurrentTransitionState.CurrentAccountAddress)
-	}
 }
