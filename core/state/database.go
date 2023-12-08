@@ -553,7 +553,7 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 		db.TransitionStatePerRoot = make(map[common.Hash]*TransitionState)
 	}
 
-	db.TransitionStatePerRoot[root] = db.CurrentTransitionState
+	db.TransitionStatePerRoot[root] = db.CurrentTransitionState.Copy()
 	fmt.Printf("saved transition state root=%x\n", root)
 	if db.CurrentTransitionState != nil && db.CurrentTransitionState.CurrentAccountAddress != nil {
 		fmt.Printf("\taddress=%x\n", *db.CurrentTransitionState.CurrentAccountAddress)

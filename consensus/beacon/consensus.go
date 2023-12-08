@@ -373,6 +373,7 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 	if chain.Config().IsPrague(header.Number, header.Time) {
 		fmt.Println("at block", header.Number, "performing transition?", state.Database().InTransition())
 		parent := chain.GetHeaderByHash(header.ParentHash)
+		fmt.Println("(in Finalize) parent root=", parent.Root)
 		overlay.OverlayVerkleTransition(state, parent.Root, chain.Config().OverlayStride)
 	}
 }
