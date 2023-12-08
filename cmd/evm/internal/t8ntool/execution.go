@@ -36,6 +36,8 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/trie/utils"
+	"github.com/gballet/go-verkle"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -60,6 +62,8 @@ type ExecutionResult struct {
 	WithdrawalsRoot      *common.Hash          `json:"withdrawalsRoot,omitempty"`
 	CurrentExcessBlobGas *math.HexOrDecimal64  `json:"currentExcessBlobGas,omitempty"`
 	CurrentBlobGasUsed   *math.HexOrDecimal64  `json:"currentBlobGasUsed,omitempty"`
+	VerkleProof          *verkle.VerkleProof   `json:"verkleProof,omitempty"`
+	StateDiff            verkle.StateDiff      `json:"stateDiff,omitempty"`
 }
 
 type ommer struct {
@@ -132,7 +136,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		return h
 	}
 	var (
-		statedb     = MakePreState(rawdb.NewMemoryDatabase(), pre.Pre)
+		statedb     = MakePreState(rawdb.NewMemoryDatabase(), pre.Pre, chainConfig.IsPrague(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp))
 		signer      = types.MakeSigner(chainConfig, new(big.Int).SetUint64(pre.Env.Number), pre.Env.Timestamp)
 		gaspool     = new(core.GasPool)
 		blockHash   = common.Hash{0x13, 0x37}
@@ -141,6 +145,9 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		gasUsed     = uint64(0)
 		receipts    = make(types.Receipts, 0)
 		txIndex     = 0
+		preTrie     = statedb.GetTrie()
+		p           *verkle.VerkleProof
+		k           verkle.StateDiff
 	)
 	gaspool.AddGas(pre.Env.GasLimit)
 	vmContext := vm.BlockContext{
@@ -266,6 +273,58 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		txIndex++
 	}
 	statedb.IntermediateRoot(chainConfig.IsEIP158(vmContext.BlockNumber))
+
+	var (
+		keys = statedb.Witness().Keys()
+		err  error
+	)
+	if chainConfig.IsPrague(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) && chainConfig.ProofInBlocks {
+		// Open the pre-tree to prove the pre-state against
+
+		var okpre, okpost bool
+		var vtrpre, vtrpost *trie.VerkleTrie
+		switch pre := preTrie.(type) {
+		case *trie.VerkleTrie:
+			vtrpre, okpre = preTrie.(*trie.VerkleTrie)
+			switch tr := statedb.GetTrie().(type) {
+			case *trie.VerkleTrie:
+				vtrpost = tr
+				okpost = true
+			// This is to handle a situation right at the start of the conversion:
+			// the post trie is a transition tree when the pre tree is an empty
+			// verkle tree.
+			case *trie.TransitionTrie:
+				vtrpost = tr.Overlay()
+				okpost = true
+			default:
+				okpost = false
+			}
+		case *trie.TransitionTrie:
+			vtrpre = pre.Overlay()
+			okpre = true
+			post, _ := statedb.GetTrie().(*trie.TransitionTrie)
+			vtrpost = post.Overlay()
+			okpost = true
+		default:
+			// This should only happen for the first block,
+			// so the previous tree is a merkle tree. Logically,
+			// the "previous" verkle tree is an empty tree.
+			okpre = true
+			vtrpre = trie.NewVerkleTrie(verkle.New(), statedb.Database().TrieDB(), utils.NewPointCache(), false)
+			post := statedb.GetTrie().(*trie.TransitionTrie)
+			vtrpost = post.Overlay()
+			okpost = true
+		}
+		if okpre && okpost {
+			if len(keys) > 0 {
+				p, k, err = trie.ProveAndSerialize(vtrpre, vtrpost, keys, vtrpre.FlatdbNodeResolver)
+				if err != nil {
+					return nil, nil, fmt.Errorf("error generating verkle proof for block %d: %w", pre.Env.Number+1, err)
+				}
+			}
+		}
+	}
+
 	// Add mining reward? (-1 means rewards are disabled)
 	if miningReward >= 0 {
 		// Add mining reward. The mining reward may be `0`, which only makes a difference in the cases
@@ -312,6 +371,8 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		Difficulty:  (*math.HexOrDecimal256)(vmContext.Difficulty),
 		GasUsed:     (math.HexOrDecimal64)(gasUsed),
 		BaseFee:     (*math.HexOrDecimal256)(vmContext.BaseFee),
+		VerkleProof: p,
+		StateDiff:   k,
 	}
 	if pre.Env.Withdrawals != nil {
 		h := types.DeriveSha(types.Withdrawals(pre.Env.Withdrawals), trie.NewStackTrie(nil))
@@ -330,8 +391,8 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	return statedb, execRs, nil
 }
 
-func MakePreState(db ethdb.Database, accounts core.GenesisAlloc) *state.StateDB {
-	sdb := state.NewDatabaseWithConfig(db, &trie.Config{Preimages: true})
+func MakePreState(db ethdb.Database, accounts core.GenesisAlloc, verkle bool) *state.StateDB {
+	sdb := state.NewDatabaseWithConfig(db, &trie.Config{Preimages: true, Verkle: verkle})
 	statedb, _ := state.New(types.EmptyRootHash, sdb, nil)
 	for addr, a := range accounts {
 		statedb.SetCode(addr, a.Code)
