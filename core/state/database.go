@@ -543,6 +543,8 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 	}
 
 	if db.CurrentTransitionState != nil {
+		// Copy so that the address pointer isn't updated after
+		// it has been saved.
 		db.TransitionStatePerRoot[root] = db.CurrentTransitionState.Copy()
 	}
 }
@@ -558,8 +560,7 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 		ts = &TransitionState{ended: db.triedb.IsVerkle()}
 	}
 
+	// Copy so that the CurrentAddress pointer in the map
+	// doesn't get overwritten.
 	db.CurrentTransitionState = ts.Copy()
-
-	if db.CurrentTransitionState != nil {
-	}
 }
