@@ -1757,7 +1757,6 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			parent = bc.GetHeader(block.ParentHash(), block.NumberU64()-1)
 		}
 
-		fmt.Println("in insertChain is prague?", bc.Config().IsPrague(block.Number(), block.Time()))
 		if bc.Config().IsPrague(block.Number(), block.Time()) {
 			bc.stateCache.LoadTransitionState(parent.Root)
 

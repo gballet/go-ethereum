@@ -19,7 +19,6 @@ package state
 import (
 	"errors"
 	"fmt"
-	"runtime/debug"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/lru"
@@ -210,16 +209,10 @@ func NewDatabaseWithNodeDB(db ethdb.Database, triedb *trie.Database) Database {
 }
 
 func (db *cachingDB) InTransition() bool {
-	if db.CurrentTransitionState == nil {
-		fmt.Println("nil transition state in in!")
-	}
 	return db.CurrentTransitionState != nil && db.CurrentTransitionState.started && !db.CurrentTransitionState.ended
 }
 
 func (db *cachingDB) Transitioned() bool {
-	if db.CurrentTransitionState == nil {
-		fmt.Println("nil transition state in ed!")
-	}
 	return db.CurrentTransitionState != nil && db.CurrentTransitionState.ended
 }
 
@@ -251,7 +244,6 @@ func (db *cachingDB) ReorgThroughVerkleTransition() {
 }
 
 func (db *cachingDB) InitTransitionStatus(started, ended bool) {
-	fmt.Println("init-ing status", started, ended)
 	db.CurrentTransitionState = &TransitionState{
 		ended:   ended,
 		started: started,
@@ -351,11 +343,9 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 	// TODO separate both cases when I can be certain that it won't
 	// find a Verkle trie where is expects a Transitoion trie.
 	if db.InTransition() || db.Transitioned() {
-		fmt.Printf("opening tree: root=%x\n", root)
 		// NOTE this is a kaustinen-only change, it will break replay
 		vkt, err := db.openVKTrie(root)
 		if err != nil {
-			fmt.Println("and vkt failed")
 			return nil, err
 		}
 
@@ -369,7 +359,6 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 		// trie and an overlay, verkle trie.
 		mpt, err = db.openMPTTrie(db.baseRoot)
 		if err != nil {
-			fmt.Println("and mpt failed")
 			return nil, err
 		}
 
@@ -553,25 +542,18 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 		db.TransitionStatePerRoot = make(map[common.Hash]*TransitionState)
 	}
 
-	fmt.Printf("saved transition state root=%x\n", root)
 	if db.CurrentTransitionState != nil {
 		db.TransitionStatePerRoot[root] = db.CurrentTransitionState.Copy()
-		if db.CurrentTransitionState.CurrentAccountAddress != nil {
-			fmt.Printf("\taddress=%x\n", *db.CurrentTransitionState.CurrentAccountAddress)
-		}
 	}
 }
 
 func (db *cachingDB) LoadTransitionState(root common.Hash) {
-	fmt.Printf("loading transition state %x %d\n", root, len(db.TransitionStatePerRoot))
 	if db.TransitionStatePerRoot == nil {
 		db.TransitionStatePerRoot = make(map[common.Hash]*TransitionState)
 	}
 
 	ts, ok := db.TransitionStatePerRoot[root]
 	if !ok || ts == nil {
-		debug.PrintStack()
-		fmt.Println("starting with a fresh state", db.triedb.IsVerkle())
 		// Start with a fresh state
 		ts = &TransitionState{ended: db.triedb.IsVerkle()}
 	}
@@ -579,10 +561,5 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 	db.CurrentTransitionState = ts.Copy()
 
 	if db.CurrentTransitionState != nil {
-		if db.CurrentTransitionState.CurrentAccountAddress != nil {
-			fmt.Println("address", db.CurrentTransitionState.CurrentAccountAddress, crypto.Keccak256Hash(db.CurrentTransitionState.CurrentAccountAddress[:]))
-		} else {
-			fmt.Println("address", db.CurrentTransitionState.CurrentAccountAddress, "nil")
-		}
 	}
 }
