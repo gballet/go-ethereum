@@ -284,6 +284,7 @@ func (ts *TransitionState) Copy() *TransitionState {
 		ended:                 ts.ended,
 		CurrentSlotHash:       ts.CurrentSlotHash,
 		CurrentPreimageOffset: ts.CurrentPreimageOffset,
+		StorageProcessed:      ts.StorageProcessed,
 	}
 
 	if ts.CurrentAccountAddress != nil {
@@ -563,4 +564,6 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 	// Copy so that the CurrentAddress pointer in the map
 	// doesn't get overwritten.
 	db.CurrentTransitionState = ts.Copy()
+
+	fmt.Println("loaded transition state", db.CurrentTransitionState.StorageProcessed)
 }
