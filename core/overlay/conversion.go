@@ -405,7 +405,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 		}
 		migrdb.SetCurrentPreimageOffset(preimageSeek)
 
-		log.Info("Collected key values from base tree", "count", count, "duration", time.Since(now), "last account", statedb.Database().GetCurrentAccountHash())
+		log.Info("Collected key values from base tree", "count", count, "duration", time.Since(now), "last account", statedb.Database().GetCurrentAccountHash(), "storage processed", statedb.Database().GetStorageProcessed(), "last storage", statedb.Database().GetCurrentSlotHash())
 
 		// Take all the collected key-values and prepare the new leaf values.
 		// This fires a background routine that will start doing the work that
