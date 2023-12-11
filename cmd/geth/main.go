@@ -71,6 +71,7 @@ var (
 		utils.OverrideCancun,
 		utils.OverridePrague,
 		utils.OverrideProofInBlock,
+		utils.ClearVerkleCosts,
 		utils.EnablePersonal,
 		utils.TxPoolLocalsFlag,
 		utils.TxPoolNoLocalsFlag,

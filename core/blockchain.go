@@ -103,7 +103,7 @@ const (
 	txLookupCacheLimit  = 1024
 	maxFutureBlocks     = 256
 	maxTimeFutureBlocks = 30
-	TriesInMemory       = 128
+	TriesInMemory       = 8192
 
 	// BlockChainVersion ensures that an incompatible database forces a resync from scratch.
 	//
@@ -2009,7 +2009,7 @@ func (bc *BlockChain) insertSideChain(block *types.Block, it *insertIterator) (i
 		parent = bc.GetHeader(parent.ParentHash, parent.Number.Uint64()-1)
 	}
 	if parent == nil {
-		return it.index, errors.New("missing parent")
+		return it.index, fmt.Errorf("missing parent: hash=%x, number=%d", current.Hash(), current.Number)
 	}
 	// Import all the pruned blocks to make the state available
 	var (
@@ -2070,7 +2070,7 @@ func (bc *BlockChain) recoverAncestors(block *types.Block) (common.Hash, error) 
 		}
 	}
 	if parent == nil {
-		return common.Hash{}, errors.New("missing parent")
+		return common.Hash{}, fmt.Errorf("missing parent during ancestor recovery: hash=%x, number=%d", block.ParentHash(), block.Number())
 	}
 	// Import all the pruned blocks to make the state available
 	for i := len(hashes) - 1; i >= 0; i-- {
@@ -2308,6 +2308,7 @@ func (bc *BlockChain) SetCanonical(head *types.Block) (common.Hash, error) {
 	defer bc.chainmu.Unlock()
 
 	// Re-execute the reorged chain in case the head state is missing.
+	log.Trace("looking for state", "root", head.Root(), "has state", bc.HasState(head.Root()))
 	if !bc.HasState(head.Root()) {
 		if latestValidHash, err := bc.recoverAncestors(head); err != nil {
 			return latestValidHash, err
