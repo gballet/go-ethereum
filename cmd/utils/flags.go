@@ -284,7 +284,7 @@ var (
 		Usage:    "Manually specify the proof-in-block setting",
 		Category: flags.EthCategory,
 	}
-	ClearVerkleCosts = &cli.Uint64Flag{
+	ClearVerkleCosts = &cli.BoolFlag{
 		Name:     "clear.verkle.costs",
 		Usage:    "Clear verkle costs (for shadow forks)",
 		Category: flags.EthCategory,
