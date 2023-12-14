@@ -547,6 +547,8 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 		// Copy so that the address pointer isn't updated after
 		// it has been saved.
 		db.TransitionStatePerRoot[root] = db.CurrentTransitionState.Copy()
+
+		fmt.Println("saving transition state", db.CurrentTransitionState.StorageProcessed, db.CurrentTransitionState.CurrentAccountAddress, db.CurrentTransitionState.CurrentSlotHash)
 	}
 }
 
@@ -565,5 +567,5 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 	// doesn't get overwritten.
 	db.CurrentTransitionState = ts.Copy()
 
-	fmt.Println("loaded transition state", db.CurrentTransitionState.StorageProcessed)
+	fmt.Println("loaded transition state", db.CurrentTransitionState.StorageProcessed, db.CurrentTransitionState.CurrentAccountAddress, db.CurrentTransitionState.CurrentSlotHash)
 }
