@@ -350,6 +350,9 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 		beacon.ethone.Finalize(chain, header, state, txs, uncles, nil)
 		return
 	}
+
+	isPrague := chain.Config().IsPrague(header.Number, header.Time)
+
 	// Withdrawals processing.
 	for _, w := range withdrawals {
 		// Convert amount from gwei to wei.
@@ -358,19 +361,22 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 		state.AddBalance(w.Address, amount)
 
 		// The returned gas is not charged
-		state.Witness().TouchAddressOnWriteAndComputeGas(w.Address[:], uint256.Int{}, utils.VersionLeafKey)
-		state.Witness().TouchAddressOnWriteAndComputeGas(w.Address[:], uint256.Int{}, utils.BalanceLeafKey)
-		state.Witness().TouchAddressOnWriteAndComputeGas(w.Address[:], uint256.Int{}, utils.NonceLeafKey)
-		state.Witness().TouchAddressOnWriteAndComputeGas(w.Address[:], uint256.Int{}, utils.CodeKeccakLeafKey)
-		state.Witness().TouchAddressOnWriteAndComputeGas(w.Address[:], uint256.Int{}, utils.CodeSizeLeafKey)
+		if isPrague {
+			state.Witness().TouchAddressOnWriteAndComputeGas(w.Address[:], uint256.Int{}, utils.VersionLeafKey)
+			state.Witness().TouchAddressOnWriteAndComputeGas(w.Address[:], uint256.Int{}, utils.BalanceLeafKey)
+			state.Witness().TouchAddressOnWriteAndComputeGas(w.Address[:], uint256.Int{}, utils.NonceLeafKey)
+			state.Witness().TouchAddressOnWriteAndComputeGas(w.Address[:], uint256.Int{}, utils.CodeKeccakLeafKey)
+			state.Witness().TouchAddressOnWriteAndComputeGas(w.Address[:], uint256.Int{}, utils.CodeSizeLeafKey)
+		}
 	}
-	state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.VersionLeafKey)
-	state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.BalanceLeafKey)
-	state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.NonceLeafKey)
-	state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.CodeKeccakLeafKey)
-	state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.CodeSizeLeafKey)
 
-	if chain.Config().IsPrague(header.Number, header.Time) {
+	if isPrague {
+		state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.VersionLeafKey)
+		state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.BalanceLeafKey)
+		state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.NonceLeafKey)
+		state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.CodeKeccakLeafKey)
+		state.Witness().TouchAddressOnWriteAndComputeGas(header.Coinbase[:], uint256.Int{}, utils.CodeSizeLeafKey)
+
 		fmt.Println("at block", header.Number, "performing transition?", state.Database().InTransition())
 		parent := chain.GetHeaderByHash(header.ParentHash)
 		overlay.OverlayVerkleTransition(state, parent.Root, chain.Config().OverlayStride)
