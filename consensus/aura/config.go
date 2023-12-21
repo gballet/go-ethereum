@@ -27,15 +27,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-// Draws an validator nonce modulo number of validators.
-func GetFromValidatorSet(set ValidatorSet, parent common.Hash, nonce uint, call consensus.Call) (common.Address, error) {
-	//d, err := set.defaultCaller(parent)
-	//if err != nil {
-	//	return common.Address{}, err
-	//}
-	return set.getWithCaller(parent, nonce, call)
-}
-
 func newValidatorSetFromJson(j *params.ValidatorSetJson, posdaoTransition *uint64) ValidatorSet {
 	if j.List != nil {
 		return &SimpleList{validators: j.List}

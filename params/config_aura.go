@@ -67,5 +67,5 @@ type AuRaConfig struct {
 	// See https://github.com/gnosischain/specs/blob/master/execution/withdrawals.md
 	WithdrawalContractAddress *common.Address `json:"withdrawalContractAddress"`
 
-	RewriteBytecode map[uint64]map[common.Address]hexutility.Bytes `json:"rewriteBytecode"`
+	RewriteBytecode map[uint64]map[common.Address][]byte `json:"rewriteBytecode"`
 }

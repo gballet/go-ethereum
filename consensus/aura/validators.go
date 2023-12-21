@@ -3,7 +3,6 @@ package aura
 import (
 	"container/list"
 	"fmt"
-	"math"
 	"sort"
 	"strings"
 	"sync"
@@ -14,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/aura/auraabi"
 	"github.com/ethereum/go-ethereum/consensus/aura/aurainterfaces"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -69,10 +67,10 @@ type ValidatorSet interface {
 	// Called on the close of every block.
 	onCloseBlock(_header *types.Header, _address common.Address) error
 
-	// Draws an validator nonce modulo number of validators.
-	getWithCaller(parentHash common.Hash, nonce uint, caller consensus.Call) (common.Address, error)
+	// Draws a validator nonce modulo number of validators.
+	// getWithCaller(parentHash common.Hash, nonce uint, caller consensus.Call) (common.Address, error)
 	// Returns the current number of validators.
-	countWithCaller(parentHash common.Hash, caller consensus.Call) (uint64, error)
+	// countWithCaller(parentHash common.Hash, caller consensus.Call) (uint64, error)
 
 	// Recover the validator set from the given proof, the block number, and
 	// whether this header is first in its set.
@@ -178,20 +176,20 @@ type ValidatorSet interface {
 	*/
 }
 
-func get(s ValidatorSet, h common.Hash, nonce uint, call consensus.Call) (common.Address, error) {
-	//d, err := s.defaultCaller(h)
-	//if err != nil {
-	//	return common.Address{}, err
-	//}
-	return s.getWithCaller(h, nonce, call)
-}
-func count(s ValidatorSet, h common.Hash, call consensus.Call) (uint64, error) {
-	//d, err := s.defaultCaller(h)
-	//if err != nil {
-	//	return 0, err
-	//}
-	return s.countWithCaller(h, call)
-}
+// func get(s ValidatorSet, h common.Hash, nonce uint, call consensus.Call) (common.Address, error) {
+// 	//d, err := s.defaultCaller(h)
+// 	//if err != nil {
+// 	//	return common.Address{}, err
+// 	//}
+// 	return s.getWithCaller(h, nonce, call)
+// }
+// func count(s ValidatorSet, h common.Hash, call consensus.Call) (uint64, error) {
+// 	//d, err := s.defaultCaller(h)
+// 	//if err != nil {
+// 	//	return 0, err
+// 	//}
+// 	return s.countWithCaller(h, call)
+// }
 
 // nolint
 type MultiItem struct {
@@ -232,16 +230,16 @@ func (s *Multi) defaultCaller(blockHash common.Hash) (Call, error) {
 	return set.defaultCaller(blockHash)
 }
 
-func (s *Multi) getWithCaller(parentHash common.Hash, nonce uint, caller consensus.Call) (common.Address, error) {
-	panic("not implemented")
-}
-func (s *Multi) countWithCaller(parentHash common.Hash, caller consensus.Call) (uint64, error) {
-	set, ok := s.correctSet(parentHash)
-	if !ok {
-		return math.MaxUint64, nil
-	}
-	return set.countWithCaller(parentHash, caller)
-}
+// func (s *Multi) getWithCaller(parentHash common.Hash, nonce uint, caller consensus.Call) (common.Address, error) {
+// 	panic("not implemented")
+// }
+// func (s *Multi) countWithCaller(parentHash common.Hash, caller consensus.Call) (uint64, error) {
+// 	set, ok := s.correctSet(parentHash)
+// 	if !ok {
+// 		return math.MaxUint64, nil
+// 	}
+// 	return set.countWithCaller(parentHash, caller)
+// }
 
 func (s *Multi) correctSet(blockHash common.Hash) (ValidatorSet, bool) {
 	parent := s.parent(blockHash)
@@ -313,15 +311,17 @@ func (s *SimpleList) onCloseBlock(_header *types.Header, _address common.Address
 func (s *SimpleList) defaultCaller(blockHash common.Hash) (Call, error) {
 	return nil, nil //simple list doesn't require calls
 }
-func (s *SimpleList) getWithCaller(parentHash common.Hash, nonce uint, caller consensus.Call) (common.Address, error) {
-	if len(s.validators) == 0 {
-		return common.Address{}, fmt.Errorf("cannot operate with an empty validator set")
-	}
-	return s.validators[nonce%uint(len(s.validators))], nil
-}
-func (s *SimpleList) countWithCaller(parentHash common.Hash, caller consensus.Call) (uint64, error) {
-	return uint64(len(s.validators)), nil
-}
+
+//	func (s *SimpleList) getWithCaller(parentHash common.Hash, nonce uint, caller consensus.Call) (common.Address, error) {
+//		if len(s.validators) == 0 {
+//			return common.Address{}, fmt.Errorf("cannot operate with an empty validator set")
+//		}
+//		return s.validators[nonce%uint(len(s.validators))], nil
+//	}
+//
+//	func (s *SimpleList) countWithCaller(parentHash common.Hash, caller consensus.Call) (uint64, error) {
+//		return uint64(len(s.validators)), nil
+//	}
 func (s *SimpleList) genesisEpochData(header *types.Header, call syscall) ([]byte, error) {
 	return []byte{}, nil
 }
@@ -588,48 +588,49 @@ func (s *ValidatorSafeContract) defaultCaller(blockHash common.Hash) (Call, erro
 		return s.client.CallAtBlockHash(blockHash, addr, data)
 	}, nil
 }
-func (s *ValidatorSafeContract) getWithCaller(blockHash common.Hash, nonce uint, caller consensus.Call) (common.Address, error) {
-	set, ok := s.validators.Get(blockHash)
-	if ok {
-		return get(set, blockHash, nonce, caller)
-	}
 
-	list, ok := s.getList(caller)
-	if !ok {
-		return common.Address{}, nil
-	}
-	s.validators.Add(blockHash, list)
-	return get(list, blockHash, nonce, caller)
-}
-func (s *ValidatorSafeContract) countWithCaller(parentHash common.Hash, caller consensus.Call) (uint64, error) {
-	set, ok := s.validators.Get(parentHash)
-	if ok {
-		return count(set, parentHash, caller)
-	}
-	list, ok := s.getList(caller)
-	if !ok {
-		return math.MaxUint64, nil
-	}
-	s.validators.Add(parentHash, list)
-	return count(list, parentHash, caller)
-}
+// func (s *ValidatorSafeContract) getWithCaller(blockHash common.Hash, nonce uint, caller consensus.Call) (common.Address, error) {
+// 	set, ok := s.validators.Get(blockHash)
+// 	if ok {
+// 		return get(set, blockHash, nonce, caller)
+// 	}
 
-func (s *ValidatorSafeContract) getList(caller consensus.Call) (*SimpleList, bool) {
-	packed, err := s.abi.Pack("getValidators")
-	if err != nil {
-		panic(err)
-	}
-	out, err := caller(s.contractAddress, packed)
-	if err != nil {
-		panic(err)
-	}
-	res, err := s.abi.Unpack("getValidators", out)
-	if err != nil {
-		panic(err)
-	}
-	out0 := *abi.ConvertType(res[0], new([]common.Address)).(*[]common.Address)
-	return NewSimpleList(out0), true
-}
+// 	list, ok := s.getList(caller)
+// 	if !ok {
+// 		return common.Address{}, nil
+// 	}
+// 	s.validators.Add(blockHash, list)
+// 	return get(list, blockHash, nonce, caller)
+// }
+// func (s *ValidatorSafeContract) countWithCaller(parentHash common.Hash, caller consensus.Call) (uint64, error) {
+// 	set, ok := s.validators.Get(parentHash)
+// 	if ok {
+// 		return count(set, parentHash, caller)
+// 	}
+// 	list, ok := s.getList(caller)
+// 	if !ok {
+// 		return math.MaxUint64, nil
+// 	}
+// 	s.validators.Add(parentHash, list)
+// 	return count(list, parentHash, caller)
+// }
+
+// func (s *ValidatorSafeContract) getList(caller consensus.Call) (*SimpleList, bool) {
+// 	packed, err := s.abi.Pack("getValidators")
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	out, err := caller(s.contractAddress, packed)
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	res, err := s.abi.Unpack("getValidators", out)
+// 	if err != nil {
+// 		panic(err)
+// 	}
+// 	out0 := *abi.ConvertType(res[0], new([]common.Address)).(*[]common.Address)
+// 	return NewSimpleList(out0), true
+// }
 
 func (s *ValidatorSafeContract) getListSyscall(caller syscall) (*SimpleList, bool) {
 	packed, err := s.abi.Pack("getValidators")
@@ -873,12 +874,14 @@ func (s *ValidatorContract) epochSet(firstInEpoch bool, num uint64, proof []byte
 func (s *ValidatorContract) defaultCaller(blockHash common.Hash) (Call, error) {
 	return s.validators.defaultCaller(blockHash)
 }
-func (s *ValidatorContract) getWithCaller(parentHash common.Hash, nonce uint, caller consensus.Call) (common.Address, error) {
-	return s.validators.getWithCaller(parentHash, nonce, caller)
-}
-func (s *ValidatorContract) countWithCaller(parentHash common.Hash, caller consensus.Call) (uint64, error) {
-	return s.validators.countWithCaller(parentHash, caller)
-}
+
+//	func (s *ValidatorContract) getWithCaller(parentHash common.Hash, nonce uint, caller consensus.Call) (common.Address, error) {
+//		return s.validators.getWithCaller(parentHash, nonce, caller)
+//	}
+//
+//	func (s *ValidatorContract) countWithCaller(parentHash common.Hash, caller consensus.Call) (uint64, error) {
+//		return s.validators.countWithCaller(parentHash, caller)
+//	}
 func (s *ValidatorContract) onEpochBegin(firstInEpoch bool, header *types.Header, caller syscall) error {
 	return s.validators.onEpochBegin(firstInEpoch, header, caller)
 }
