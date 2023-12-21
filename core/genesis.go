@@ -18,6 +18,7 @@ package core
 
 import (
 	"bytes"
+	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -66,6 +67,7 @@ type Genesis struct {
 	BaseFee       *big.Int    `json:"baseFeePerGas"` // EIP-1559
 	ExcessBlobGas *uint64     `json:"excessBlobGas"` // EIP-4844
 	BlobGasUsed   *uint64     `json:"blobGasUsed"`   // EIP-4844
+	AuRaSeal      []byte      `json:"auraSeal,omitempty"`
 }
 
 func ReadGenesis(db ethdb.Database) (*Genesis, error) {
@@ -576,6 +578,46 @@ func DefaultHoleskyGenesisBlock() *Genesis {
 		Difficulty: big.NewInt(0x01),
 		Timestamp:  1695902100,
 		Alloc:      decodePrealloc(holeskyAllocData),
+	}
+}
+
+//go:embed allocs
+var allocs embed.FS
+
+func readPrealloc(filename string) GenesisAlloc {
+	f, err := allocs.Open(filename)
+	if err != nil {
+		panic(fmt.Sprintf("Could not open genesis preallocation for %s: %v", filename, err))
+	}
+	defer f.Close()
+	decoder := json.NewDecoder(f)
+	ga := make(GenesisAlloc)
+	err = decoder.Decode(&ga)
+	if err != nil {
+		panic(fmt.Sprintf("Could not parse genesis preallocation for %s: %v", filename, err))
+	}
+	return ga
+}
+
+func DefaultGnosisGenesisBlock() *Genesis {
+	return &Genesis{
+		Config:     params.GnosisChainConfig,
+		Timestamp:  0,
+		AuRaSeal:   common.FromHex("0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+		GasLimit:   0x989680,
+		Difficulty: big.NewInt(0x20000),
+		Alloc:      readPrealloc("allocs/gnosis.json"),
+	}
+}
+
+func DefaultChiadoGenesisBlock() *Genesis {
+	return &Genesis{
+		Config:     params.ChiadoChainConfig,
+		Timestamp:  0,
+		AuRaSeal:   common.FromHex("0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+		GasLimit:   0x989680,
+		Difficulty: big.NewInt(0x20000),
+		Alloc:      readPrealloc("allocs/chiado.json"),
 	}
 }
 

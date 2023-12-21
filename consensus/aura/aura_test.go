@@ -18,9 +18,8 @@ import (
 // does not change the state root.
 func TestEmptyBlock(t *testing.T) {
 	require := require.New(t)
-	genesis := core.GnosisGenesisBlock()
-	genesisBlock, _, err := genesis.ToBlock()
-	require.NoError(err)
+	genesis := core.DefaultGnosisGenesisBlock()
+	genesisBlock := genesis.ToBlock()
 
 	genesis.Config.TerminalTotalDifficultyPassed = false
 

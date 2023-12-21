@@ -7,12 +7,14 @@ import (
 )
 
 func DeleteNewerEpochs(tx kv.RwTx, number uint64) error {
-	if err := tx.ForEach(kv.PendingEpoch, hexutility.EncodeTs(number), func(k, v []byte) error {
+	timestampBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(timestampBytes, number)
+	if err := tx.ForEach(kv.PendingEpoch, timestampBytes, func(k, v []byte) error {
 		return tx.Delete(kv.Epoch, k)
 	}); err != nil {
 		return err
 	}
-	return tx.ForEach(kv.Epoch, hexutility.EncodeTs(number), func(k, v []byte) error {
+	return tx.ForEach(kv.Epoch, timestampBytes, func(k, v []byte) error {
 		return tx.Delete(kv.Epoch, k)
 	})
 }
@@ -28,7 +30,9 @@ func FindEpochBeforeOrEqualNumber(tx kv.Tx, n uint64) (blockNum uint64, blockHas
 		return 0, common.Hash{}, nil, err
 	}
 	defer c.Close()
-	seek := hexutility.EncodeTs(n)
+
+	seek := make([]byte, 8)
+	binary.BigEndian.PutUint64(seek, n)
 	k, v, err := c.Seek(seek)
 	if err != nil {
 		return 0, common.Hash{}, nil, err
