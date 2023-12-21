@@ -19,10 +19,12 @@ package core
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/consensus/aura"
 	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -67,6 +69,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		allLogs     []*types.Log
 		gp          = new(GasPool).AddGas(block.GasLimit())
 	)
+
 	// Mutate the block and state according to any hard-fork specs
 	if p.config.DAOForkSupport && p.config.DAOForkBlock != nil && p.config.DAOForkBlock.Cmp(block.Number()) == 0 {
 		misc.ApplyDAOHardFork(statedb)
@@ -76,6 +79,33 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		vmenv   = vm.NewEVM(context, vm.TxContext{}, statedb, p.config, cfg)
 		signer  = types.MakeSigner(p.config, header.Number, header.Time)
 	)
+	if a, ok := p.engine.(*aura.AuRa); ok {
+		a.Syscall = func(contractaddr common.Address, data []byte) ([]byte, error) {
+			sysaddr := common.HexToAddress("fffffffffffffffffffffffffffffffffffffffe")
+			msg := &Message{
+				To:                &contractaddr,
+				From:              sysaddr,
+				Nonce:             0,
+				Value:             big.NewInt(0),
+				GasLimit:          math.MaxUint64,
+				GasPrice:          big.NewInt(0),
+				GasFeeCap:         nil,
+				GasTipCap:         nil,
+				Data:              data,
+				AccessList:        nil,
+				BlobHashes:        nil,
+				SkipAccountChecks: false,
+			}
+			txctx := NewEVMTxContext(msg)
+			evm := vm.NewEVM(context, txctx, statedb, p.bc.chainConfig, vm.Config{ /*Debug: true, Tracer: logger.NewJSONLogger(nil, os.Stdout)*/ })
+			ret, _, err := evm.Call(vm.AccountRef(sysaddr), contractaddr, data, math.MaxUint64, new(big.Int))
+			if err != nil {
+				panic(err)
+			}
+			statedb.Finalise(true)
+			return ret, err
+		}
+	}
 	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
 		ProcessBeaconBlockRoot(*beaconRoot, vmenv, statedb)
 	}
