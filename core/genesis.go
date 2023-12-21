@@ -18,11 +18,13 @@ package core
 
 import (
 	"bytes"
+	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
+	"slices"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -31,6 +33,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -66,6 +69,7 @@ type Genesis struct {
 	BaseFee       *big.Int    `json:"baseFeePerGas"` // EIP-1559
 	ExcessBlobGas *uint64     `json:"excessBlobGas"` // EIP-4844
 	BlobGasUsed   *uint64     `json:"blobGasUsed"`   // EIP-4844
+	AuRaSeal      []byte      `json:"auraSeal,omitempty"`
 }
 
 func ReadGenesis(db ethdb.Database) (*Genesis, error) {
@@ -121,6 +125,35 @@ func (ga *GenesisAlloc) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// SysCreate is a special (system) contract creation methods for genesis constructors.
+func SysCreate(contract common.Address, data []byte, chainConfig *params.ChainConfig, statedb *state.StateDB, header *types.Header) (result []byte, err error) {
+	msg := &Message{
+		From:     contract,
+		Nonce:    0,
+		Value:    big.NewInt(0),
+		GasLimit: math.MaxUint64,
+		GasPrice: big.NewInt(0),
+		// GasFeeCap, GasTipCap,
+		Data:   data,
+		isFree: true,
+	}
+	vmConfig := vm.Config{}
+	// Create a new context to be used in the EVM environment
+	author := &contract
+	txContext := NewEVMTxContext(msg)
+	blockContext := NewEVMBlockContext(header, nil, author)
+	evm := vm.NewEVM(blockContext, txContext, statedb, chainConfig, vmConfig)
+
+	ret, _, err := evm.SysCreate(
+		vm.AccountRef(msg.From),
+		msg.Data,
+		msg.GasLimit,
+		msg.Value,
+		contract,
+	)
+	return ret, err
+}
+
 // hash computes the state root according to the genesis specification.
 func (ga *GenesisAlloc) hash(isVerkle bool) (common.Hash, error) {
 	// If a genesis-time verkle trie is requested, create a trie config
@@ -140,12 +173,32 @@ func (ga *GenesisAlloc) hash(isVerkle bool) (common.Hash, error) {
 	if err != nil {
 		return common.Hash{}, err
 	}
-	for addr, account := range *ga {
+	keys := make([]string, len(*ga))
+	i := 0
+	for k := range *ga {
+		keys[i] = string(k.Bytes())
+		i++
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
+		addr := common.BytesToAddress([]byte(key))
+		account := (*ga)[addr]
 		if account.Balance != nil {
 			statedb.AddBalance(addr, account.Balance)
 		}
-		statedb.SetCode(addr, account.Code)
-		statedb.SetNonce(addr, account.Nonce)
+		if len(account.Constructor) != 0 {
+			// hardcode chiado since this is the only use case we have for the time being.
+			// things could be cleaner, but it would increase the diff with geth.
+			code, err := SysCreate(addr, account.Constructor, params.ChiadoChainConfig, statedb, &types.Header{Difficulty: big.NewInt(131072), Number: big.NewInt(0)})
+			if err != nil {
+				panic(err)
+			}
+			statedb.SetCode(addr, code)
+			statedb.SetNonce(addr, 1)
+		} else {
+			statedb.SetCode(addr, account.Code)
+			statedb.SetNonce(addr, account.Nonce)
+		}
 		for key, value := range account.Storage {
 			statedb.SetState(addr, key, value)
 		}
@@ -161,12 +214,33 @@ func (ga *GenesisAlloc) flush(db ethdb.Database, triedb *trie.Database, blockhas
 	if err != nil {
 		return err
 	}
-	for addr, account := range *ga {
+	keys := make([]string, len(*ga))
+	i := 0
+	for k := range *ga {
+		keys[i] = string(k.Bytes())
+		i++
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
+		addr := common.BytesToAddress([]byte(key))
+		account := (*ga)[addr]
 		if account.Balance != nil {
 			statedb.AddBalance(addr, account.Balance)
 		}
-		statedb.SetCode(addr, account.Code)
-		statedb.SetNonce(addr, account.Nonce)
+		log.Info("adding account", "addr", addr, "constructor", account.Constructor, "code", account.Code)
+		if len(account.Constructor) != 0 {
+			// hardcode chiado since this is the only use case we have for the time being.
+			// things could be cleaner, but it would increase the diff with geth.
+			code, err := SysCreate(addr, account.Constructor, params.ChiadoChainConfig, statedb, &types.Header{Difficulty: big.NewInt(131072), Number: big.NewInt(0)})
+			if err != nil {
+				panic(err)
+			}
+			statedb.SetCode(addr, code)
+			statedb.SetNonce(addr, 1)
+		} else {
+			statedb.SetCode(addr, account.Code)
+			statedb.SetNonce(addr, account.Nonce)
+		}
 		for key, value := range account.Storage {
 			statedb.SetState(addr, key, value)
 		}
@@ -192,11 +266,12 @@ func (ga *GenesisAlloc) flush(db ethdb.Database, triedb *trie.Database, blockhas
 
 // GenesisAccount is an account in the state of the genesis block.
 type GenesisAccount struct {
-	Code       []byte                      `json:"code,omitempty"`
-	Storage    map[common.Hash]common.Hash `json:"storage,omitempty"`
-	Balance    *big.Int                    `json:"balance" gencodec:"required"`
-	Nonce      uint64                      `json:"nonce,omitempty"`
-	PrivateKey []byte                      `json:"secretKey,omitempty"` // for tests
+	Constructor []byte                      `json:"constructor,omitempty"` // deployment code
+	Code        []byte                      `json:"code,omitempty"`
+	Storage     map[common.Hash]common.Hash `json:"storage,omitempty"`
+	Balance     *big.Int                    `json:"balance" gencodec:"required"`
+	Nonce       uint64                      `json:"nonce,omitempty"`
+	PrivateKey  []byte                      `json:"secretKey,omitempty"` // for tests
 }
 
 // field type overrides for gencodec
@@ -215,11 +290,12 @@ type genesisSpecMarshaling struct {
 }
 
 type genesisAccountMarshaling struct {
-	Code       hexutil.Bytes
-	Balance    *math.HexOrDecimal256
-	Nonce      math.HexOrDecimal64
-	Storage    map[storageJSON]storageJSON
-	PrivateKey hexutil.Bytes
+	Constructor hexutil.Bytes
+	Code        hexutil.Bytes
+	Balance     *math.HexOrDecimal256
+	Nonce       math.HexOrDecimal64
+	Storage     map[storageJSON]storageJSON
+	PrivateKey  hexutil.Bytes
 }
 
 // storageJSON represents a 256 bit byte array, but allows less than 256 bits when
@@ -416,6 +492,10 @@ func (g *Genesis) configOrDefault(ghash common.Hash) *params.ChainConfig {
 		return params.SepoliaChainConfig
 	case ghash == params.GoerliGenesisHash:
 		return params.GoerliChainConfig
+	case ghash == params.GnosisGenesisHash:
+		return params.GnosisChainConfig
+	case ghash == params.ChiadoGenesisHash:
+		return params.ChiadoChainConfig
 	default:
 		return params.AllEthashProtocolChanges
 	}
@@ -445,6 +525,7 @@ func (g *Genesis) ToBlock() *types.Block {
 		Difficulty: g.Difficulty,
 		MixDigest:  g.Mixhash,
 		Coinbase:   g.Coinbase,
+		Signature:  g.AuRaSeal,
 		Root:       root,
 	}
 	if g.GasLimit == 0 {
@@ -576,6 +657,46 @@ func DefaultHoleskyGenesisBlock() *Genesis {
 		Difficulty: big.NewInt(0x01),
 		Timestamp:  1695902100,
 		Alloc:      decodePrealloc(holeskyAllocData),
+	}
+}
+
+//go:embed allocs
+var allocs embed.FS
+
+func readPrealloc(filename string) GenesisAlloc {
+	f, err := allocs.Open(filename)
+	if err != nil {
+		panic(fmt.Sprintf("Could not open genesis preallocation for %s: %v", filename, err))
+	}
+	defer f.Close()
+	decoder := json.NewDecoder(f)
+	ga := make(GenesisAlloc)
+	err = decoder.Decode(&ga)
+	if err != nil {
+		panic(fmt.Sprintf("Could not parse genesis preallocation for %s: %v", filename, err))
+	}
+	return ga
+}
+
+func DefaultGnosisGenesisBlock() *Genesis {
+	return &Genesis{
+		Config:     params.GnosisChainConfig,
+		Timestamp:  0,
+		AuRaSeal:   common.FromHex("0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+		GasLimit:   0x989680,
+		Difficulty: big.NewInt(0x20000),
+		Alloc:      readPrealloc("allocs/gnosis.json"),
+	}
+}
+
+func DefaultChiadoGenesisBlock() *Genesis {
+	return &Genesis{
+		Config:     params.ChiadoChainConfig,
+		Timestamp:  0,
+		AuRaSeal:   common.FromHex("0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+		GasLimit:   0x989680,
+		Difficulty: big.NewInt(0x20000),
+		Alloc:      readPrealloc("allocs/chiado.json"),
 	}
 }
 

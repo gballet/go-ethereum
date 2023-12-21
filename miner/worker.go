@@ -19,6 +19,7 @@ package miner
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 	"sync"
 	"sync/atomic"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core"
@@ -704,15 +706,7 @@ func (w *worker) resultLoop() {
 }
 
 // makeEnv creates a new environment for the sealing block.
-func (w *worker) makeEnv(parent *types.Header, header *types.Header, coinbase common.Address) (*environment, error) {
-	// Retrieve the parent state to execute on top and start a prefetcher for
-	// the miner to speed block sealing up a bit.
-	state, err := w.chain.StateAt(parent.Root)
-	if err != nil {
-		return nil, err
-	}
-	state.StartPrefetcher("miner")
-
+func (w *worker) makeEnv(parent *types.Header, header *types.Header, coinbase common.Address, state *state.StateDB) (*environment, error) {
 	// Note the passed coinbase may be different with header.Coinbase.
 	env := &environment{
 		signer:   types.MakeSigner(w.chainConfig, header.Number, header.Time),
@@ -960,18 +954,61 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 		header.ExcessBlobGas = &excessBlobGas
 		header.ParentBeaconRoot = genParams.beaconRoot
 	}
+	// Retrieve the parent state to execute on top and start a prefetcher for
+	// the miner to speed block sealing up a bit.
+	state, err := w.chain.StateAt(parent.Root)
+	if err != nil {
+		return nil, err
+	}
+	state.StartPrefetcher("miner")
+
+	b, ok := w.engine.(*beacon.Beacon)
+	if ok {
+		if header.Difficulty == nil {
+			header.Difficulty = common.Big0
+		}
+		b.SetAuraSyscall(func(contractaddr common.Address, data []byte) ([]byte, error) {
+			sysaddr := common.HexToAddress("fffffffffffffffffffffffffffffffffffffffe")
+			msg := &core.Message{
+				To:                &contractaddr,
+				From:              sysaddr,
+				Nonce:             0,
+				Value:             big.NewInt(0),
+				GasLimit:          math.MaxUint64,
+				GasPrice:          big.NewInt(0),
+				GasFeeCap:         nil,
+				GasTipCap:         nil,
+				Data:              data,
+				AccessList:        nil,
+				BlobHashes:        nil,
+				SkipAccountChecks: false,
+			}
+			context := core.NewEVMBlockContext(header, w.chain, nil)
+			txctx := core.NewEVMTxContext(msg)
+			evm := vm.NewEVM(context, txctx, state, w.chainConfig, vm.Config{ /*Debug: true, Tracer: logger.NewJSONLogger(nil, os.Stdout)*/ })
+			ret, _, err := evm.Call(vm.AccountRef(sysaddr), contractaddr, data, math.MaxUint64, new(big.Int))
+			if err != nil {
+				panic(err)
+			}
+			state.Finalise(true)
+			return ret, err
+		})
+	}
 	// Run the consensus preparation with the default or customized consensus engine.
-	if err := w.engine.Prepare(w.chain, header); err != nil {
+	if err := w.engine.Prepare(w.chain, header, state); err != nil {
 		log.Error("Failed to prepare header for sealing", "err", err)
 		return nil, err
 	}
 	// Could potentially happen if starting to mine in an odd state.
 	// Note genParams.coinbase can be different with header.Coinbase
 	// since clique algorithm can modify the coinbase field in header.
-	env, err := w.makeEnv(parent, header, genParams.coinbase)
+	env, err := w.makeEnv(parent, header, genParams.coinbase, state)
 	if err != nil {
 		log.Error("Failed to create sealing context", "err", err)
 		return nil, err
+	}
+	if ok {
+		b.AuraPrepare(w.chain, header, state)
 	}
 	if header.ParentBeaconRoot != nil {
 		context := core.NewEVMBlockContext(header, w.chain, nil)
