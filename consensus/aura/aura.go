@@ -53,33 +53,11 @@ import (
 
 const DEBUG_LOG_FROM = 999_999_999
 
-// RewardKind - The kind of block reward.
-// Depending on the consensus engine the allocated block reward might have
-// different semantics which could lead e.g. to different reward values.
-type RewardKind uint16
-
-const (
-	// RewardAuthor - attributed to the block author.
-	RewardAuthor RewardKind = 0
-	// RewardEmptyStep - attributed to the author(s) of empty step(s) included in the block (AuthorityRound engine).
-	RewardEmptyStep RewardKind = 1
-	// RewardExternal - attributed by an external protocol (e.g. block reward contract).
-	RewardExternal RewardKind = 2
-	// RewardUncle - attributed to the block uncle(s) with given difference.
-	RewardUncle RewardKind = 3
-)
-
 var (
 	errOlderBlockTime = errors.New("timestamp older than parent")
 
 	allowedFutureBlockTimeSeconds = int64(15) // Max seconds from current time allowed for blocks, before they're considered future blocks
 )
-
-type Reward struct {
-	Beneficiary common.Address
-	Kind        RewardKind
-	Amount      big.Int
-}
 
 /*
 Not implemented features from OS:
@@ -221,7 +199,7 @@ func (e *EpochManager) noteNewEpoch() { e.force = true }
 // zoomValidators - Zooms to the epoch after the header with the given hash. Returns true if succeeded, false otherwise.
 // It's analog of zoom_to_after function in OE, but doesn't require external locking
 // nolint
-func (e *EpochManager) zoomToAfter(chain consensus.ChainHeaderReader, er *NonTransactionalEpochReader, validators ValidatorSet, hash common.Hash, call consensus.SystemCall) (*RollingFinality, uint64, bool) {
+func (e *EpochManager) zoomToAfter(chain consensus.ChainHeaderReader, er *NonTransactionalEpochReader, validators ValidatorSet, hash common.Hash, call syscall) (*RollingFinality, uint64, bool) {
 	var lastWasParent bool
 	if e.finalityChecker.lastPushed != nil {
 		lastWasParent = *e.finalityChecker.lastPushed == hash
@@ -591,6 +569,21 @@ func (c *AuRa) VerifyHeader(chain consensus.ChainHeaderReader, header *types.Hea
 }
 
 func (c *AuRa) VerifyHeaders(chain consensus.ChainHeaderReader, headers []*types.Header) (chan<- struct{}, <-chan error) {
+	abort := make(chan struct{})
+	results := make(chan error, len(headers))
+
+	go func() {
+		for _, header := range headers {
+			err := c.VerifyHeader(chain, header)
+
+			select {
+			case <-abort:
+				return
+			case results <- err:
+			}
+		}
+	}()
+	return abort, results
 }
 
 // nolint
@@ -778,14 +771,14 @@ func (c *AuRa) VerifyUncles(chain consensus.ChainReader, header *types.Block) er
 
 // VerifySeal implements consensus.Engine, checking whether the signature contained
 // in the header satisfies the consensus protocol requirements.
-func (c *AuRa) VerifySeal(chain consensus.ChainHeaderReader, header *types.Header) error {
-	return nil
-	//snap, err := c.Snapshot(chain, header.Number.Uint64(), header.Hash(), nil)
-	//if err != nil {
-	//	return err
-	//}
-	//return c.verifySeal(chain, header, snap)
-}
+// func (c *AuRa) VerifySeal(chain consensus.ChainHeaderReader, header *types.Header) error {
+// return nil
+//snap, err := c.Snapshot(chain, header.Number.Uint64(), header.Hash(), nil)
+//if err != nil {
+//	return err
+//}
+//return c.verifySeal(chain, header, snap)
+// }
 
 // Prepare implements consensus.Engine, preparing all the consensus fields of the
 // header for running the transactions on top.
@@ -918,15 +911,15 @@ func (c *AuRa) Finalize(chain consensus.ChainHeaderReader, header *types.Header,
 
 	// check_and_lock_block -> check_epoch_end_signal (after enact)
 	if header.Number.Uint64() >= DEBUG_LOG_FROM {
-		fmt.Printf("finalize1: %d,%d\n", header.Number.Uint64(), len(receipts))
+		fmt.Printf("finalize1: %d,%%d\n", header.Number.Uint64() /*, len(receipts) */)
 	}
-	pendingTransitionProof, err := c.cfg.Validators.signalEpochEnd(header.Number.Uint64() == 0, header, receipts)
+	pendingTransitionProof, err := c.cfg.Validators.signalEpochEnd(header.Number.Uint64() == 0, header /*, receipts*/)
 	if err != nil {
 		panic(err)
 	}
 	if pendingTransitionProof != nil {
 		if header.Number.Uint64() >= DEBUG_LOG_FROM {
-			fmt.Printf("insert_pending_transition: %d,receipts=%d, lenProof=%d\n", header.Number.Uint64(), len(receipts), len(pendingTransitionProof))
+			fmt.Printf("insert_pending_transition: %d,receipts=%%d, lenProof=%d\n", header.Number.Uint64() /*, len(receipts)*/, len(pendingTransitionProof))
 		}
 		if err = c.e.PutPendingEpoch(header.Hash(), header.Number.Uint64(), pendingTransitionProof); err != nil {
 			panic(err)
@@ -1366,7 +1359,7 @@ func (c *AuRa) emptySteps(fromStep, toStep uint64, parentHash common.Hash) []Emp
 	return res
 }
 
-func (c *AuRa) CalculateRewards(_ *params.ChainConfig, header *types.Header, _ []*types.Header) ([]Reward, error) {
+func (c *AuRa) CalculateRewards(_ *params.ChainConfig, header *types.Header, _ []*types.Header) ([]consensus.Reward, error) {
 	var rewardContractAddress BlockRewardContract
 	var foundContract bool
 	for _, c := range c.cfg.BlockRewardContractTransitions {
@@ -1378,13 +1371,13 @@ func (c *AuRa) CalculateRewards(_ *params.ChainConfig, header *types.Header, _ [
 	}
 	if foundContract {
 		beneficiaries := []common.Address{header.Coinbase}
-		rewardKind := []RewardKind{RewardAuthor}
+		rewardKind := []consensus.RewardKind{consensus.RewardAuthor}
 		var amounts []*big.Int
 		beneficiaries, amounts = callBlockRewardAbi(rewardContractAddress.address, c.Syscall, beneficiaries, rewardKind)
-		rewards := make([]Reward, len(amounts))
+		rewards := make([]consensus.Reward, len(amounts))
 		for i, amount := range amounts {
 			rewards[i].Beneficiary = beneficiaries[i]
-			rewards[i].Kind = RewardExternal
+			rewards[i].Kind = consensus.RewardExternal
 			rewards[i].Amount = *amount
 		}
 		return rewards, nil
@@ -1404,11 +1397,11 @@ func (c *AuRa) CalculateRewards(_ *params.ChainConfig, header *types.Header, _ [
 		return nil, errors.New("Current block's reward is not found; this indicates a chain config error")
 	}
 
-	r := Reward{Beneficiary: header.Coinbase, Kind: RewardAuthor, Amount: *reward.amount}
-	return []Reward{r}, nil
+	r := consensus.Reward{Beneficiary: header.Coinbase, Kind: consensus.RewardAuthor, Amount: *reward.amount}
+	return []consensus.Reward{r}, nil
 }
 
-func callBlockRewardAbi(contractAddr common.Address, syscall syscall, beneficiaries []common.Address, rewardKind []RewardKind) ([]common.Address, []*big.Int) {
+func callBlockRewardAbi(contractAddr common.Address, syscall syscall, beneficiaries []common.Address, rewardKind []consensus.RewardKind) ([]common.Address, []*big.Int) {
 	castedKind := make([]uint16, len(rewardKind))
 	for i := range rewardKind {
 		castedKind[i] = uint16(rewardKind[i])

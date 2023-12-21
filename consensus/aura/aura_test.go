@@ -5,14 +5,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	libcommon "github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon-lib/kv/memdb"
+	"github.com/ethereum/go-ethereum-lib/kv/memdb"
+	libcommon "github.com/ethereum/go-ethereum/common"
 
-	"github.com/ledgerwatch/erigon/consensus/aura"
-	"github.com/ledgerwatch/erigon/core"
-	"github.com/ledgerwatch/erigon/core/types"
-	"github.com/ledgerwatch/erigon/turbo/stages"
-	"github.com/ledgerwatch/erigon/turbo/trie"
+	"github.com/ethereum/go-ethereum/consensus/aura"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/trie"
 )
 
 // Check that the first block of Gnosis Chain, which doesn't have any transactions,

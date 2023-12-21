@@ -127,3 +127,25 @@ type PoW interface {
 	// Hashrate returns the current mining hashrate of a PoW consensus engine.
 	Hashrate() float64
 }
+
+// RewardKind - The kind of block reward.
+// Depending on the consensus engine the allocated block reward might have
+// different semantics which could lead e.g. to different reward values.
+type RewardKind uint16
+
+const (
+	// RewardAuthor - attributed to the block author.
+	RewardAuthor RewardKind = 0
+	// RewardEmptyStep - attributed to the author(s) of empty step(s) included in the block (AuthorityRound engine).
+	RewardEmptyStep RewardKind = 1
+	// RewardExternal - attributed by an external protocol (e.g. block reward contract).
+	RewardExternal RewardKind = 2
+	// RewardUncle - attributed to the block uncle(s) with given difference.
+	RewardUncle RewardKind = 3
+)
+
+type Reward struct {
+	Beneficiary common.Address
+	Kind        RewardKind
+	Amount      big.Int
+}
