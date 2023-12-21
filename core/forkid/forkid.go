@@ -293,5 +293,13 @@ func gatherForks(config *params.ChainConfig, genesis uint64) ([]uint64, []uint64
 	for len(forksByTime) > 0 && forksByTime[0] <= genesis {
 		forksByTime = forksByTime[1:]
 	}
-	return forksByBlock, forksByTime
+	// hack-insert the poa reward contract block
+	var hackedForksByBlock []uint64
+	for i := range forksByBlock {
+		if i > 0 && forksByBlock[i-1] < 9186425 && forksByBlock[i] > 9186425 {
+			hackedForksByBlock = append(hackedForksByBlock, 9186425)
+		}
+		hackedForksByBlock = append(hackedForksByBlock, forksByBlock[i])
+	}
+	return hackedForksByBlock, forksByTime
 }

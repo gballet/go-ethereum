@@ -23,6 +23,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/consensus/aura"
 	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/clique"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
@@ -165,6 +166,13 @@ func CreateConsensusEngine(config *params.ChainConfig, db ethdb.Database) (conse
 	// Wrap previously supported consensus engines into their post-merge counterpart
 	if config.Clique != nil {
 		return beacon.New(clique.New(config.Clique, db)), nil
+	}
+	if config.Aura != nil {
+		a, err := aura.NewAuRa(config.Aura, db)
+		if err != nil {
+			return nil, err
+		}
+		return beacon.New(a), nil
 	}
 	return beacon.New(ethash.NewFaker()), nil
 }
