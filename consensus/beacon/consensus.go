@@ -333,23 +333,23 @@ func (beacon *Beacon) verifyHeaders(chain consensus.ChainHeaderReader, headers [
 
 // Prepare implements consensus.Engine, initializing the difficulty field of a
 // header to conform to the beacon protocol. The changes are done inline.
-func (beacon *Beacon) Prepare(chain consensus.ChainHeaderReader, header *types.Header) error {
+func (beacon *Beacon) Prepare(chain consensus.ChainHeaderReader, header *types.Header, statedb *state.StateDB) error {
 	// Transition isn't triggered yet, use the legacy rules for preparation.
 	reached, err := IsTTDReached(chain, header.ParentHash, header.Number.Uint64()-1)
 	if err != nil {
 		return err
 	}
 	if !reached {
-		return beacon.ethone.Prepare(chain, header)
+		return beacon.ethone.Prepare(chain, header, statedb)
 	}
 	header.Difficulty = beaconDifficulty
 	return nil
 }
 
 // Finalize implements consensus.Engine and processes withdrawals on top.
-func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal) {
+func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal, receipts []*types.Receipt) {
 	if !beacon.IsPoSHeader(header) {
-		beacon.ethone.Finalize(chain, header, state, txs, uncles, nil)
+		beacon.ethone.Finalize(chain, header, state, txs, uncles, nil, receipts)
 		return
 	}
 	// Withdrawals processing.
@@ -380,7 +380,7 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 		}
 	}
 	// Finalize and assemble the block.
-	beacon.Finalize(chain, header, state, txs, uncles, withdrawals)
+	beacon.Finalize(chain, header, state, txs, uncles, withdrawals, receipts)
 
 	// Assign the final state root to header.
 	header.Root = state.IntermediateRoot(true)

@@ -121,7 +121,7 @@ type ValidatorSet interface {
 	// that doesn't require finality.
 	//
 	// `first` is true if this is the first block in the set.
-	signalEpochEnd(firstInEpoch bool, header *types.Header /*, receipts types.Receipts*/) ([]byte, error)
+	signalEpochEnd(firstInEpoch bool, header *types.Header, receipts types.Receipts) ([]byte, error)
 	/*
 	   // Whether the given block signals the end of an epoch, but change won't take effect
 	   // until finality.

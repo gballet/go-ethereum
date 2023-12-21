@@ -704,15 +704,7 @@ func (w *worker) resultLoop() {
 }
 
 // makeEnv creates a new environment for the sealing block.
-func (w *worker) makeEnv(parent *types.Header, header *types.Header, coinbase common.Address) (*environment, error) {
-	// Retrieve the parent state to execute on top and start a prefetcher for
-	// the miner to speed block sealing up a bit.
-	state, err := w.chain.StateAt(parent.Root)
-	if err != nil {
-		return nil, err
-	}
-	state.StartPrefetcher("miner")
-
+func (w *worker) makeEnv(parent *types.Header, header *types.Header, coinbase common.Address, state *state.StateDB) (*environment, error) {
 	// Note the passed coinbase may be different with header.Coinbase.
 	env := &environment{
 		signer:   types.MakeSigner(w.chainConfig, header.Number, header.Time),
@@ -960,15 +952,23 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 		header.ExcessBlobGas = &excessBlobGas
 		header.ParentBeaconRoot = genParams.beaconRoot
 	}
+	// Retrieve the parent state to execute on top and start a prefetcher for
+	// the miner to speed block sealing up a bit.
+	state, err := w.chain.StateAt(parent.Root)
+	if err != nil {
+		return nil, err
+	}
+	state.StartPrefetcher("miner")
+
 	// Run the consensus preparation with the default or customized consensus engine.
-	if err := w.engine.Prepare(w.chain, header); err != nil {
+	if err := w.engine.Prepare(w.chain, header, state); err != nil {
 		log.Error("Failed to prepare header for sealing", "err", err)
 		return nil, err
 	}
 	// Could potentially happen if starting to mine in an odd state.
 	// Note genParams.coinbase can be different with header.Coinbase
 	// since clique algorithm can modify the coinbase field in header.
-	env, err := w.makeEnv(parent, header, genParams.coinbase)
+	env, err := w.makeEnv(parent, header, genParams.coinbase, state)
 	if err != nil {
 		log.Error("Failed to create sealing context", "err", err)
 		return nil, err

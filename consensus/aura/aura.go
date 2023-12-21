@@ -28,12 +28,10 @@ import (
 	"sync/atomic"
 	"time"
 
-	// "github.com/ethereum/erigon-lib/chain"
 	// "github.com/ethereum/erigon-lib/kv"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/aura/contracts"
 	"github.com/ethereum/go-ethereum/consensus/clique"
@@ -48,6 +46,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
+	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/holiman/uint256"
 )
 
@@ -309,7 +308,10 @@ func NewGasLimitOverride() *GasLimitOverride {
 	// The number of recent block hashes for which the gas limit override is memoized.
 	const GasLimitOverrideCacheCapacity = 10
 
-	cache := lru.NewCache[common.Hash, *uint256.Int](GasLimitOverrideCacheCapacity)
+	cache, err := lru.New[common.Hash, *uint256.Int](GasLimitOverrideCacheCapacity)
+	if err != nil {
+		panic("error creating prefetching cache for blocks")
+	}
 	return &GasLimitOverride{cache: cache}
 }
 
@@ -782,7 +784,7 @@ func (c *AuRa) VerifyUncles(chain consensus.ChainReader, header *types.Block) er
 
 // Prepare implements consensus.Engine, preparing all the consensus fields of the
 // header for running the transactions on top.
-func (c *AuRa) Prepare(chain consensus.ChainHeaderReader, header *types.Header) error {
+func (c *AuRa) Prepare(chain consensus.ChainHeaderReader, header *types.Header, statedb *state.StateDB) error {
 	// return nil
 	/// If the block isn't a checkpoint, cast a random vote (good enough for now)
 	//header.Coinbase = common.Address{}
@@ -852,7 +854,8 @@ func (c *AuRa) Prepare(chain consensus.ChainHeaderReader, header *types.Header) 
 	// func (c *AuRa) Initialize(config *params.ChainConfig, chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []types.Transaction, uncles []*types.Header, syscall consensus.SystemCall) {
 	blockNum := header.Number.Uint64()
 	for address, rewrittenCode := range c.cfg.RewriteBytecode[blockNum] {
-		state.SetCode(address, rewrittenCode)
+		fmt.Println("for future debug: rewriting code", blockNum, address)
+		statedb.SetCode(address, rewrittenCode)
 	}
 
 	c.certifierLock.Lock()
@@ -904,22 +907,22 @@ func (c *AuRa) applyRewards(header *types.Header, state *state.StateDB) error {
 }
 
 // word `signal epoch` == word `pending epoch`
-func (c *AuRa) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal) {
+func (c *AuRa) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal, receipts []*types.Receipt) {
 	if err := c.applyRewards(header, state); err != nil {
 		panic(err)
 	}
 
 	// check_and_lock_block -> check_epoch_end_signal (after enact)
 	if header.Number.Uint64() >= DEBUG_LOG_FROM {
-		fmt.Printf("finalize1: %d,%%d\n", header.Number.Uint64() /*, len(receipts) */)
+		fmt.Printf("finalize1: %d,%d\n", header.Number.Uint64(), len(receipts))
 	}
-	pendingTransitionProof, err := c.cfg.Validators.signalEpochEnd(header.Number.Uint64() == 0, header /*, receipts*/)
+	pendingTransitionProof, err := c.cfg.Validators.signalEpochEnd(header.Number.Uint64() == 0, header, receipts)
 	if err != nil {
 		panic(err)
 	}
 	if pendingTransitionProof != nil {
 		if header.Number.Uint64() >= DEBUG_LOG_FROM {
-			fmt.Printf("insert_pending_transition: %d,receipts=%%d, lenProof=%d\n", header.Number.Uint64() /*, len(receipts)*/, len(pendingTransitionProof))
+			fmt.Printf("insert_pending_transition: %d,receipts=%d, lenProof=%d\n", header.Number.Uint64(), len(receipts), len(pendingTransitionProof))
 		}
 		if err = c.e.PutPendingEpoch(header.Hash(), header.Number.Uint64(), pendingTransitionProof); err != nil {
 			panic(err)

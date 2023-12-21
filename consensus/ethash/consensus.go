@@ -490,7 +490,7 @@ var DynamicDifficultyCalculator = makeDifficultyCalculator
 
 // Prepare implements consensus.Engine, initializing the difficulty field of a
 // header to conform to the ethash protocol. The changes are done inline.
-func (ethash *Ethash) Prepare(chain consensus.ChainHeaderReader, header *types.Header) error {
+func (ethash *Ethash) Prepare(chain consensus.ChainHeaderReader, header *types.Header, _ *state.StateDB) error {
 	parent := chain.GetHeader(header.ParentHash, header.Number.Uint64()-1)
 	if parent == nil {
 		return consensus.ErrUnknownAncestor
@@ -500,7 +500,7 @@ func (ethash *Ethash) Prepare(chain consensus.ChainHeaderReader, header *types.H
 }
 
 // Finalize implements consensus.Engine, accumulating the block and uncle rewards.
-func (ethash *Ethash) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal) {
+func (ethash *Ethash) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal, _ []*types.Receipt) {
 	// Accumulate any block and uncle rewards
 	accumulateRewards(chain.Config(), state, header, uncles)
 }
@@ -512,7 +512,7 @@ func (ethash *Ethash) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 		return nil, errors.New("ethash does not support withdrawals")
 	}
 	// Finalize block
-	ethash.Finalize(chain, header, state, txs, uncles, nil)
+	ethash.Finalize(chain, header, state, txs, uncles, nil, receipts)
 
 	// Assign the final state root to header.
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))

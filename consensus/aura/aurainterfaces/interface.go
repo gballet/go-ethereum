@@ -9,7 +9,7 @@ import (
 
 // see openethereum/crates/ethcore/res/contracts/block_reward.json
 type BlockRewardABI interface {
-	Reward(benefactors []common.Address, kind []aura.RewardKind) ([]common.Address, []*big.Int, error)
+	Reward(benefactors []common.Address, kind []consensus.RewardKind) ([]common.Address, []*big.Int, error)
 }
 
 type abiDecoder func([]byte, interface{}) error
