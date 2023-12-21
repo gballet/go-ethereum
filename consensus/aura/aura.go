@@ -1043,7 +1043,7 @@ func allHeadersUntil(chain consensus.ChainHeaderReader, from *types.Header, to c
 
 // FinalizeAndAssemble implements consensus.Engine
 func (c *AuRa) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt, withdrawals []*types.Withdrawal) (*types.Block, error) {
-	c.Finalize(chain, header, state, txs, uncles, withdrawals)
+	c.Finalize(chain, header, state, txs, uncles, withdrawals, receipts)
 
 	// Assemble and return the final block for sealing
 	return types.NewBlockWithWithdrawals(header, txs, uncles, receipts, withdrawals, trie.NewStackTrie(nil)), nil
