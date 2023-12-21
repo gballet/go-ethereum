@@ -1056,9 +1056,21 @@ func (c *AuRa) IsServiceTransaction(sender common.Address) bool {
 	return false
 }
 
+func SafeClose(ch chan struct{}) {
+	if ch == nil {
+		return
+	}
+	select {
+	case <-ch:
+		// Channel was already closed
+	default:
+		close(ch)
+	}
+}
+
 // Close implements consensus.Engine. It's a noop for clique as there are no background threads.
 func (c *AuRa) Close() error {
-	common.SafeClose(c.exitCh)
+	SafeClose(c.exitCh)
 	return nil
 }
 
