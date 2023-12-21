@@ -81,14 +81,14 @@ type Engine interface {
 
 	// Prepare initializes the consensus fields of a block header according to the
 	// rules of a particular engine. The changes are executed inline.
-	Prepare(chain ChainHeaderReader, header *types.Header) error
+	Prepare(chain ChainHeaderReader, header *types.Header, state *state.StateDB) error
 
 	// Finalize runs any post-transaction state modifications (e.g. block rewards
 	// or process withdrawals) but does not assemble the block.
 	//
 	// Note: The state database might be updated to reflect any consensus rules
 	// that happen at finalization (e.g. block rewards).
-	Finalize(chain ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body)
+	Finalize(chain ChainHeaderReader, header *types.Header, state *state.StateDB, body *types.Body, receipts []*types.Receipt)
 
 	// FinalizeAndAssemble runs any post-transaction state modifications (e.g. block
 	// rewards or process withdrawals) and assembles the final block.
@@ -116,4 +116,26 @@ type Engine interface {
 
 	// Close terminates any background threads maintained by the consensus engine.
 	Close() error
+}
+
+// RewardKind - The kind of block reward.
+// Depending on the consensus engine the allocated block reward might have
+// different semantics which could lead e.g. to different reward values.
+type RewardKind uint16
+
+const (
+	// RewardAuthor - attributed to the block author.
+	RewardAuthor RewardKind = 0
+	// RewardEmptyStep - attributed to the author(s) of empty step(s) included in the block (AuthorityRound engine).
+	RewardEmptyStep RewardKind = 1
+	// RewardExternal - attributed by an external protocol (e.g. block reward contract).
+	RewardExternal RewardKind = 2
+	// RewardUncle - attributed to the block uncle(s) with given difference.
+	RewardUncle RewardKind = 3
+)
+
+type Reward struct {
+	Beneficiary common.Address
+	Kind        RewardKind
+	Amount      big.Int
 }

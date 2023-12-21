@@ -121,6 +121,9 @@ var (
 	configPrefix   = []byte("ethereum-config-")  // config prefix for the db
 	genesisPrefix  = []byte("ethereum-genesis-") // genesis state prefix for the db
 
+	EpochPrefix        = []byte("aura-epoch-")
+	PendingEpochPrefix = []byte("aura-pending-epoch-")
+
 	// BloomBitsIndexPrefix is the data table of a chain indexer to track its progress
 	BloomBitsIndexPrefix = []byte("iB")
 
@@ -338,4 +341,12 @@ func ResolveStorageTrieNode(key []byte) (bool, common.Hash, []byte) {
 func IsStorageTrieNode(key []byte) bool {
 	ok, _, _ := ResolveStorageTrieNode(key)
 	return ok
+}
+
+func epochKey(key []byte) []byte {
+	return append(EpochPrefix, key...)
+}
+
+func pendingEpochKey(key []byte) []byte {
+	return append(PendingEpochPrefix, key...)
 }

@@ -19,16 +19,20 @@ package core
 import (
 	"errors"
 	"fmt"
+	"math"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/consensus/aura"
+	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/holiman/uint256"
 )
 
 // StateProcessor is a basic Processor, which takes care of transitioning
@@ -77,6 +81,35 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		vmenv   = vm.NewEVM(context, vm.TxContext{}, statedb, p.config, cfg)
 		signer  = types.MakeSigner(p.config, header.Number, header.Time)
 	)
+	b, ok := p.engine.(*beacon.Beacon)
+	if ok {
+		b.SetAuraSyscall(func(contractaddr common.Address, data []byte) ([]byte, error) {
+			sysaddr := common.HexToAddress("fffffffffffffffffffffffffffffffffffffffe")
+			msg := &Message{
+				To:                &contractaddr,
+				From:              sysaddr,
+				Nonce:             0,
+				Value:             big.NewInt(0),
+				GasLimit:          math.MaxUint64,
+				GasPrice:          big.NewInt(0),
+				GasFeeCap:         nil,
+				GasTipCap:         nil,
+				Data:              data,
+				AccessList:        nil,
+				BlobHashes:        nil,
+				SkipAccountChecks: false,
+			}
+			txctx := NewEVMTxContext(msg)
+			evm := vm.NewEVM(context, txctx, statedb, p.bc.chainConfig, vm.Config{ /*Debug: true, Tracer: logger.NewJSONLogger(nil, os.Stdout)*/ })
+			ret, _, err := evm.Call(vm.AccountRef(sysaddr), contractaddr, data, math.MaxUint64, new(uint256.Int))
+			if err != nil {
+				panic(err)
+			}
+			statedb.Finalise(true)
+			return ret, err
+		})
+	}
+	b.AuraPrepare(p.bc, block.Header(), statedb)
 	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
 		ProcessBeaconBlockRoot(*beaconRoot, vmenv, statedb)
 	}
@@ -88,7 +121,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		}
 		statedb.SetTxContext(tx.Hash(), i)
 
-		receipt, err := ApplyTransactionWithEVM(msg, p.config, gp, statedb, blockNumber, blockHash, tx, usedGas, vmenv)
+		receipt, err := ApplyTransactionWithEVM(msg, p.config, gp, statedb, blockNumber, blockHash, tx, usedGas, vmenv, p.engine)
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
@@ -101,7 +134,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		return nil, nil, 0, errors.New("withdrawals before shanghai")
 	}
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
-	p.engine.Finalize(p.bc, header, statedb, block.Body())
+	p.engine.Finalize(p.bc, header, statedb, block.Body(), receipts)
 
 	return receipts, allLogs, *usedGas, nil
 }
@@ -109,13 +142,34 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 // ApplyTransactionWithEVM attempts to apply a transaction to the given state database
 // and uses the input parameters for its environment similar to ApplyTransaction. However,
 // this method takes an already created EVM instance as input.
-func ApplyTransactionWithEVM(msg *Message, config *params.ChainConfig, gp *GasPool, statedb *state.StateDB, blockNumber *big.Int, blockHash common.Hash, tx *types.Transaction, usedGas *uint64, evm *vm.EVM) (receipt *types.Receipt, err error) {
+func ApplyTransactionWithEVM(msg *Message, config *params.ChainConfig, gp *GasPool, statedb *state.StateDB, blockNumber *big.Int, blockHash common.Hash, tx *types.Transaction, usedGas *uint64, evm *vm.EVM, engine consensus.Engine) (receipt *types.Receipt, err error) {
 	if evm.Config.Tracer != nil && evm.Config.Tracer.OnTxStart != nil {
 		evm.Config.Tracer.OnTxStart(evm.GetVMContext(), tx, msg.From)
 		if evm.Config.Tracer.OnTxEnd != nil {
 			defer func() {
 				evm.Config.Tracer.OnTxEnd(receipt, err)
 			}()
+		}
+	}
+	if config.IsLondon(blockNumber) {
+		switch engine := engine.(type) {
+		case *beacon.Beacon:
+			if a, ok := engine.InnerEngine().(*aura.AuRa); ok && msg.GasFeeCap.BitLen() == 0 {
+				if a.IsServiceTransaction(msg.From) {
+					msg.SetFree()
+				}
+			}
+		case *aura.AuRa:
+			if msg.GasFeeCap.BitLen() == 0 {
+				if engine.IsServiceTransaction(msg.From) {
+					msg.SetFree()
+				}
+			}
+		}
+		if a, ok := engine.(*aura.AuRa); engine != nil && msg.GasFeeCap.BitLen() == 0 && ok {
+			if a.IsServiceTransaction(msg.From) {
+				msg.SetFree()
+			}
 		}
 	}
 	// Create a new context to be used in the EVM environment.
@@ -180,7 +234,7 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 	blockContext := NewEVMBlockContext(header, bc, author)
 	txContext := NewEVMTxContext(msg)
 	vmenv := vm.NewEVM(blockContext, txContext, statedb, config, cfg)
-	return ApplyTransactionWithEVM(msg, config, gp, statedb, header.Number, header.Hash(), tx, usedGas, vmenv)
+	return ApplyTransactionWithEVM(msg, config, gp, statedb, header.Number, header.Hash(), tx, usedGas, vmenv, nil)
 }
 
 // ProcessBeaconBlockRoot applies the EIP-4788 system call to the beacon block root

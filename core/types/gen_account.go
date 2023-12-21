@@ -17,13 +17,15 @@ var _ = (*accountMarshaling)(nil)
 // MarshalJSON marshals as JSON.
 func (a Account) MarshalJSON() ([]byte, error) {
 	type Account struct {
-		Code       hexutil.Bytes               `json:"code,omitempty"`
-		Storage    map[storageJSON]storageJSON `json:"storage,omitempty"`
-		Balance    *math.HexOrDecimal256       `json:"balance" gencodec:"required"`
-		Nonce      math.HexOrDecimal64         `json:"nonce,omitempty"`
-		PrivateKey hexutil.Bytes               `json:"secretKey,omitempty"`
+		Constructor hexutil.Bytes               `json:"constructor,omitempty"`
+		Code        hexutil.Bytes               `json:"code,omitempty"`
+		Storage     map[storageJSON]storageJSON `json:"storage,omitempty"`
+		Balance     *math.HexOrDecimal256       `json:"balance" gencodec:"required"`
+		Nonce       math.HexOrDecimal64         `json:"nonce,omitempty"`
+		PrivateKey  hexutil.Bytes               `json:"secretKey,omitempty"`
 	}
 	var enc Account
+	enc.Constructor = a.Constructor
 	enc.Code = a.Code
 	if a.Storage != nil {
 		enc.Storage = make(map[storageJSON]storageJSON, len(a.Storage))
@@ -40,15 +42,19 @@ func (a Account) MarshalJSON() ([]byte, error) {
 // UnmarshalJSON unmarshals from JSON.
 func (a *Account) UnmarshalJSON(input []byte) error {
 	type Account struct {
-		Code       *hexutil.Bytes              `json:"code,omitempty"`
-		Storage    map[storageJSON]storageJSON `json:"storage,omitempty"`
-		Balance    *math.HexOrDecimal256       `json:"balance" gencodec:"required"`
-		Nonce      *math.HexOrDecimal64        `json:"nonce,omitempty"`
-		PrivateKey *hexutil.Bytes              `json:"secretKey,omitempty"`
+		Constructor *hexutil.Bytes              `json:"constructor,omitempty"`
+		Code        *hexutil.Bytes              `json:"code,omitempty"`
+		Storage     map[storageJSON]storageJSON `json:"storage,omitempty"`
+		Balance     *math.HexOrDecimal256       `json:"balance" gencodec:"required"`
+		Nonce       *math.HexOrDecimal64        `json:"nonce,omitempty"`
+		PrivateKey  *hexutil.Bytes              `json:"secretKey,omitempty"`
 	}
 	var dec Account
 	if err := json.Unmarshal(input, &dec); err != nil {
 		return err
+	}
+	if dec.Constructor != nil {
+		a.Constructor = *dec.Constructor
 	}
 	if dec.Code != nil {
 		a.Code = *dec.Code

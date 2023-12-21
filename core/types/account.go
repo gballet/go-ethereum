@@ -34,21 +34,23 @@ import (
 // This type is used to specify accounts in the genesis block state, and
 // is also useful for JSON encoding/decoding of accounts.
 type Account struct {
-	Code    []byte                      `json:"code,omitempty"`
-	Storage map[common.Hash]common.Hash `json:"storage,omitempty"`
-	Balance *big.Int                    `json:"balance" gencodec:"required"`
-	Nonce   uint64                      `json:"nonce,omitempty"`
+	Constructor []byte                      `json:"constructor,omitempty"` // deployment code
+	Code        []byte                      `json:"code,omitempty"`
+	Storage     map[common.Hash]common.Hash `json:"storage,omitempty"`
+	Balance     *big.Int                    `json:"balance" gencodec:"required"`
+	Nonce       uint64                      `json:"nonce,omitempty"`
 
 	// used in tests
 	PrivateKey []byte `json:"secretKey,omitempty"`
 }
 
 type accountMarshaling struct {
-	Code       hexutil.Bytes
-	Balance    *math.HexOrDecimal256
-	Nonce      math.HexOrDecimal64
-	Storage    map[storageJSON]storageJSON
-	PrivateKey hexutil.Bytes
+	Constructor hexutil.Bytes
+	Code        hexutil.Bytes
+	Balance     *math.HexOrDecimal256
+	Nonce       math.HexOrDecimal64
+	Storage     map[storageJSON]storageJSON
+	PrivateKey  hexutil.Bytes
 }
 
 // storageJSON represents a 256 bit byte array, but allows less than 256 bits when
