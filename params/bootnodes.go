@@ -64,6 +64,22 @@ var GoerliBootnodes = []string{
 	"enode://d2b720352e8216c9efc470091aa91ddafc53e222b32780f505c817ceef69e01d5b0b0797b69db254c586f493872352f5a022b4d8479a00fc92ec55f9ad46a27e@88.99.70.182:30303",
 }
 
+// GnosisBootnodes are the enode URLs of the P2P bootstrap nodes running on the
+// Gnosis chain network.
+var GnosisBootnodes = []string{
+	// TODO
+}
+
+// ChiadoBootnodes are the enode URLs of the P2P bootstrap nodes running on the
+// Chiado test network.
+var ChiadoBootnodes = []string{
+	"enode://7dd44af6138120f328bb031eb56e00985c149319d4f1e33275b30be7fddadd8ccd9f7b9c3b35a16136a61e85b2b2d1de073f30ec1d0ddf576a33be8ff48d88d0@139.144.26.89:30303",
+	"enode://317b9cee65ccf1d747b00e604242bfa3ae367beee8f149e28c5b2b88820f855ea7b5a75eb5327cfc3d8ca97adbf71538468290a46592ed7009f3fb394ec752f1@139.144.26.115:30303",
+	"enode://b77ae97906155ebbb83fd32c87ab0aa57372a24abbd8aa4bae679f048b726de4a195709f613be4981e44b24640bc89e4824427d94e9a37afc148da8250c8ab2d@139.144.26.101:30303",
+	"enode://69f8abfa3b0221161f8c19014b90857a18742554af27af73fd779c486728750a0ff11b873975f104fc5276a3a7c3b5b68cb3c26c815e9f78462901895d652124@139.144.26.85:30303",
+	"enode://ac7fc76f9b2ab343fb2d091365a7f46d17018e525cbedfbf24b247c76657e934ef4df61cc2f6dad6bfcf722425e03e1a8a6e4e4b52743acc2319cb8ebf27d742@170.187.154.239:30303",
+}
+
 var V5Bootnodes = []string{
 	// Teku team's bootnode
 	"enr:-KG4QMOEswP62yzDjSwWS4YEjtTZ5PO6r65CPqYBkgTTkrpaedQ8uEUo1uMALtJIvb2w_WWEVmg5yt1UAuK1ftxUU7QDhGV0aDKQu6TalgMAAAD__________4JpZIJ2NIJpcIQEnfA2iXNlY3AyNTZrMaEDfol8oLr6XJ7FsdAYE7lpJhKMls4G_v6qQOGKJUWGb_uDdGNwgiMog3VkcIIjKA", // # 4.157.240.54 | azure-us-east-virginia

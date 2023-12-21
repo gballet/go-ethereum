@@ -35,7 +35,8 @@ var (
 func newUint64(val uint64) *uint64 { return &val }
 
 var (
-	MainnetTerminalTotalDifficulty, _ = new(big.Int).SetString("58_750_000_000_000_000_000_000", 0)
+	MainnetTerminalTotalDifficulty, _     = new(big.Int).SetString("58_750_000_000_000_000_000_000", 0)
+	GnosisChainTerminalTotalDifficulty, _ = new(big.Int).SetString("8_626_000_110_427_540_000_000_000_000_000_000_000_000_000_000", 0)
 
 	// MainnetChainConfig is the chain parameters to run a node on the main network.
 	MainnetChainConfig = &ChainConfig{
@@ -366,6 +367,7 @@ type ChainConfig struct {
 	// Various consensus engines
 	Ethash *EthashConfig `json:"ethash,omitempty"`
 	Clique *CliqueConfig `json:"clique,omitempty"`
+	Aura   *AuRaConfig   `json:"aura,omitempty"`
 }
 
 // EthashConfig is the consensus engine configs for proof-of-work based sealing.
@@ -413,6 +415,12 @@ func (c *ChainConfig) Description() string {
 			banner += "Consensus: Beacon (proof-of-stake), merging from Clique (proof-of-authority)\n"
 		} else {
 			banner += "Consensus: Beacon (proof-of-stake), merged from Clique (proof-of-authority)\n"
+		}
+	case c.Aura != nil:
+		if c.TerminalTotalDifficulty == nil {
+			banner += "Consensus: Aura (proof-of-authority)\n"
+		} else {
+			banner += "Consensus: Beacon (proof-of-stake), merged from Aura (proof-of-authority)\n"
 		}
 	default:
 		banner += "Consensus: unknown\n"

@@ -18,6 +18,7 @@ package core
 
 import (
 	"bytes"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -42,6 +43,7 @@ import (
 )
 
 //go:generate go run github.com/fjl/gencodec -type Genesis -field-override genesisSpecMarshaling -out gen_genesis.go
+//go:generate go run github.com/fjl/gencodec -type GenesisAccount -field-override genesisAccountMarshaling -out gen_genesis_account.go
 
 var errGenesisNoConfig = errors.New("genesis has no chain configuration")
 
@@ -62,7 +64,7 @@ type Genesis struct {
 	Difficulty *big.Int            `json:"difficulty" gencodec:"required"`
 	Mixhash    common.Hash         `json:"mixHash"`
 	Coinbase   common.Address      `json:"coinbase"`
-	Alloc      types.GenesisAlloc  `json:"alloc"      gencodec:"required"`
+	Alloc      GenesisAlloc        `json:"alloc"      gencodec:"required"`
 
 	// These fields are used for consensus tests. Please don't use them
 	// in actual genesis blocks.
@@ -72,6 +74,7 @@ type Genesis struct {
 	BaseFee       *big.Int    `json:"baseFeePerGas"` // EIP-1559
 	ExcessBlobGas *uint64     `json:"excessBlobGas"` // EIP-4844
 	BlobGasUsed   *uint64     `json:"blobGasUsed"`   // EIP-4844
+	AuRaSeal      []byte      `json:"auraSeal,omitempty"`
 }
 
 func ReadGenesis(db ethdb.Database) (*Genesis, error) {
@@ -366,12 +369,14 @@ func (g *Genesis) configOrDefault(ghash common.Hash) *params.ChainConfig {
 		return g.Config
 	case ghash == params.MainnetGenesisHash:
 		return params.MainnetChainConfig
-	case ghash == params.HoleskyGenesisHash:
-		return params.HoleskyChainConfig
 	case ghash == params.SepoliaGenesisHash:
 		return params.SepoliaChainConfig
 	case ghash == params.GoerliGenesisHash:
 		return params.GoerliChainConfig
+	case ghash == params.GnosisGenesisHash:
+		return params.GnosisChainConfig
+	case ghash == params.ChiadoGenesisHash:
+		return params.ChiadoChainConfig
 	default:
 		return params.AllEthashProtocolChanges
 	}
@@ -401,6 +406,7 @@ func (g *Genesis) ToBlock() *types.Block {
 		Difficulty: g.Difficulty,
 		MixDigest:  g.Mixhash,
 		Coinbase:   g.Coinbase,
+		Signature:  g.AuRaSeal,
 		Root:       root,
 	}
 	if g.GasLimit == 0 {
@@ -532,6 +538,46 @@ func DefaultHoleskyGenesisBlock() *Genesis {
 		Difficulty: big.NewInt(0x01),
 		Timestamp:  1695902100,
 		Alloc:      decodePrealloc(holeskyAllocData),
+	}
+}
+
+//go:embed allocs
+var allocs embed.FS
+
+func readPrealloc(filename string) GenesisAlloc {
+	f, err := allocs.Open(filename)
+	if err != nil {
+		panic(fmt.Sprintf("Could not open genesis preallocation for %s: %v", filename, err))
+	}
+	defer f.Close()
+	decoder := json.NewDecoder(f)
+	ga := make(GenesisAlloc)
+	err = decoder.Decode(&ga)
+	if err != nil {
+		panic(fmt.Sprintf("Could not parse genesis preallocation for %s: %v", filename, err))
+	}
+	return ga
+}
+
+func DefaultGnosisGenesisBlock() *Genesis {
+	return &Genesis{
+		Config:     params.GnosisChainConfig,
+		Timestamp:  0,
+		AuRaSeal:   common.FromHex("0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+		GasLimit:   0x989680,
+		Difficulty: big.NewInt(0x20000),
+		Alloc:      readPrealloc("allocs/gnosis.json"),
+	}
+}
+
+func DefaultChiadoGenesisBlock() *Genesis {
+	return &Genesis{
+		Config:     params.ChiadoChainConfig,
+		Timestamp:  0,
+		AuRaSeal:   common.FromHex("0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"),
+		GasLimit:   0x989680,
+		Difficulty: big.NewInt(0x20000),
+		Alloc:      readPrealloc("allocs/chiado.json"),
 	}
 }
 

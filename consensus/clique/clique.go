@@ -512,7 +512,7 @@ func (c *Clique) verifySeal(snap *Snapshot, header *types.Header, parents []*typ
 
 // Prepare implements consensus.Engine, preparing all the consensus fields of the
 // header for running the transactions on top.
-func (c *Clique) Prepare(chain consensus.ChainHeaderReader, header *types.Header) error {
+func (c *Clique) Prepare(chain consensus.ChainHeaderReader, header *types.Header, _ *state.StateDB) error {
 	// If the block isn't a checkpoint, cast a random vote (good enough for now)
 	header.Coinbase = common.Address{}
 	header.Nonce = types.BlockNonce{}
@@ -580,7 +580,7 @@ func (c *Clique) Prepare(chain consensus.ChainHeaderReader, header *types.Header
 
 // Finalize implements consensus.Engine. There is no post-transaction
 // consensus rules in clique, do nothing here.
-func (c *Clique) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal) {
+func (c *Clique) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal, _ []*types.Receipt) {
 	// No block rewards in PoA, so the state remains as is
 }
 
@@ -591,7 +591,7 @@ func (c *Clique) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *
 		return nil, errors.New("clique does not support withdrawals")
 	}
 	// Finalize block
-	c.Finalize(chain, header, state, txs, uncles, nil)
+	c.Finalize(chain, header, state, txs, uncles, nil, receipts)
 
 	// Assign the final state root to header.
 	header.Root = state.IntermediateRoot(chain.Config().IsEIP158(header.Number))

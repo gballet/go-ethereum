@@ -23,6 +23,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/consensus/aura"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -30,7 +31,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
-	"github.com/holiman/uint256"
 )
 
 // Proof-of-stake protocol constants.
@@ -334,31 +334,38 @@ func (beacon *Beacon) verifyHeaders(chain consensus.ChainHeaderReader, headers [
 
 // Prepare implements consensus.Engine, initializing the difficulty field of a
 // header to conform to the beacon protocol. The changes are done inline.
-func (beacon *Beacon) Prepare(chain consensus.ChainHeaderReader, header *types.Header) error {
+func (beacon *Beacon) Prepare(chain consensus.ChainHeaderReader, header *types.Header, statedb *state.StateDB) error {
 	// Transition isn't triggered yet, use the legacy rules for preparation.
 	reached, err := IsTTDReached(chain, header.ParentHash, header.Number.Uint64()-1)
 	if err != nil {
 		return err
 	}
 	if !reached {
-		return beacon.ethone.Prepare(chain, header)
+		return beacon.ethone.Prepare(chain, header, statedb)
 	}
 	header.Difficulty = beaconDifficulty
 	return nil
 }
 
 // Finalize implements consensus.Engine and processes withdrawals on top.
-func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal) {
+func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal, receipts []*types.Receipt) {
 	if !beacon.IsPoSHeader(header) {
-		beacon.ethone.Finalize(chain, header, state, txs, uncles, nil)
-		return
+		beacon.ethone.Finalize(chain, header, state, txs, uncles, nil, receipts)
+	} else if a, ok := beacon.ethone.(*aura.AuRa); ok {
+		// GNOSIS: if the network has merged and this was an ex-AuRa
+		// network, still call the reward contract.
+		if err := a.ApplyRewards(header, state); err != nil {
+			panic(fmt.Sprintf("error applying reward %v", err))
+		}
 	}
+
 	// Withdrawals processing.
-	for _, w := range withdrawals {
-		// Convert amount from gwei to wei.
-		amount := new(uint256.Int).SetUint64(w.Amount)
-		amount = amount.Mul(amount, uint256.NewInt(params.GWei))
-		state.AddBalance(w.Address, amount)
+	if withdrawals != nil {
+		if auraEngine, ok := beacon.ethone.(*aura.AuRa); ok {
+			if err := auraEngine.ExecuteSystemWithdrawals(withdrawals); err != nil {
+				panic(err)
+			}
+		}
 	}
 	// No block reward which is issued by consensus layer instead.
 }
@@ -381,7 +388,7 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 		}
 	}
 	// Finalize and assemble the block.
-	beacon.Finalize(chain, header, state, txs, uncles, withdrawals)
+	beacon.Finalize(chain, header, state, txs, uncles, withdrawals, receipts)
 
 	// Assign the final state root to header.
 	header.Root = state.IntermediateRoot(true)
@@ -436,10 +443,9 @@ func (beacon *Beacon) Close() error {
 // This function is not suitable for a part of APIs like Prepare or CalcDifficulty
 // because the header difficulty is not set yet.
 func (beacon *Beacon) IsPoSHeader(header *types.Header) bool {
-	if header.Difficulty == nil {
-		panic("IsPoSHeader called with invalid difficulty")
-	}
-	return header.Difficulty.Cmp(beaconDifficulty) == 0
+	// non-uint64 block numbers are 2,92271023×10¹² years in
+	// the future, but better be ready.
+	return !header.Number.IsInt64() || header.Number.Uint64() >= params.GnosisForkBlock
 }
 
 // InnerEngine returns the embedded eth1 consensus engine.
@@ -470,4 +476,14 @@ func IsTTDReached(chain consensus.ChainHeaderReader, parentHash common.Hash, par
 		return false, consensus.ErrUnknownAncestor
 	}
 	return td.Cmp(chain.Config().TerminalTotalDifficulty) >= 0, nil
+}
+
+func (beacon *Beacon) SetAuraSyscall(sc aura.Syscall) {
+	if a, ok := beacon.ethone.(*aura.AuRa); ok {
+		a.Syscall = sc
+	}
+}
+
+func (beacon *Beacon) AuraPrepare(chain consensus.ChainHeaderReader, header *types.Header, statedb *state.StateDB) {
+	beacon.ethone.Prepare(chain, header, statedb)
 }
