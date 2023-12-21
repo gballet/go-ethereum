@@ -4,30 +4,39 @@
 package auraabi
 
 import (
+	"errors"
 	"math/big"
 	"strings"
 
-	ethereum "github.com/ledgerwatch/erigon"
-	libcommon "github.com/ledgerwatch/erigon-lib/common"
-	"github.com/ledgerwatch/erigon/accounts/abi"
-	"github.com/ledgerwatch/erigon/accounts/abi/bind"
-	"github.com/ledgerwatch/erigon/core/types"
-	"github.com/ledgerwatch/erigon/event"
+	ethereum "github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/event"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.
 var (
+	_ = errors.New
 	_ = big.NewInt
 	_ = strings.NewReader
 	_ = ethereum.NotFound
 	_ = bind.Bind
-	_ = libcommon.Big1
+	_ = common.Big1
 	_ = types.BloomLookup
 	_ = event.NewSubscription
+	_ = abi.ConvertType
 )
 
+// BlockRewardMetaData contains all meta data concerning the BlockReward contract.
+var BlockRewardMetaData = &bind.MetaData{
+	ABI: "[{\"constant\":false,\"inputs\":[{\"name\":\"benefactors\",\"type\":\"address[]\"},{\"name\":\"kind\",\"type\":\"uint16[]\"}],\"name\":\"reward\",\"outputs\":[{\"name\":\"\",\"type\":\"address[]\"},{\"name\":\"\",\"type\":\"uint256[]\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
+}
+
 // BlockRewardABI is the input ABI used to generate the binding from.
-const BlockRewardABI = "[{\"constant\":false,\"inputs\":[{\"name\":\"benefactors\",\"type\":\"address[]\"},{\"name\":\"kind\",\"type\":\"uint16[]\"}],\"name\":\"reward\",\"outputs\":[{\"name\":\"\",\"type\":\"address[]\"},{\"name\":\"\",\"type\":\"uint256[]\"}],\"payable\":false,\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]"
+// Deprecated: Use BlockRewardMetaData.ABI instead.
+var BlockRewardABI = BlockRewardMetaData.ABI
 
 // BlockReward is an auto generated Go binding around an Ethereum contract.
 type BlockReward struct {
@@ -89,7 +98,7 @@ type BlockRewardTransactorRaw struct {
 }
 
 // NewBlockReward creates a new instance of BlockReward, bound to a specific deployed contract.
-func NewBlockReward(address libcommon.Address, backend bind.ContractBackend) (*BlockReward, error) {
+func NewBlockReward(address common.Address, backend bind.ContractBackend) (*BlockReward, error) {
 	contract, err := bindBlockReward(address, backend, backend, backend)
 	if err != nil {
 		return nil, err
@@ -98,7 +107,7 @@ func NewBlockReward(address libcommon.Address, backend bind.ContractBackend) (*B
 }
 
 // NewBlockRewardCaller creates a new read-only instance of BlockReward, bound to a specific deployed contract.
-func NewBlockRewardCaller(address libcommon.Address, caller bind.ContractCaller) (*BlockRewardCaller, error) {
+func NewBlockRewardCaller(address common.Address, caller bind.ContractCaller) (*BlockRewardCaller, error) {
 	contract, err := bindBlockReward(address, caller, nil, nil)
 	if err != nil {
 		return nil, err
@@ -107,7 +116,7 @@ func NewBlockRewardCaller(address libcommon.Address, caller bind.ContractCaller)
 }
 
 // NewBlockRewardTransactor creates a new write-only instance of BlockReward, bound to a specific deployed contract.
-func NewBlockRewardTransactor(address libcommon.Address, transactor bind.ContractTransactor) (*BlockRewardTransactor, error) {
+func NewBlockRewardTransactor(address common.Address, transactor bind.ContractTransactor) (*BlockRewardTransactor, error) {
 	contract, err := bindBlockReward(address, nil, transactor, nil)
 	if err != nil {
 		return nil, err
@@ -116,7 +125,7 @@ func NewBlockRewardTransactor(address libcommon.Address, transactor bind.Contrac
 }
 
 // NewBlockRewardFilterer creates a new log filterer instance of BlockReward, bound to a specific deployed contract.
-func NewBlockRewardFilterer(address libcommon.Address, filterer bind.ContractFilterer) (*BlockRewardFilterer, error) {
+func NewBlockRewardFilterer(address common.Address, filterer bind.ContractFilterer) (*BlockRewardFilterer, error) {
 	contract, err := bindBlockReward(address, nil, nil, filterer)
 	if err != nil {
 		return nil, err
@@ -125,12 +134,12 @@ func NewBlockRewardFilterer(address libcommon.Address, filterer bind.ContractFil
 }
 
 // bindBlockReward binds a generic wrapper to an already deployed contract.
-func bindBlockReward(address libcommon.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
-	parsed, err := abi.JSON(strings.NewReader(BlockRewardABI))
+func bindBlockReward(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
+	parsed, err := BlockRewardMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	return bind.NewBoundContract(address, parsed, caller, transactor, filterer), nil
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
 }
 
 // Call invokes the (constant) contract method with params as input values and
@@ -143,12 +152,12 @@ func (_BlockReward *BlockRewardRaw) Call(opts *bind.CallOpts, result *[]interfac
 
 // Transfer initiates a plain transaction to move funds to the contract, calling
 // its default method if one is available.
-func (_BlockReward *BlockRewardRaw) Transfer(opts *bind.TransactOpts) (types.Transaction, error) {
+func (_BlockReward *BlockRewardRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
 	return _BlockReward.Contract.BlockRewardTransactor.contract.Transfer(opts)
 }
 
 // Transact invokes the (paid) contract method with params as input values.
-func (_BlockReward *BlockRewardRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (types.Transaction, error) {
+func (_BlockReward *BlockRewardRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
 	return _BlockReward.Contract.BlockRewardTransactor.contract.Transact(opts, method, params...)
 }
 
@@ -162,32 +171,32 @@ func (_BlockReward *BlockRewardCallerRaw) Call(opts *bind.CallOpts, result *[]in
 
 // Transfer initiates a plain transaction to move funds to the contract, calling
 // its default method if one is available.
-func (_BlockReward *BlockRewardTransactorRaw) Transfer(opts *bind.TransactOpts) (types.Transaction, error) {
+func (_BlockReward *BlockRewardTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
 	return _BlockReward.Contract.contract.Transfer(opts)
 }
 
 // Transact invokes the (paid) contract method with params as input values.
-func (_BlockReward *BlockRewardTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (types.Transaction, error) {
+func (_BlockReward *BlockRewardTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
 	return _BlockReward.Contract.contract.Transact(opts, method, params...)
 }
 
 // Reward is a paid mutator transaction binding the contract method 0xf91c2898.
 //
 // Solidity: function reward(address[] benefactors, uint16[] kind) returns(address[], uint256[])
-func (_BlockReward *BlockRewardTransactor) Reward(opts *bind.TransactOpts, benefactors []libcommon.Address, kind []uint16) (types.Transaction, error) {
+func (_BlockReward *BlockRewardTransactor) Reward(opts *bind.TransactOpts, benefactors []common.Address, kind []uint16) (*types.Transaction, error) {
 	return _BlockReward.contract.Transact(opts, "reward", benefactors, kind)
 }
 
 // Reward is a paid mutator transaction binding the contract method 0xf91c2898.
 //
 // Solidity: function reward(address[] benefactors, uint16[] kind) returns(address[], uint256[])
-func (_BlockReward *BlockRewardSession) Reward(benefactors []libcommon.Address, kind []uint16) (types.Transaction, error) {
+func (_BlockReward *BlockRewardSession) Reward(benefactors []common.Address, kind []uint16) (*types.Transaction, error) {
 	return _BlockReward.Contract.Reward(&_BlockReward.TransactOpts, benefactors, kind)
 }
 
 // Reward is a paid mutator transaction binding the contract method 0xf91c2898.
 //
 // Solidity: function reward(address[] benefactors, uint16[] kind) returns(address[], uint256[])
-func (_BlockReward *BlockRewardTransactorSession) Reward(benefactors []libcommon.Address, kind []uint16) (types.Transaction, error) {
+func (_BlockReward *BlockRewardTransactorSession) Reward(benefactors []common.Address, kind []uint16) (*types.Transaction, error) {
 	return _BlockReward.Contract.Reward(&_BlockReward.TransactOpts, benefactors, kind)
 }
