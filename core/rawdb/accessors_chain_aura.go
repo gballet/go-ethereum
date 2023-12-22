@@ -4,72 +4,57 @@ import (
 	"encoding/binary"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethdb"
 )
 
-func DeleteNewerEpochs(tx kv.RwTx, number uint64) error {
-	timestampBytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(timestampBytes, number)
-	if err := tx.ForEach(kv.PendingEpoch, timestampBytes, func(k, v []byte) error {
-		return tx.Delete(kv.Epoch, k)
-	}); err != nil {
-		return err
-	}
-	return tx.ForEach(kv.Epoch, timestampBytes, func(k, v []byte) error {
-		return tx.Delete(kv.Epoch, k)
-	})
-}
-func ReadEpoch(tx kv.Tx, blockNum uint64, blockHash common.Hash) (transitionProof []byte, err error) {
-	k := make([]byte, dbutils.NumberLength+length.Hash)
+func ReadEpoch(db ethdb.KeyValueReader, blockNum uint64, blockHash common.Hash) (transitionProof []byte, err error) {
+	k := make([]byte, 40 /* block num uint64 + block hash */)
 	binary.BigEndian.PutUint64(k, blockNum)
-	copy(k[dbutils.NumberLength:], blockHash[:])
-	return tx.GetOne(kv.Epoch, k)
+	copy(k[8:], blockHash[:])
+	return db.Get(epochKey(k))
 }
-func FindEpochBeforeOrEqualNumber(tx kv.Tx, n uint64) (blockNum uint64, blockHash common.Hash, transitionProof []byte, err error) {
-	c, err := tx.Cursor(kv.Epoch)
-	if err != nil {
-		return 0, common.Hash{}, nil, err
-	}
-	defer c.Close()
 
+// TODO use sqlite if leveldb doesn't work
+func FindEpochBeforeOrEqualNumber(db ethdb.KeyValueStore, n uint64) (blockNum uint64, blockHash common.Hash, transitionProof []byte, err error) {
 	seek := make([]byte, 8)
 	binary.BigEndian.PutUint64(seek, n)
-	k, v, err := c.Seek(seek)
-	if err != nil {
-		return 0, common.Hash{}, nil, err
-	}
-	if k != nil {
+
+	it := db.NewIterator(PendingEpochPrefix, nil)
+	defer it.Release()
+
+	blockNum = 0
+	for it.Next() {
+		k := it.Key()
 		num := binary.BigEndian.Uint64(k)
-		if num == n {
-			return n, common.BytesToHash(k[dbutils.NumberLength:]), v, nil
+		if num > n {
+			break
 		}
+
+		blockNum = num
+		transitionProof = it.Value()
+		blockHash = common.BytesToHash(k[8:])
 	}
-	k, v, err = c.Prev()
-	if err != nil {
-		return 0, common.Hash{}, nil, err
-	}
-	if k == nil {
-		return 0, common.Hash{}, nil, nil
-	}
-	return binary.BigEndian.Uint64(k), common.BytesToHash(k[dbutils.NumberLength:]), v, nil
+
+	return
 }
 
-func WriteEpoch(tx kv.RwTx, blockNum uint64, blockHash common.Hash, transitionProof []byte) (err error) {
-	k := make([]byte, dbutils.NumberLength+length.Hash)
+func WriteEpoch(db ethdb.KeyValueWriter, blockNum uint64, blockHash common.Hash, transitionProof []byte) (err error) {
+	k := make([]byte, 40)
 	binary.BigEndian.PutUint64(k, blockNum)
-	copy(k[dbutils.NumberLength:], blockHash[:])
-	return tx.Put(kv.Epoch, k, transitionProof)
+	copy(k[8:], blockHash[:])
+	return db.Put(epochKey(k), transitionProof)
 }
 
-func ReadPendingEpoch(tx kv.Tx, blockNum uint64, blockHash common.Hash) (transitionProof []byte, err error) {
+func ReadPendingEpoch(db ethdb.KeyValueReader, blockNum uint64, blockHash common.Hash) (transitionProof []byte, err error) {
 	k := make([]byte, 8+32)
 	binary.BigEndian.PutUint64(k, blockNum)
 	copy(k[8:], blockHash[:])
-	return tx.GetOne(kv.PendingEpoch, k)
+	return db.Get(pendingEpochKey(k))
 }
 
-func WritePendingEpoch(tx kv.RwTx, blockNum uint64, blockHash common.Hash, transitionProof []byte) (err error) {
+func WritePendingEpoch(db ethdb.KeyValueWriter, blockNum uint64, blockHash common.Hash, transitionProof []byte) (err error) {
 	k := make([]byte, 8+32)
 	binary.BigEndian.PutUint64(k, blockNum)
 	copy(k[8:], blockHash[:])
-	return tx.Put(kv.PendingEpoch, k, transitionProof)
+	return db.Put(pendingEpochKey(k), transitionProof)
 }
