@@ -19,7 +19,6 @@ package aura
 import (
 	"bytes"
 	"container/list"
-	"context"
 	"errors"
 	"fmt"
 	"math/big"
@@ -41,6 +40,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -48,6 +48,8 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/holiman/uint256"
+	"golang.org/x/exp/constraints"
+	"golang.org/x/exp/slices"
 )
 
 const DEBUG_LOG_FROM = 999_999_999
@@ -330,7 +332,18 @@ func (pb *GasLimitOverride) Add(hash common.Hash, b *uint256.Int) {
 	pb.cache.ContainsOrAdd(hash, b)
 }
 
-func NewAuRa(spec *params.AuRaConfig, db kv.RwDB) (*AuRa, error) {
+func SortedKeys[K constraints.Ordered, V any](m map[K]V) []K {
+	keys := make([]K, len(m))
+	i := 0
+	for k := range m {
+		keys[i] = k
+		i++
+	}
+	slices.Sort(keys)
+	return keys
+}
+
+func NewAuRa(spec *params.AuRaConfig, db ethdb.KeyValueStore) (*AuRa, error) {
 	auraParams, err := FromJson(spec)
 	if err != nil {
 		return nil, err
@@ -356,7 +369,7 @@ func NewAuRa(spec *params.AuRaConfig, db kv.RwDB) (*AuRa, error) {
 		StepDuration:        auraParams.StepDurations[0],
 	}
 	durations = append(durations, durInfo)
-	times := common.SortedKeys(auraParams.StepDurations)
+	times := SortedKeys(auraParams.StepDurations)
 	for i := 1; i < len(auraParams.StepDurations); i++ { // skip first
 		time := times[i]
 		dur := auraParams.StepDurations[time]
@@ -421,40 +434,27 @@ type epochWriter interface {
 }
 
 type NonTransactionalEpochReader struct {
-	db kv.RwDB
+	db ethdb.KeyValueStore
 }
 
-func newEpochReader(db kv.RwDB) *NonTransactionalEpochReader {
+func newEpochReader(db ethdb.KeyValueStore) *NonTransactionalEpochReader {
 	return &NonTransactionalEpochReader{db: db}
 }
 
 func (cr *NonTransactionalEpochReader) GetEpoch(hash common.Hash, number uint64) (v []byte, err error) {
-	return v, cr.db.View(context.Background(), func(tx kv.Tx) error {
-		v, err = rawdb.ReadEpoch(tx, number, hash)
-		return err
-	})
+	return rawdb.ReadEpoch(cr.db, number, hash)
 }
 func (cr *NonTransactionalEpochReader) PutEpoch(hash common.Hash, number uint64, proof []byte) error {
-	return cr.db.UpdateNosync(context.Background(), func(tx kv.RwTx) error {
-		return rawdb.WriteEpoch(tx, number, hash, proof)
-	})
+	return rawdb.WriteEpoch(cr.db, number, hash, proof)
 }
 func (cr *NonTransactionalEpochReader) GetPendingEpoch(hash common.Hash, number uint64) (v []byte, err error) {
-	return v, cr.db.View(context.Background(), func(tx kv.Tx) error {
-		v, err = rawdb.ReadPendingEpoch(tx, number, hash)
-		return err
-	})
+	return rawdb.ReadPendingEpoch(cr.db, number, hash)
 }
 func (cr *NonTransactionalEpochReader) PutPendingEpoch(hash common.Hash, number uint64, proof []byte) error {
-	return cr.db.UpdateNosync(context.Background(), func(tx kv.RwTx) error {
-		return rawdb.WritePendingEpoch(tx, number, hash, proof)
-	})
+	return rawdb.WritePendingEpoch(cr.db, number, hash, proof)
 }
 func (cr *NonTransactionalEpochReader) FindBeforeOrEqualNumber(number uint64) (blockNum uint64, blockHash common.Hash, transitionProof []byte, err error) {
-	return blockNum, blockHash, transitionProof, cr.db.View(context.Background(), func(tx kv.Tx) error {
-		blockNum, blockHash, transitionProof, err = rawdb.FindEpochBeforeOrEqualNumber(tx, number)
-		return err
-	})
+	return rawdb.FindEpochBeforeOrEqualNumber(cr.db, number)
 }
 
 // A helper accumulator function mapping a step duration and a step duration transition timestamp
