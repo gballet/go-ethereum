@@ -418,6 +418,10 @@ func (g *Genesis) configOrDefault(ghash common.Hash) *params.ChainConfig {
 		return params.SepoliaChainConfig
 	case ghash == params.GoerliGenesisHash:
 		return params.GoerliChainConfig
+	case ghash == params.GnosisGenesisHash:
+		return params.GnosisChainConfig
+	case ghash == params.ChiadoGenesisHash:
+		return params.ChiadoChainConfig
 	default:
 		return params.AllEthashProtocolChanges
 	}
@@ -447,6 +451,7 @@ func (g *Genesis) ToBlock() *types.Block {
 		Difficulty: g.Difficulty,
 		MixDigest:  g.Mixhash,
 		Coinbase:   g.Coinbase,
+		Signature:  g.AuRaSeal,
 		Root:       root,
 	}
 	if g.GasLimit == 0 {
