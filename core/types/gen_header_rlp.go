@@ -2,8 +2,14 @@
 
 package types
 
-import "github.com/ethereum/go-ethereum/rlp"
-import "io"
+import (
+	"io"
+	"fmt"
+	"errors"
+	
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/common"
+)
 
 func (obj *Header) EncodeRLP(_w io.Writer) error {
 	w := rlp.NewEncoderBuffer(_w)
@@ -35,8 +41,14 @@ func (obj *Header) EncodeRLP(_w io.Writer) error {
 	w.WriteUint64(obj.GasUsed)
 	w.WriteUint64(obj.Time)
 	w.WriteBytes(obj.Extra)
-	w.WriteBytes(obj.MixDigest[:])
+	if len(obj.Signature) == 0 {
 	w.WriteBytes(obj.Nonce[:])
+		w.WriteBytes(obj.MixDigest[:])
+		w.WriteBytes(obj.Nonce[:])
+	} else {
+		w.WriteUint64(obj.Step)
+		w.WriteBytes(obj.Signature)
+	}
 	_tmp1 := obj.BaseFee != nil
 	_tmp2 := obj.WithdrawalsHash != nil
 	_tmp3 := obj.BlobGasUsed != nil
@@ -82,4 +94,138 @@ func (obj *Header) EncodeRLP(_w io.Writer) error {
 	}
 	w.ListEnd(_tmp0)
 	return w.Flush()
+}
+
+
+func (h *Header) DecodeRLP(s *rlp.Stream) error {
+	_, err := s.List()
+	if err != nil {
+		return err
+	}
+	var b []byte
+	if b, err = s.Bytes(); err != nil {
+		return fmt.Errorf("read ParentHash: %w", err)
+	}
+	if len(b) != 32 {
+		return fmt.Errorf("wrong size for ParentHash: %d", len(b))
+	}
+	copy(h.ParentHash[:], b)
+	if b, err = s.Bytes(); err != nil {
+		return fmt.Errorf("read UncleHash: %w", err)
+	}
+	if len(b) != 32 {
+		return fmt.Errorf("wrong size for UncleHash: %d", len(b))
+	}
+	copy(h.UncleHash[:], b)
+	if b, err = s.Bytes(); err != nil {
+		return fmt.Errorf("read Coinbase: %w", err)
+	}
+	if len(b) != 20 {
+		return fmt.Errorf("wrong size for Coinbase: %d", len(b))
+	}
+	copy(h.Coinbase[:], b)
+	if b, err = s.Bytes(); err != nil {
+		return fmt.Errorf("read Root: %w", err)
+	}
+	if len(b) != 32 {
+		return fmt.Errorf("wrong size for Root: %d", len(b))
+	}
+	copy(h.Root[:], b)
+	if b, err = s.Bytes(); err != nil {
+		return fmt.Errorf("read TxHash: %w", err)
+	}
+	if len(b) != 32 {
+		return fmt.Errorf("wrong size for TxHash: %d", len(b))
+	}
+	copy(h.TxHash[:], b)
+	if b, err = s.Bytes(); err != nil {
+		return fmt.Errorf("read ReceiptHash: %w", err)
+	}
+	if len(b) != 32 {
+		return fmt.Errorf("wrong size for ReceiptHash: %d", len(b))
+	}
+	copy(h.ReceiptHash[:], b)
+	if b, err = s.Bytes(); err != nil {
+		return fmt.Errorf("read Bloom: %w", err)
+	}
+	if len(b) != 256 {
+		return fmt.Errorf("wrong size for Bloom: %d", len(b))
+	}
+	copy(h.Bloom[:], b)
+	if h.Difficulty, err = s.BigInt(); err != nil {
+		return fmt.Errorf("read Difficulty: %w", err)
+	}
+	if h.Number, err = s.BigInt(); err != nil {
+		return fmt.Errorf("read Number: %w", err)
+	}
+	if h.GasLimit, err = s.Uint(); err != nil {
+		return fmt.Errorf("read GasLimit: %w", err)
+	}
+	if h.GasUsed, err = s.Uint(); err != nil {
+		return fmt.Errorf("read GasUsed: %w", err)
+	}
+	if h.Time, err = s.Uint(); err != nil {
+		return fmt.Errorf("read Time: %w", err)
+	}
+	if h.Extra, err = s.Bytes(); err != nil {
+		return fmt.Errorf("read Extra: %w", err)
+	}
+
+	_, size, err := s.Kind()
+	if err != nil {
+		return fmt.Errorf("read MixDigest: %w", err)
+	}
+	if size != 32 { // AuRa
+		if h.Step, err = s.Uint(); err != nil {
+			return fmt.Errorf("read AuRaStep: %w", err)
+		}
+		if h.Signature, err = s.Bytes(); err != nil {
+			return fmt.Errorf("read AuRaSeal: %w", err)
+		}
+	} else {
+		if b, err = s.Bytes(); err != nil {
+			return fmt.Errorf("read MixDigest: %w", err)
+		}
+		copy(h.MixDigest[:], b)
+		if b, err = s.Bytes(); err != nil {
+			return fmt.Errorf("read Nonce: %w", err)
+		}
+		if len(b) != 8 {
+			return fmt.Errorf("wrong size for Nonce: %d", len(b))
+		}
+		copy(h.Nonce[:], b)
+	}
+
+	// BaseFee
+	if h.BaseFee, err = s.BigInt(); err != nil {
+		if errors.Is(err, rlp.EOL) {
+			h.BaseFee = nil
+			if err := s.ListEnd(); err != nil {
+				return fmt.Errorf("close header struct (no BaseFee): %w", err)
+			}
+			return nil
+		}
+		return fmt.Errorf("read BaseFee: %w", err)
+	}
+
+	// WithdrawalsHash
+	if b, err = s.Bytes(); err != nil {
+		if errors.Is(err, rlp.EOL) {
+			if err := s.ListEnd(); err != nil {
+				return fmt.Errorf("close header struct (no WithdrawalsHash): %w", err)
+			}
+			return nil
+		}
+		return fmt.Errorf("read WithdrawalsHash: %w", err)
+	}
+	if len(b) != 32 {
+		return fmt.Errorf("wrong size for UncleHash: %d", len(b))
+	}
+	h.WithdrawalsHash = new(common.Hash)
+	copy((*h.WithdrawalsHash)[:], b)
+
+	if err := s.ListEnd(); err != nil {
+		return fmt.Errorf("close header struct: %w", err)
+	}
+	return nil
 }
