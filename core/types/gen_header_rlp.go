@@ -42,7 +42,6 @@ func (obj *Header) EncodeRLP(_w io.Writer) error {
 	w.WriteUint64(obj.Time)
 	w.WriteBytes(obj.Extra)
 	if len(obj.Signature) == 0 {
-	w.WriteBytes(obj.Nonce[:])
 		w.WriteBytes(obj.MixDigest[:])
 		w.WriteBytes(obj.Nonce[:])
 	} else {
