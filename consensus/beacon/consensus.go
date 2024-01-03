@@ -349,10 +349,15 @@ func (beacon *Beacon) Prepare(chain consensus.ChainHeaderReader, header *types.H
 
 // Finalize implements consensus.Engine and processes withdrawals on top.
 func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal, receipts []*types.Receipt) {
-	// GNOSIS: force calling the underlying consensus engine since
-	// it only calls the reward contract. A cleaner approach would
-	// be to add the call to the reward contract here.
-	beacon.ethone.Finalize(chain, header, state, txs, uncles, nil, receipts)
+	if !beacon.IsPoSHeader(header) {
+		beacon.ethone.Finalize(chain, header, state, txs, uncles, nil, receipts)
+	} else if a, ok := beacon.ethone.(*aura.AuRa); ok {
+		// GNOSIS: if the network has merged and this was an ex-AuRa
+		// network, still call the reward contract.
+		if err := a.ApplyRewards(header, state); err != nil {
+			panic(fmt.Sprintf("error applying reward %v", err))
+		}
+	}
 
 	// Withdrawals processing.
 	if withdrawals != nil {

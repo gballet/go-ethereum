@@ -29,6 +29,7 @@ import (
 
 	// "github.com/ethereum/erigon-lib/kv"
 
+	"github.com/cockroachdb/pebble"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -743,7 +744,7 @@ func (c *AuRa) Prepare(chain consensus.ChainHeaderReader, header *types.Header, 
 
 }
 
-func (c *AuRa) applyRewards(header *types.Header, state *state.StateDB) error {
+func (c *AuRa) ApplyRewards(header *types.Header, state *state.StateDB) error {
 	rewards, err := c.CalculateRewards(nil, header, nil)
 	if err != nil {
 		return err
@@ -756,7 +757,7 @@ func (c *AuRa) applyRewards(header *types.Header, state *state.StateDB) error {
 
 // word `signal epoch` == word `pending epoch`
 func (c *AuRa) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal, receipts []*types.Receipt) {
-	if err := c.applyRewards(header, state); err != nil {
+	if err := c.ApplyRewards(header, state); err != nil {
 		panic(err)
 	}
 
