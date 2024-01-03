@@ -457,9 +457,11 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		// are 0. This avoids a negative effectiveTip being applied to
 		// the coinbase when simulating calls.
 	} else {
-		burntContractAddress := common.HexToAddress("0x6BBe78ee9e474842Dbd4AB4987b3CeFE88426A92") // *st.evm.ChainConfig().Eip1559FeeCollector
-		burnAmount := new(big.Int).Mul(new(big.Int).SetUint64(st.gasUsed()), st.evm.Context.BaseFee)
-		st.state.AddBalance(burntContractAddress, burnAmount)
+		if rules.IsLondon {
+			burntContractAddress := *st.evm.ChainConfig().Aura.Eip1559FeeCollector
+			burnAmount := new(big.Int).Mul(new(big.Int).SetUint64(st.gasUsed()), st.evm.Context.BaseFee)
+			st.state.AddBalance(burntContractAddress, burnAmount)
+		}
 	}
 
 	return &ExecutionResult{

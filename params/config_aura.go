@@ -68,4 +68,7 @@ type AuRaConfig struct {
 	WithdrawalContractAddress *common.Address `json:"withdrawalContractAddress"`
 
 	RewriteBytecode map[uint64]map[common.Address][]byte `json:"rewriteBytecode"`
+
+	// Burn contract address
+	Eip1559FeeCollector *common.Address `json:"eip1559FeeCollector"`
 }

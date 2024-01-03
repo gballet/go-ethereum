@@ -16,6 +16,12 @@ func ReadEpoch(db ethdb.KeyValueReader, blockNum uint64, blockHash common.Hash) 
 
 // TODO use sqlite if leveldb doesn't work
 func FindEpochBeforeOrEqualNumber(db ethdb.KeyValueStore, n uint64) (blockNum uint64, blockHash common.Hash, transitionProof []byte, err error) {
+	// seek := make([]byte, 8)
+	// if n > 1 {
+	// move to the previous block - but actually this
+	// could be way older than the previous block number.
+	// binary.BigEndian.PutUint64(seek, n-1)
+	// }
 
 	it := db.NewIterator(EpochPrefix, nil)
 	defer it.Release()
