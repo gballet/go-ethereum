@@ -2009,6 +2009,7 @@ func (bc *BlockChain) insertSideChain(block *types.Block, it *insertIterator) (i
 		parent = bc.GetHeader(parent.ParentHash, parent.Number.Uint64()-1)
 	}
 	if parent == nil {
+		fmt.Println("missing parent:", numbers, current.Hash(), current.Number)
 		return it.index, errors.New("missing parent")
 	}
 	// Import all the pruned blocks to make the state available
@@ -2070,7 +2071,8 @@ func (bc *BlockChain) recoverAncestors(block *types.Block) (common.Hash, error) 
 		}
 	}
 	if parent == nil {
-		return common.Hash{}, errors.New("missing parent")
+		fmt.Println("missing parent:", numbers, hashes, block.ParentHash(), block.Number())
+		return common.Hash{}, errors.New("missing parent (recover ancestors)")
 	}
 	// Import all the pruned blocks to make the state available
 	for i := len(hashes) - 1; i >= 0; i-- {
