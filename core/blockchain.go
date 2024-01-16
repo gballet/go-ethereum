@@ -2312,6 +2312,7 @@ func (bc *BlockChain) SetCanonical(head *types.Block) (common.Hash, error) {
 	defer bc.chainmu.Unlock()
 
 	// Re-execute the reorged chain in case the head state is missing.
+	fmt.Printf("looking for state %x %v\n", head.Root(), bc.HasState(head.Root()))
 	if !bc.HasState(head.Root()) {
 		debug.PrintStack()
 		if latestValidHash, err := bc.recoverAncestors(head); err != nil {
