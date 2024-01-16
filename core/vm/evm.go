@@ -529,10 +529,12 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 		}
 	}
 
-	if err == nil && evm.chainRules.IsPrague {
-		if !contract.UseGas(evm.Accesses.TouchAndChargeContractCreateCompleted(address.Bytes()[:])) {
-			evm.StateDB.RevertToSnapshot(snapshot)
-			err = ErrOutOfGas
+	if evm.chainRules.IsPrague {
+		if err == nil || err == ErrExecutionReverted {
+			if !contract.UseGas(evm.Accesses.TouchAndChargeContractCreateCompleted(address.Bytes()[:])) {
+				evm.StateDB.RevertToSnapshot(snapshot)
+				err = ErrOutOfGas
+			}
 		}
 	}
 
