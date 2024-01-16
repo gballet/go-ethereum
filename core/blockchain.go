@@ -26,6 +26,7 @@ import (
 	"math/big"
 	"os"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -1660,6 +1661,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 		} else {
 			// We're post-merge and the parent is pruned, try to recover the parent state
 			log.Debug("Pruned ancestor", "number", block.Number(), "hash", block.Hash())
+			fmt.Println("pruned ancestor")
 			_, err := bc.recoverAncestors(block)
 			return it.index, err
 		}
@@ -2311,6 +2313,7 @@ func (bc *BlockChain) SetCanonical(head *types.Block) (common.Hash, error) {
 
 	// Re-execute the reorged chain in case the head state is missing.
 	if !bc.HasState(head.Root()) {
+		debug.PrintStack()
 		if latestValidHash, err := bc.recoverAncestors(head); err != nil {
 			return latestValidHash, err
 		}
