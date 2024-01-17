@@ -542,3 +542,74 @@ func TestProcessVerkle(t *testing.T) {
 		}
 	}
 }
+
+func TestProcessVerkleiInvalidContractCreation(t *testing.T) {
+	var (
+		config = &params.ChainConfig{
+			ChainID:                       big.NewInt(69420),
+			HomesteadBlock:                big.NewInt(0),
+			EIP150Block:                   big.NewInt(0),
+			EIP155Block:                   big.NewInt(0),
+			EIP158Block:                   big.NewInt(0),
+			ByzantiumBlock:                big.NewInt(0),
+			ConstantinopleBlock:           big.NewInt(0),
+			PetersburgBlock:               big.NewInt(0),
+			IstanbulBlock:                 big.NewInt(0),
+			MuirGlacierBlock:              big.NewInt(0),
+			BerlinBlock:                   big.NewInt(0),
+			LondonBlock:                   big.NewInt(0),
+			Ethash:                        new(params.EthashConfig),
+			ShanghaiTime:                  u64(0),
+			PragueTime:                    u64(0),
+			TerminalTotalDifficulty:       common.Big0,
+			TerminalTotalDifficultyPassed: true,
+			ProofInBlocks:                 true,
+		}
+		bcdb     = rawdb.NewMemoryDatabase() // Database for the blockchain
+		gendb    = rawdb.NewMemoryDatabase() // Database for the block-generation code, they must be separate as they are path-based.
+		coinbase = common.HexToAddress("0x71562b71999873DB5b286dF957af199Ec94617F7")
+		account1 = common.HexToAddress("0x687704DB07e902e9A8B3754031D168D46E3D586e")
+		account2 = common.HexToAddress("0x6177843db3138ae69679A54b95cf345ED759450d")
+		gspec    = &Genesis{
+			Config: config,
+			Alloc: GenesisAlloc{
+				coinbase: GenesisAccount{
+					Balance: big.NewInt(1000000000000000000), // 1 ether
+					Nonce:   0,
+				},
+				account1: GenesisAccount{
+					Balance: big.NewInt(1000000000000000000), // 1 ether
+					Nonce:   2,
+				},
+				account2: GenesisAccount{
+					Balance: big.NewInt(1000000000000000000), // 1 ether
+					Nonce:   0,
+				},
+			},
+		}
+	)
+	// Verkle trees use the snapshot, which must be enabled before the
+	// data is saved into the tree+database.
+	genesis := gspec.MustCommit(bcdb)
+	overrideProofInBlock := true
+	conversionStride := uint64(0)
+	blockchain, _ := NewBlockChain(bcdb, nil, gspec, &ChainOverrides{OverrideProofInBlock: &overrideProofInBlock, OverrideOverlayStride: &conversionStride}, beacon.New(ethash.NewFaker()), vm.Config{}, nil, nil)
+	defer blockchain.Stop()
+
+	// Commit the genesis block to the block-generation database as it
+	// is now independent of the blockchain database.
+	gspec.MustCommit(gendb)
+
+	_, _, _, statediff := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 1, func(i int, gen *BlockGen) {
+		gen.SetPoS()
+
+		var tx types.Transaction
+		txpayload := common.Hex2Bytes("01f8d683010f2c028443ad7d0e830186a08080b880b00e7fa3c849dce891cce5fae8a4c46cbb313d6aec0c0ffe7863e05fb7b22d4807674c6055527ffbfcb0938f3e18f7937aa8fa95d880afebd5c4cec0d85186095832d03c85cf8a60755260ab60955360cf6096536066609753606e60985360fa609953609e609a53608e609b536024609c5360f6609d536072609e5360a4609fc080a08fc6f7101f292ff1fb0de8ac69c2d320fbb23bfe61cf327173786ea5daee6e37a044c42d91838ef06646294bf4f9835588aee66243b16a66a2da37641fae4c045f")
+		if err := tx.UnmarshalBinary(txpayload); err != nil {
+			t.Fatal(err)
+		}
+		gen.AddTx(&tx)
+	})
+
+	t.Log(statediff)
+}
