@@ -591,9 +591,7 @@ func TestProcessVerkleiInvalidContractCreation(t *testing.T) {
 	// Verkle trees use the snapshot, which must be enabled before the
 	// data is saved into the tree+database.
 	genesis := gspec.MustCommit(bcdb)
-	overrideProofInBlock := true
-	conversionStride := uint64(0)
-	blockchain, _ := NewBlockChain(bcdb, nil, gspec, &ChainOverrides{OverrideProofInBlock: &overrideProofInBlock, OverrideOverlayStride: &conversionStride}, beacon.New(ethash.NewFaker()), vm.Config{}, nil, nil)
+	blockchain, _ := NewBlockChain(bcdb, nil, gspec, nil, beacon.New(ethash.NewFaker()), vm.Config{}, nil, nil)
 	defer blockchain.Stop()
 
 	// Commit the genesis block to the block-generation database as it
@@ -611,5 +609,12 @@ func TestProcessVerkleiInvalidContractCreation(t *testing.T) {
 		gen.AddTx(&tx)
 	})
 
-	t.Log(statediff)
+	// Check that no account has a value above 4
+	for _, stemStateDiff := range statediff[0] {
+		for _, suffixDiff := range stemStateDiff.SuffixDiffs {
+			if suffixDiff.Suffix > 4 {
+				t.Fatalf("invalid suffix diff found: %d\n", suffixDiff.Suffix)
+			}
+		}
+	}
 }
