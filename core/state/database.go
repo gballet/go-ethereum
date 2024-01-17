@@ -359,11 +359,12 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 			return vkt, nil
 		}
 
+		fmt.Println("opening MPT with root", db.baseRoot)
 		// Otherwise, return a transition trie, with a base MPT
 		// trie and an overlay, verkle trie.
 		mpt, err = db.openMPTTrie(db.baseRoot)
 		if err != nil {
-			fmt.Println("failed to open the mpt", err)
+			fmt.Println("failed to open the mpt", err, db.baseRoot)
 			return nil, err
 		}
 
