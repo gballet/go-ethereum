@@ -641,7 +641,7 @@ func TestProcessVerkleiInvalidContractCreation(t *testing.T) {
 		// is present.
 		if bytes.Equal(stemStateDiff.Stem[:], common.Hex2Bytes("a10042195481d30478251625e1ccef0e2174dc4e083e81d2566d880373f791")) {
 			for _, suffixDiff := range stemStateDiff.SuffixDiffs {
-				if suffixDiff.Suffix != 69 {
+				if suffixDiff.Suffix != 133 {
 					t.Fatalf("invalid suffix diff found for %x in block #1: %d\n", stemStateDiff.Stem, suffixDiff.Suffix)
 				}
 			}
