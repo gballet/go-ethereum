@@ -316,7 +316,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 				// If the entire storage was processed, then the iterator was
 				// created in vain, but it's ok as this will not happen often.
 				for ; !migrdb.GetStorageProcessed() && count < maxMovedCount; count++ {
-					fmt.Println("processing storage", count, stIt.Slot(), migrdb.GetStorageProcessed())
+					fmt.Printf("processing storage: %d %x %v %x %x\n", count, stIt.Slot(), migrdb.GetStorageProcessed(), migrdb.GetCurrentAccountAddress(), migrdb.GetCurrentAccountHash())
 					var (
 						value     []byte   // slot value after RLP decoding
 						safeValue [32]byte // 32-byte aligned value

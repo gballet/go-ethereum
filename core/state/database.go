@@ -553,7 +553,7 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 		// it has been saved.
 		db.TransitionStatePerRoot[root] = db.CurrentTransitionState.Copy()
 
-		fmt.Println("saving transition state", db.CurrentTransitionState.StorageProcessed, db.CurrentTransitionState.CurrentAccountAddress, db.CurrentTransitionState.CurrentSlotHash, "root=", root)
+		fmt.Println("saving transition state", db.CurrentTransitionState.StorageProcessed, db.CurrentTransitionState.CurrentAccountAddress, db.CurrentTransitionState.CurrentSlotHash, "root=", root, "ended=", db.CurrentTransitionState.ended, "started=", db.CurrentTransitionState.started)
 	}
 }
 
@@ -562,6 +562,9 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 		db.TransitionStatePerRoot = make(map[common.Hash]*TransitionState)
 	}
 
+	// Initialize the first transition state, with the "ended"
+	// field set to true if the database was created
+	// as a verkle database.
 	ts, ok := db.TransitionStatePerRoot[root]
 	if !ok || ts == nil {
 		// Start with a fresh state
@@ -572,5 +575,5 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 	// doesn't get overwritten.
 	db.CurrentTransitionState = ts.Copy()
 
-	fmt.Println("loaded transition state", db.CurrentTransitionState.StorageProcessed, db.CurrentTransitionState.CurrentAccountAddress, db.CurrentTransitionState.CurrentSlotHash, "root=", root)
+	fmt.Println("loaded transition state", db.CurrentTransitionState.StorageProcessed, db.CurrentTransitionState.CurrentAccountAddress, db.CurrentTransitionState.CurrentSlotHash, "root=", root, "ended=", db.CurrentTransitionState.ended, "started=", db.CurrentTransitionState.started)
 }
