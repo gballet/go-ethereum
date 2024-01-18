@@ -267,9 +267,15 @@ func GetTreeKeyStorageSlotTreeIndexes(storageKey []byte) (*uint256.Int, byte) {
 	}
 	// If the storage slot is in the main storage, we need to add the main storage offset.
 
-	// Get the new offset since we now know that we are above 64.
-	pos.Sub(&pos, codeStorageDelta)
-	suffix := byte(pos[0] & 0xFF)
+	// The first MAIN_STORAGE_OFFSET group will see its
+	// first 64 slots unreachable. This is either a typo in the
+	// spec or intended to conserve the 256-u256
+	// aligment. If we decide to ever access these 64
+	// slots, uncomment this.
+	// // Get the new offset since we now know that we are above 64.
+	// pos.Sub(&pos, codeStorageDelta)
+	// suffix := byte(pos[0] & 0xFF)
+	suffix := storageKey[len(storageKey)-1]
 
 	// We first divide by VerkleNodeWidth to create room to avoid an overflow next.
 	pos.Rsh(&pos, uint(VerkleNodeWidthLog2))
