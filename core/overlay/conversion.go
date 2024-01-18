@@ -362,6 +362,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 			// can be processed.
 			if count < maxMovedCount {
 				count++ // count increase for the account itself
+				fmt.Println("converting account", count, maxMovedCount)
 
 				mkv.addAccount(migrdb.GetCurrentAccountAddress().Bytes(), acc)
 				vkt.ClearStrorageRootConversion(*migrdb.GetCurrentAccountAddress())
@@ -381,6 +382,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 				// Move to the next account, if available - or end
 				// the transition otherwise.
 				if accIt.Next() {
+					fmt.Println("there is a next account, looping")
 					var addr common.Address
 					if hasPreimagesBin {
 						if _, err := io.ReadFull(fpreimages, addr[:]); err != nil {
@@ -396,6 +398,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 					if crypto.Keccak256Hash(addr[:]) != accIt.Hash() {
 						return fmt.Errorf("preimage file does not match account hash: %s != %s", crypto.Keccak256Hash(addr[:]), accIt.Hash())
 					}
+					fmt.Printf("next account data: %x %x", accIt.Hash(), addr)
 					preimageSeek += int64(len(addr))
 					migrdb.SetCurrentAccountAddress(addr)
 				} else {
