@@ -306,7 +306,8 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 				if err != nil {
 					return err
 				}
-				stIt.Next()
+				processed := stIt.Next()
+				fmt.Println("processed?", !processed)
 
 				// fdb.StorageProcessed will be initialized to `true` if the
 				// entire storage for an account was not entirely processed
@@ -315,6 +316,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 				// If the entire storage was processed, then the iterator was
 				// created in vain, but it's ok as this will not happen often.
 				for ; !migrdb.GetStorageProcessed() && count < maxMovedCount; count++ {
+					fmt.Println("processing storage", count, stIt.Slot(), migrdb.GetStorageProcessed())
 					var (
 						value     []byte   // slot value after RLP decoding
 						safeValue [32]byte // 32-byte aligned value
@@ -337,6 +339,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 							return fmt.Errorf("slotnr len is zero is not 32: %d", len(slotnr))
 						}
 					}
+					fmt.Println("slot number", slotnr)
 					if crypto.Keccak256Hash(slotnr[:]) != stIt.Hash() {
 						return fmt.Errorf("preimage file does not match storage hash: %s!=%s", crypto.Keccak256Hash(slotnr), stIt.Hash())
 					}
