@@ -591,8 +591,6 @@ func TestProcessVerkleiInvalidContractCreation(t *testing.T) {
 	// Verkle trees use the snapshot, which must be enabled before the
 	// data is saved into the tree+database.
 	genesis := gspec.MustCommit(bcdb)
-	blockchain, _ := NewBlockChain(bcdb, nil, gspec, nil, beacon.New(ethash.NewFaker()), vm.Config{}, nil, nil)
-	defer blockchain.Stop()
 
 	// Commit the genesis block to the block-generation database as it
 	// is now independent of the blockchain database.
@@ -606,12 +604,14 @@ func TestProcessVerkleiInvalidContractCreation(t *testing.T) {
 
 		if i == 0 {
 			var tx1, tx2, tx3 types.Transaction
+			// SSTORE at slot 105 and reverts
 			tx1payload := common.Hex2Bytes("f8d48084479c2c18830186a08080b8806000602955bda3f9600060ca55600060695523b360006039551983576000601255b0620c2fde2c592ac2600060bc55e0ac6000606455a63e22600060e655eb607e605c5360a2605d5360c7605e53601d605f5360eb606053606b606153608e60625360816063536079606453601e60655360fc60665360b7606753608b60685383021e7ca0cc20c65a97d2e526b8ec0f4266e8b01bdcde43b9aeb59d8bfb44e8eb8119c109a07a8e751813ae1b2ce734960dbc39a4f954917d7822a2c5d1dca18b06c584131f")
 			if err := tx1.UnmarshalBinary(tx1payload); err != nil {
 				t.Fatal(err)
 			}
 			gen.AddTx(&tx1)
 
+			// SSTORE at slot 133 and reverts
 			tx2payload := common.Hex2Bytes("02f8db83010f2c01843b9aca0084479c2c18830186a08080b88060006085553fad6000600a55600060565555600060b55506600060cf557f1b8b38183e7bd1bdfaa7123c5a4976e54cce0e42049d841411978fd3595e25c66019527f0538943712953cf08900aae40222a40b2d5a4ac8075ad8cf0870e2be307edbb96039527f9f3174ff85024747041ae7a611acffb987c513c088d90ab288aec080a0cd6ac65ce2cb0a912371f6b5a551ba8caffc22ec55ad4d3cb53de41d05eb77b6a02e0dfe8513dfa6ec7bfd7eda6f5c0dac21b39b982436045e128cec46cfd3f960")
 			if err := tx2.UnmarshalBinary(tx2payload); err != nil {
 				t.Fatal(err)
@@ -626,6 +626,7 @@ func TestProcessVerkleiInvalidContractCreation(t *testing.T) {
 			gen.AddTx(&tx3)
 		} else {
 			var tx types.Transaction
+			// immediately reverts
 			txpayload := common.Hex2Bytes("01f8d683010f2c028443ad7d0e830186a08080b880b00e7fa3c849dce891cce5fae8a4c46cbb313d6aec0c0ffe7863e05fb7b22d4807674c6055527ffbfcb0938f3e18f7937aa8fa95d880afebd5c4cec0d85186095832d03c85cf8a60755260ab60955360cf6096536066609753606e60985360fa609953609e609a53608e609b536024609c5360f6609d536072609e5360a4609fc080a08fc6f7101f292ff1fb0de8ac69c2d320fbb23bfe61cf327173786ea5daee6e37a044c42d91838ef06646294bf4f9835588aee66243b16a66a2da37641fae4c045f")
 			if err := tx.UnmarshalBinary(txpayload); err != nil {
 				t.Fatal(err)
@@ -652,7 +653,6 @@ func TestProcessVerkleiInvalidContractCreation(t *testing.T) {
 				}
 			}
 		} else {
-
 			for _, suffixDiff := range stemStateDiff.SuffixDiffs {
 				if suffixDiff.Suffix > 4 {
 					t.Fatalf("invalid suffix diff found for %x in block #1: %d\n", stemStateDiff.Stem, suffixDiff.Suffix)
