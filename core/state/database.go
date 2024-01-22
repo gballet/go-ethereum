@@ -553,7 +553,7 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 		// it has been saved.
 		db.TransitionStatePerRoot[root] = db.CurrentTransitionState.Copy()
 
-		fmt.Println("saving transition state", db.CurrentTransitionState.StorageProcessed, db.CurrentTransitionState.CurrentAccountAddress, db.CurrentTransitionState.CurrentSlotHash, "root=", root, "ended=", db.CurrentTransitionState.ended, "started=", db.CurrentTransitionState.started)
+		log.Debug("saving transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
 	}
 }
 
@@ -575,5 +575,5 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 	// doesn't get overwritten.
 	db.CurrentTransitionState = ts.Copy()
 
-	fmt.Println("loaded transition state", db.CurrentTransitionState.StorageProcessed, db.CurrentTransitionState.CurrentAccountAddress, db.CurrentTransitionState.CurrentSlotHash, "root=", root, "ended=", db.CurrentTransitionState.ended, "started=", db.CurrentTransitionState.started)
+	log.Debug("loaded transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
 }

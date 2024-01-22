@@ -307,7 +307,11 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 					return err
 				}
 				processed := stIt.Next()
-				fmt.Println("processed?", !processed)
+				if processed {
+					log.Debug("account has storage and a next item")
+				} else {
+					log.Debug("account has storage and NO next item")
+				}
 
 				// fdb.StorageProcessed will be initialized to `true` if the
 				// entire storage for an account was not entirely processed
@@ -316,7 +320,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 				// If the entire storage was processed, then the iterator was
 				// created in vain, but it's ok as this will not happen often.
 				for ; !migrdb.GetStorageProcessed() && count < maxMovedCount; count++ {
-					fmt.Printf("processing storage: %d %x %v %x %x\n", count, stIt.Slot(), migrdb.GetStorageProcessed(), migrdb.GetCurrentAccountAddress(), migrdb.GetCurrentAccountHash())
+					log.Trace("Processing storage", "count", count, "slot", stIt.Slot(), "storage processed", migrdb.GetStorageProcessed(), "current account", migrdb.GetCurrentAccountAddress(), "current account hash", migrdb.GetCurrentAccountHash())
 					var (
 						value     []byte   // slot value after RLP decoding
 						safeValue [32]byte // 32-byte aligned value
@@ -362,7 +366,6 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 			// can be processed.
 			if count < maxMovedCount {
 				count++ // count increase for the account itself
-				fmt.Println("converting account", count, maxMovedCount)
 
 				mkv.addAccount(migrdb.GetCurrentAccountAddress().Bytes(), acc)
 				vkt.ClearStrorageRootConversion(*migrdb.GetCurrentAccountAddress())
@@ -382,7 +385,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 				// Move to the next account, if available - or end
 				// the transition otherwise.
 				if accIt.Next() {
-					fmt.Println("there is a next account, looping")
+					log.Trace("Found another account to convert", "hash", accIt.Hash())
 					var addr common.Address
 					if hasPreimagesBin {
 						if _, err := io.ReadFull(fpreimages, addr[:]); err != nil {
@@ -398,7 +401,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 					if crypto.Keccak256Hash(addr[:]) != accIt.Hash() {
 						return fmt.Errorf("preimage file does not match account hash: %s != %s", crypto.Keccak256Hash(addr[:]), accIt.Hash())
 					}
-					fmt.Printf("next account data: %x %x", accIt.Hash(), addr)
+					log.Trace("Converting account address", "hash", accIt.Hash(), "addr", addr)
 					preimageSeek += int64(len(addr))
 					migrdb.SetCurrentAccountAddress(addr)
 				} else {
