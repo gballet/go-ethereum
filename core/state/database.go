@@ -363,7 +363,7 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 		// trie and an overlay, verkle trie.
 		mpt, err = db.openMPTTrie(db.baseRoot)
 		if err != nil {
-			log.Error(failed to open the mpt", "err", err, "root", db.baseRoot)
+			log.Error("failed to open the mpt", "err", err, "root", db.baseRoot)
 			return nil, err
 		}
 
