@@ -1660,7 +1660,6 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 		} else {
 			// We're post-merge and the parent is pruned, try to recover the parent state
 			log.Debug("Pruned ancestor", "number", block.Number(), "hash", block.Hash())
-			fmt.Println("pruned ancestor")
 			_, err := bc.recoverAncestors(block)
 			return it.index, err
 		}
@@ -2010,8 +2009,7 @@ func (bc *BlockChain) insertSideChain(block *types.Block, it *insertIterator) (i
 		parent = bc.GetHeader(parent.ParentHash, parent.Number.Uint64()-1)
 	}
 	if parent == nil {
-		fmt.Println("missing parent:", numbers, current.Hash(), current.Number)
-		return it.index, errors.New("missing parent")
+		return it.index, fmt.Errorf("missing parent: hash=%x, number=%d", current.Hash(), current.Number)
 	}
 	// Import all the pruned blocks to make the state available
 	var (
@@ -2072,8 +2070,7 @@ func (bc *BlockChain) recoverAncestors(block *types.Block) (common.Hash, error) 
 		}
 	}
 	if parent == nil {
-		fmt.Println("missing parent:", numbers, hashes, block.ParentHash(), block.Number())
-		return common.Hash{}, errors.New("missing parent (recover ancestors)")
+		return common.Hash{}, fmt.Errorf("missing parent during ancestor recovery: hash=%x, number=%d", block.ParentHash(), block.Number())
 	}
 	// Import all the pruned blocks to make the state available
 	for i := len(hashes) - 1; i >= 0; i-- {
@@ -2311,7 +2308,7 @@ func (bc *BlockChain) SetCanonical(head *types.Block) (common.Hash, error) {
 	defer bc.chainmu.Unlock()
 
 	// Re-execute the reorged chain in case the head state is missing.
-	fmt.Printf("looking for state %x %v\n", head.Root(), bc.HasState(head.Root()))
+	log.Trace("looking for state", "root", head.Root(), "has state", bc.HasState(head.Root()))
 	if !bc.HasState(head.Root()) {
 		if latestValidHash, err := bc.recoverAncestors(head); err != nil {
 			return latestValidHash, err

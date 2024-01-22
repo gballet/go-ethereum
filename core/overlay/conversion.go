@@ -343,7 +343,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 							return fmt.Errorf("slotnr len is zero is not 32: %d", len(slotnr))
 						}
 					}
-					fmt.Println("slot number", slotnr)
+					log.Trace("found slot number", "number", slotnr)
 					if crypto.Keccak256Hash(slotnr[:]) != stIt.Hash() {
 						return fmt.Errorf("preimage file does not match storage hash: %s!=%s", crypto.Keccak256Hash(slotnr), stIt.Hash())
 					}
