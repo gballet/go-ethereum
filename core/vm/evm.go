@@ -248,7 +248,6 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 			}(gas)
 		}
 	}
-
 	if isPrecompile {
 		ret, gas, err = RunPrecompiledContract(p, input, gas)
 	} else {

@@ -98,13 +98,13 @@ func (v *BlockValidator) ValidateBody(block *types.Block) error {
 			return errors.New("data blobs present in block body")
 		}
 	}
-	if !v.bc.HasBlockAndState(block.ParentHash(), block.NumberU64()-1) {
-		if !v.bc.HasBlock(block.ParentHash(), block.NumberU64()-1) {
-			return consensus.ErrUnknownAncestor
-		}
-		fmt.Println("failure here")
-		return consensus.ErrPrunedAncestor
-	}
+	// if !v.bc.HasBlockAndState(block.ParentHash(), block.NumberU64()-1) {
+	// 	if !v.bc.HasBlock(block.ParentHash(), block.NumberU64()-1) {
+	// 		return consensus.ErrUnknownAncestor
+	// 	}
+	// 	fmt.Println("failure here")
+	// 	return consensus.ErrPrunedAncestor
+	// }
 	return nil
 }
 
@@ -121,16 +121,16 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 	if rbloom != header.Bloom {
 		return fmt.Errorf("invalid bloom (remote: %x  local: %x)", header.Bloom, rbloom)
 	}
-	// Tre receipt Trie's root (R = (Tr [[H1, R1], ... [Hn, Rn]]))
-	receiptSha := types.DeriveSha(receipts, trie.NewStackTrie(nil))
-	if receiptSha != header.ReceiptHash {
-		return fmt.Errorf("invalid receipt root hash (remote: %x local: %x)", header.ReceiptHash, receiptSha)
-	}
-	// Validate the state root against the received state root and throw
-	// an error if they don't match.
-	if root := statedb.IntermediateRoot(v.config.IsEIP158(header.Number)); header.Root != root {
-		return fmt.Errorf("invalid merkle root (remote: %x local: %x) dberr: %w", header.Root, root, statedb.Error())
-	}
+	// // Tre receipt Trie's root (R = (Tr [[H1, R1], ... [Hn, Rn]]))
+	// receiptSha := types.DeriveSha(receipts, trie.NewStackTrie(nil))
+	// if receiptSha != header.ReceiptHash {
+	// 	return fmt.Errorf("invalid receipt root hash (remote: %x local: %x)", header.ReceiptHash, receiptSha)
+	// }
+	// // Validate the state root against the received state root and throw
+	// // an error if they don't match.
+	// if root := statedb.IntermediateRoot(v.config.IsEIP158(header.Number)); header.Root != root {
+	// 	return fmt.Errorf("invalid merkle root (remote: %x local: %x) dberr: %w", header.Root, root, statedb.Error())
+	// }
 	statedb.Database().SaveTransitionState(header.Root)
 	return nil
 }

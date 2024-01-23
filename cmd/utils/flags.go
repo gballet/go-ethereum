@@ -2156,8 +2156,29 @@ func MakeChain(ctx *cli.Context, stack *node.Node, readonly bool) (*core.BlockCh
 	}
 	vmcfg := vm.Config{EnablePreimageRecording: ctx.Bool(VMEnableDebugFlag.Name)}
 
+	// Override the chain config with provided settings.
+	var overrides core.ChainOverrides
+	if ctx.IsSet(OverrideCancun.Name) {
+		v := ctx.Uint64(OverrideCancun.Name)
+		overrides.OverrideCancun = &v
+	}
+	if ctx.IsSet(OverridePrague.Name) {
+		v := ctx.Uint64(OverridePrague.Name)
+		overrides.OverridePrague = &v
+	}
+	if ctx.IsSet(OverrideProofInBlock.Name) {
+		v := ctx.Bool(OverrideProofInBlock.Name)
+		overrides.OverrideProofInBlock = &v
+	}
+	if ctx.IsSet(OverrideOverlayStride.Name) {
+		v := ctx.Uint64(OverrideOverlayStride.Name)
+		overrides.OverrideOverlayStride = &v
+	}
+	if ctx.IsSet(ClearVerkleCosts.Name) {
+		params.ClearVerkleWitnessCosts()
+	}
 	// Disable transaction indexing/unindexing by default.
-	chain, err := core.NewBlockChain(chainDb, cache, gspec, nil, engine, vmcfg, nil, nil)
+	chain, err := core.NewBlockChain(chainDb, cache, gspec, &overrides, engine, vmcfg, nil, nil)
 	if err != nil {
 		Fatalf("Can't create BlockChain: %v", err)
 	}

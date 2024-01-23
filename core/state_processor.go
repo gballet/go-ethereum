@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc"
+	"github.com/ethereum/go-ethereum/core/overlay"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -97,7 +98,14 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		return nil, nil, 0, errors.New("withdrawals before shanghai")
 	}
 
-	// Perform the overlay transition, if relevant
+	state, err := p.bc.State()
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("get statedb: %s", err)
+	}
+	parent := p.bc.GetHeaderByHash(header.ParentHash)
+	if err := overlay.OverlayVerkleTransition(state, parent.Root, p.config.OverlayStride); err != nil {
+		log.Error("error performing the transition", "err", err)
+	}
 
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.engine.Finalize(p.bc, header, statedb, block.Transactions(), block.Uncles(), withdrawals)
