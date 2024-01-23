@@ -116,12 +116,12 @@ func GetHashFn(ref *types.Header, chain ChainContext) vm.GetHashFunc {
 
 			lastKnownHash := cache[len(cache)-1]
 			lastKnownNumber := ref.Number.Uint64() - uint64(len(cache))
-			limit := uint64(257)
-			if ref.Number.Uint64() < limit {
-				limit = ref.Number.Uint64()
+			limit := 256
+			if int(ref.Number.Uint64()) < limit {
+				limit = int(ref.Number.Uint64())
 			}
 
-			for ref.Number.Uint64()-lastKnownNumber < limit {
+			for len(cache) < limit {
 				header := chain.GetHeader(lastKnownHash, lastKnownNumber)
 				if header == nil {
 					break

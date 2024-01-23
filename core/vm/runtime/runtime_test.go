@@ -321,7 +321,9 @@ func TestBlockhash(t *testing.T) {
 	if last.Uint64() != 744 {
 		t.Fatalf("last block should be 744, got %d (%x)", last, ret[64:96])
 	}
-	if exp, got := 256, chain.counter; exp != got {
+	// 255, because the first block hash is already known from the
+	// header's ParentHash.
+	if exp, got := 255, chain.counter; exp != got {
 		t.Errorf("suboptimal; too many chain iteration, expected %d, got %d", exp, got)
 	}
 }
