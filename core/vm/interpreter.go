@@ -58,7 +58,8 @@ func NewEVMInterpreter(evm *EVM) *EVMInterpreter {
 	switch {
 	case evm.chainRules.IsPrague:
 		// TODO replace with prooper instruction set when fork is specified
-		table = &shanghaiInstructionSet
+		// table = &shanghaiInstructionSet
+		table = &byzantiumInstructionSet
 	case evm.chainRules.IsCancun:
 		table = &cancunInstructionSet
 	case evm.chainRules.IsShanghai:
