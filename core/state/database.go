@@ -65,7 +65,7 @@ type Database interface {
 	// TrieDB retrieves the low level trie database used for data storage.
 	TrieDB() *trie.Database
 
-	StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, cancunTime *uint64, root common.Hash)
+	StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, pragueTime *uint64)
 
 	ReorgThroughVerkleTransition()
 
@@ -217,7 +217,7 @@ func (db *cachingDB) Transitioned() bool {
 }
 
 // Fork implements the fork
-func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, pragueTime *uint64, root common.Hash) {
+func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, pragueTime *uint64) {
 	fmt.Println(`
 	__________.__                       .__                .__                   __       .__                               .__          ____         
 	\__    ___|  |__   ____        ____ |  |   ____ ______ |  |__ _____    _____/  |_     |  |__ _____    ______    __  _  _|__| ____   / ___\ ______
@@ -340,7 +340,7 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 		mpt Trie
 		err error
 	)
-	fmt.Printf("opening trie with root %x, %v %v\n", root, db.InTransition(), db.Transitioned())
+	// fmt.Printf("opening trie with root %x, %v %v\n", root, db.InTransition(), db.Transitioned())
 
 	// TODO separate both cases when I can be certain that it won't
 	// find a Verkle trie where is expects a Transitoion trie.
@@ -406,7 +406,7 @@ func (db *cachingDB) OpenStorageTrie(stateRoot common.Hash, address common.Addre
 		}
 	}
 	if db.InTransition() {
-		fmt.Printf("OpenStorageTrie during transition, state root=%x root=%x\n", stateRoot, root)
+		// fmt.Printf("OpenStorageTrie during transition, state root=%x root=%x\n", stateRoot, root)
 		mpt, err := db.openStorageMPTrie(db.LastMerkleRoot, address, root, nil)
 		if err != nil {
 			return nil, err
