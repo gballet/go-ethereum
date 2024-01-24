@@ -426,7 +426,7 @@ func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine
 	}
 	var snaps *snapshot.Tree
 	triedb := state.NewDatabaseWithConfig(db, nil)
-	triedb.StartVerkleTransition(common.Hash{}, common.Hash{}, config, config.PragueTime, common.Hash{})
+	triedb.StartVerkleTransition(common.Hash{}, common.Hash{}, config, config.PragueTime)
 	triedb.EndVerkleTransition()
 	statedb, err := state.New(parent.Root(), triedb, snaps)
 	if err != nil {
