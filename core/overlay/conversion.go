@@ -313,7 +313,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 					log.Debug("account has storage and NO next item")
 				}
 
-				// fdb.StorageProcessed will be initialized to `true` if the
+				// fdb.StorageProcessed will be initialized to `false` if the
 				// entire storage for an account was not entirely processed
 				// by the previous block. This is used as a signal to resume
 				// processing the storage for that account where we left off.
