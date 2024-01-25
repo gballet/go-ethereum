@@ -20,6 +20,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -55,6 +56,9 @@ type keyValueMigrator struct {
 	processingReady chan struct{}
 	newLeaves       []verkle.LeafNode
 	prepareErr      error
+
+	migratedAccounts     map[string]*types.StateAccount
+	migratedStorageSlots map[string]migratedSS
 }
 
 func newKeyValueMigrator() *keyValueMigrator {
@@ -65,8 +69,10 @@ func newKeyValueMigrator() *keyValueMigrator {
 	//       concurrent calls to GetConfig(). When that gets merged, we can remove this line.
 	_ = verkle.GetConfig()
 	return &keyValueMigrator{
-		processingReady: make(chan struct{}),
-		leafData:        make([]migratedKeyValue, 0, 10_000),
+		processingReady:      make(chan struct{}),
+		leafData:             make([]migratedKeyValue, 0, 10_000),
+		migratedAccounts:     make(map[string]*types.StateAccount),
+		migratedStorageSlots: make(map[string]migratedSS),
 	}
 }
 
@@ -86,13 +92,58 @@ func newBranchKey(addr []byte, treeIndex *uint256.Int) branchKey {
 	return sk
 }
 
+type migratedSS struct {
+	slotNumber []byte
+	slotValue  []byte
+}
+
 func (kvm *keyValueMigrator) addStorageSlot(addr []byte, slotNumber []byte, slotValue []byte) {
+	kvm.migratedStorageSlots[string(addr)] = migratedSS{slotNumber: slotNumber, slotValue: slotValue}
 	treeIndex, subIndex := utils.GetTreeKeyStorageSlotTreeIndexes(slotNumber)
 	leafNodeData := kvm.getOrInitLeafNodeData(newBranchKey(addr, treeIndex))
 	leafNodeData.Values[subIndex] = slotValue
 }
 
+func (kvm *keyValueMigrator) validate(tree *trie.TransitionTrie) error {
+	log.Info("Validating accounts", "count", len(kvm.migratedAccounts))
+	// 06012c8cf97bead5deae237070f9587f8e7a266d
+	for addr, acc := range kvm.migratedAccounts {
+		log.Info("Checking account", "addr", hex.EncodeToString([]byte(addr)))
+		got, err := tree.GetAccount(common.BytesToAddress([]byte(addr)))
+		if err != nil {
+			return fmt.Errorf("failed to get account: %w", err)
+		}
+		if got.Balance.Cmp(acc.Balance) != 0 {
+			return fmt.Errorf("balance doesn't match")
+		}
+		if !bytes.Equal(got.CodeHash, acc.CodeHash) {
+			return fmt.Errorf("code hash doesn't match")
+		}
+		if got.Nonce != acc.Nonce {
+			return fmt.Errorf("nonce doesn't match")
+		}
+		// if got.Root != acc.Root {
+		// 	return fmt.Errorf("root doesn't match")
+		// }
+	}
+
+	log.Info("Validating storage slots", "count", len(kvm.migratedStorageSlots))
+	for addr, ss := range kvm.migratedStorageSlots {
+		log.Info("Checking storage slot", "addr", hex.EncodeToString([]byte(addr)), "storage slot", hex.EncodeToString(ss.slotNumber))
+		got, err := tree.GetStorage(common.BytesToAddress([]byte(addr)), ss.slotNumber)
+		if err != nil {
+			return fmt.Errorf("failed to get storage slot: %s", err)
+		}
+		if !bytes.Equal(got, ss.slotValue) {
+			return fmt.Errorf("storage slot value doesn't match")
+		}
+	}
+	return nil
+}
+
 func (kvm *keyValueMigrator) addAccount(addr []byte, acc *types.StateAccount) {
+	kvm.migratedAccounts[string(addr)] = acc
+
 	leafNodeData := kvm.getOrInitLeafNodeData(newBranchKey(addr, &zeroTreeIndex))
 
 	var version [verkle.LeafValueSize]byte
@@ -319,7 +370,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 				// processing the storage for that account where we left off.
 				// If the entire storage was processed, then the iterator was
 				// created in vain, but it's ok as this will not happen often.
-				for ; !migrdb.GetStorageProcessed() && count < maxMovedCount; count++ {
+				for ; !migrdb.GetStorageProcessed(); count++ {
 					log.Trace("Processing storage", "count", count, "slot", stIt.Slot(), "storage processed", migrdb.GetStorageProcessed(), "current account", migrdb.GetCurrentAccountAddress(), "current account hash", migrdb.GetCurrentAccountHash())
 					var (
 						value     []byte   // slot value after RLP decoding
@@ -364,7 +415,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 			// it means that the storage has finished processing (or none
 			// was available for this account) and that the account itself
 			// can be processed.
-			if count < maxMovedCount {
+			if true || count < maxMovedCount {
 				count++ // count increase for the account itself
 
 				mkv.addAccount(migrdb.GetCurrentAccountAddress().Bytes(), acc)
@@ -428,6 +479,9 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 		now = time.Now()
 		if err := mkv.migrateCollectedKeyValues(tt.Overlay()); err != nil {
 			return fmt.Errorf("could not migrate key values: %w", err)
+		}
+		if err := mkv.validate(tt); err != nil {
+			return fmt.Errorf("invalid migrated key values: %w", err)
 		}
 		log.Info("Inserted key values in overlay tree", "count", count, "duration", time.Since(now))
 	}
