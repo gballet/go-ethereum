@@ -138,9 +138,6 @@ func (kvm *keyValueMigrator) addAccountCode(addr []byte, codeSize uint64, chunks
 }
 
 func (kvm *keyValueMigrator) getOrInitLeafNodeData(bk branchKey) *verkle.BatchNewLeafNodeData {
-	// Remember that keyValueMigration receives actions ordered by (address, subtreeIndex).
-	// This means that we can assume that the last element of leafData is the one that we
-	// are looking for, or that we need to create a new one.
 	if ld, ok := kvm.leafData[bk]; ok {
 		return &ld.leafNodeData
 	}
