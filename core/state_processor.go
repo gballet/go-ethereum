@@ -98,13 +98,9 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		return nil, nil, 0, errors.New("withdrawals before shanghai")
 	}
 
-	state, err := p.bc.State()
-	if err != nil {
-		return nil, nil, 0, fmt.Errorf("get statedb: %s", err)
-	}
 	parent := p.bc.GetHeaderByHash(header.ParentHash)
-	if err := overlay.OverlayVerkleTransition(state, parent.Root, p.config.OverlayStride); err != nil {
-		log.Error("error performing the transition", "err", err)
+	if err := overlay.OverlayVerkleTransition(statedb, parent.Root, p.config.OverlayStride); err != nil {
+		return nil, nil, 0, fmt.Errorf("error performing transition: %s", err)
 	}
 
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
