@@ -47,7 +47,7 @@ var zeroTreeIndex uint256.Int
 // collect the key-values in a way that is efficient.
 type keyValueMigrator struct {
 	// leafData contains the values for the future leaf for a particular VKT branch.
-	leafData []migratedKeyValue
+	leafData map[branchKey]*migratedKeyValue
 
 	// When prepare() is called, it will start a background routine that will process the leafData
 	// saving the result in newLeaves to be used by migrateCollectedKeyValues(). The background
@@ -66,7 +66,7 @@ func newKeyValueMigrator() *keyValueMigrator {
 	_ = verkle.GetConfig()
 	return &keyValueMigrator{
 		processingReady: make(chan struct{}),
-		leafData:        make([]migratedKeyValue, 0, 10_000),
+		leafData:        make(map[branchKey]*migratedKeyValue, 10_000),
 	}
 }
 
@@ -138,19 +138,17 @@ func (kvm *keyValueMigrator) addAccountCode(addr []byte, codeSize uint64, chunks
 }
 
 func (kvm *keyValueMigrator) getOrInitLeafNodeData(bk branchKey) *verkle.BatchNewLeafNodeData {
-	// Remember that keyValueMigration receives actions ordered by (address, subtreeIndex).
-	// This means that we can assume that the last element of leafData is the one that we
-	// are looking for, or that we need to create a new one.
-	if len(kvm.leafData) == 0 || kvm.leafData[len(kvm.leafData)-1].branchKey != bk {
-		kvm.leafData = append(kvm.leafData, migratedKeyValue{
-			branchKey: bk,
-			leafNodeData: verkle.BatchNewLeafNodeData{
-				Stem:   nil, // It will be calculated in the prepare() phase, since it's CPU heavy.
-				Values: make(map[byte][]byte),
-			},
-		})
+	if ld, ok := kvm.leafData[bk]; ok {
+		return &ld.leafNodeData
 	}
-	return &kvm.leafData[len(kvm.leafData)-1].leafNodeData
+	kvm.leafData[bk] = &migratedKeyValue{
+		branchKey: bk,
+		leafNodeData: verkle.BatchNewLeafNodeData{
+			Stem:   nil, // It will be calculated in the prepare() phase, since it's CPU heavy.
+			Values: make(map[byte][]byte, 256),
+		},
+	}
+	return &kvm.leafData[bk].leafNodeData
 }
 
 func (kvm *keyValueMigrator) prepare() {
@@ -159,6 +157,10 @@ func (kvm *keyValueMigrator) prepare() {
 	go func() {
 		// Step 1: We split kvm.leafData in numBatches batches, and we process each batch in a separate goroutine.
 		//         This fills each leafNodeData.Stem with the correct value.
+		leafData := make([]migratedKeyValue, 0, len(kvm.leafData))
+		for _, v := range kvm.leafData {
+			leafData = append(leafData, *v)
+		}
 		var wg sync.WaitGroup
 		batchNum := runtime.NumCPU()
 		batchSize := (len(kvm.leafData) + batchNum - 1) / batchNum
@@ -170,7 +172,7 @@ func (kvm *keyValueMigrator) prepare() {
 			}
 			wg.Add(1)
 
-			batch := kvm.leafData[start:end]
+			batch := leafData[start:end]
 			go func() {
 				defer wg.Done()
 				var currAddr common.Address
@@ -190,8 +192,8 @@ func (kvm *keyValueMigrator) prepare() {
 
 		// Step 2: Now that we have all stems (i.e: tree keys) calculated, we can create the new leaves.
 		nodeValues := make([]verkle.BatchNewLeafNodeData, len(kvm.leafData))
-		for i := range kvm.leafData {
-			nodeValues[i] = kvm.leafData[i].leafNodeData
+		for i := range leafData {
+			nodeValues[i] = leafData[i].leafNodeData
 		}
 
 		// Create all leaves in batch mode so we can optimize cryptography operations.
@@ -306,7 +308,12 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 				if err != nil {
 					return err
 				}
-				stIt.Next()
+				processed := stIt.Next()
+				if processed {
+					log.Debug("account has storage and a next item")
+				} else {
+					log.Debug("account has storage and NO next item")
+				}
 
 				// fdb.StorageProcessed will be initialized to `true` if the
 				// entire storage for an account was not entirely processed
@@ -315,6 +322,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 				// If the entire storage was processed, then the iterator was
 				// created in vain, but it's ok as this will not happen often.
 				for ; !migrdb.GetStorageProcessed() && count < maxMovedCount; count++ {
+					log.Trace("Processing storage", "count", count, "slot", stIt.Slot(), "storage processed", migrdb.GetStorageProcessed(), "current account", migrdb.GetCurrentAccountAddress(), "current account hash", migrdb.GetCurrentAccountHash())
 					var (
 						value     []byte   // slot value after RLP decoding
 						safeValue [32]byte // 32-byte aligned value
@@ -337,6 +345,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 							return fmt.Errorf("slotnr len is zero is not 32: %d", len(slotnr))
 						}
 					}
+					log.Trace("found slot number", "number", slotnr)
 					if crypto.Keccak256Hash(slotnr[:]) != stIt.Hash() {
 						return fmt.Errorf("preimage file does not match storage hash: %s!=%s", crypto.Keccak256Hash(slotnr), stIt.Hash())
 					}
@@ -378,6 +387,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 				// Move to the next account, if available - or end
 				// the transition otherwise.
 				if accIt.Next() {
+					log.Trace("Found another account to convert", "hash", accIt.Hash())
 					var addr common.Address
 					if hasPreimagesBin {
 						if _, err := io.ReadFull(fpreimages, addr[:]); err != nil {
@@ -393,6 +403,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 					if crypto.Keccak256Hash(addr[:]) != accIt.Hash() {
 						return fmt.Errorf("preimage file does not match account hash: %s != %s", crypto.Keccak256Hash(addr[:]), accIt.Hash())
 					}
+					log.Trace("Converting account address", "hash", accIt.Hash(), "addr", addr)
 					preimageSeek += int64(len(addr))
 					migrdb.SetCurrentAccountAddress(addr)
 				} else {
