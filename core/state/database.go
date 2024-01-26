@@ -348,14 +348,14 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 		// NOTE this is a kaustinen-only change, it will break replay
 		vkt, err := db.openVKTrie(root)
 		if err != nil {
-			fmt.Println("failed to open the vkt", err)
+			log.Error("failed to open the vkt", "err", err)
 			return nil, err
 		}
 
 		// If the verkle conversion has ended, return a single
 		// verkle trie.
 		if db.CurrentTransitionState.ended {
-			fmt.Println("vkt only")
+			log.Debug("transition ended, returning a simple verkle tree")
 			return vkt, nil
 		}
 
