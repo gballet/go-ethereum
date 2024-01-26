@@ -489,9 +489,10 @@ func opGasprice(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	return nil, nil
 }
 
-func getBlockHashFromContract(number uint64, statedb StateDB) common.Hash {
+func getBlockHashFromContract(number uint64, statedb StateDB, witness *state.AccessWitness) common.Hash {
 	var pnum common.Hash
 	binary.BigEndian.PutUint64(pnum[24:], number)
+	witness.TouchAddressOnReadAndComputeGas(params.HistoryStorageAddress[:], *uint256.NewInt(number / 256), byte(number&0xFF))
 	return statedb.GetState(params.HistoryStorageAddress, pnum)
 }
 
@@ -507,12 +508,12 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 	bnum := evm.Context.BlockNumber.Uint64()
 	// if Prague is active, check if we are past the 256th block so that
 	// reading from the contract can be activated (EIP 2935).
-	if interpreter.evm.chainRules.IsPrague && bnum > 256 {
-		if getBlockHashFromContract(bnum-256, evm.StateDB) != (common.Hash{}) {
+	if evm.chainRules.IsPrague && bnum > 256 {
+		if getBlockHashFromContract(bnum-256, evm.StateDB, evm.Accesses) != (common.Hash{}) {
 			// EIP-2935 case: get the block number from the fork, as we are 256 blocks
 			// after the fork activation.
 
-			num.SetBytes(getBlockHashFromContract(num64, evm.StateDB).Bytes())
+			num.SetBytes(getBlockHashFromContract(num64, evm.StateDB, evm.Accesses).Bytes())
 			return nil, nil
 		}
 
