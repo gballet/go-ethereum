@@ -431,7 +431,6 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 			post := state.GetTrie().(*trie.TransitionTrie)
 			vtrpost = post.Overlay()
 			okpost = true
-
 		}
 		if okpre && okpost {
 			if len(keys) > 0 {
