@@ -21,7 +21,7 @@ import (
 	"sync"
 
 	"github.com/crate-crypto/go-ipa/bandersnatch/fr"
-	"github.com/gballet/go-verkle"
+	"github.com/ethereum/go-verkle"
 	"github.com/holiman/uint256"
 )
 
@@ -37,9 +37,9 @@ var (
 	zero                                = uint256.NewInt(0)
 	VerkleNodeWidthLog2                 = 8
 	HeaderStorageOffset                 = uint256.NewInt(64)
-	mainStorageOffsetLshVerkleNodeWidth = new(uint256.Int).Lsh(uint256.NewInt(256), 31-uint(VerkleNodeWidthLog2))
+	mainStorageOffsetLshVerkleNodeWidth = new(uint256.Int).Lsh(uint256.NewInt(1), 248-uint(VerkleNodeWidthLog2))
 	CodeOffset                          = uint256.NewInt(128)
-	MainStorageOffset                   = new(uint256.Int).Lsh(uint256.NewInt(256), 31)
+	MainStorageOffset                   = new(uint256.Int).Lsh(uint256.NewInt(1), 248 /* 8 * 31*/)
 	VerkleNodeWidth                     = uint256.NewInt(256)
 	codeStorageDelta                    = uint256.NewInt(0).Sub(CodeOffset, HeaderStorageOffset)
 
@@ -186,28 +186,6 @@ func GetTreeKeyCodeChunkWithEvaluatedAddress(addressPoint *verkle.Point, chunk *
 	return GetTreeKeyWithEvaluatedAddess(addressPoint, treeIndex, subIndex)
 }
 
-func GetTreeKeyStorageSlot(address []byte, storageKey *uint256.Int) []byte {
-	pos := storageKey.Clone()
-	if storageKey.Cmp(codeStorageDelta) < 0 {
-		pos.Add(HeaderStorageOffset, storageKey)
-	} else {
-		pos.Add(MainStorageOffset, storageKey)
-	}
-	treeIndex := new(uint256.Int).Div(pos, VerkleNodeWidth)
-
-	// calculate the sub_index, i.e. the index in the stem tree.
-	// Because the modulus is 256, it's the last byte of treeIndex
-	subIndexMod := new(uint256.Int).Mod(pos, VerkleNodeWidth)
-	var subIndex byte
-	if len(subIndexMod) != 0 {
-		// uint256 is broken into 4 little-endian quads,
-		// each with native endianness. Extract the least
-		// significant byte.
-		subIndex = byte(subIndexMod[0])
-	}
-	return GetTreeKey(address, treeIndex, subIndex)
-}
-
 func PointToHash(evaluated *verkle.Point, suffix byte) []byte {
 	// The output of Byte() is big engian for banderwagon. This
 	// introduces an imbalance in the tree, because hashes are
@@ -289,12 +267,23 @@ func GetTreeKeyStorageSlotTreeIndexes(storageKey []byte) (*uint256.Int, byte) {
 	}
 	// If the storage slot is in the main storage, we need to add the main storage offset.
 
+	// The first MAIN_STORAGE_OFFSET group will see its
+	// first 64 slots unreachable. This is either a typo in the
+	// spec or intended to conserve the 256-u256
+	// aligment. If we decide to ever access these 64
+	// slots, uncomment this.
+	// // Get the new offset since we now know that we are above 64.
+	// pos.Sub(&pos, codeStorageDelta)
+	// suffix := byte(pos[0] & 0xFF)
+	suffix := storageKey[len(storageKey)-1]
+
 	// We first divide by VerkleNodeWidth to create room to avoid an overflow next.
 	pos.Rsh(&pos, uint(VerkleNodeWidthLog2))
+
 	// We add mainStorageOffset/VerkleNodeWidth which can't overflow.
 	pos.Add(&pos, mainStorageOffsetLshVerkleNodeWidth)
 
 	// The sub-index is the LSB of the original storage key, since mainStorageOffset
 	// doesn't affect this byte, so we can avoid masks or shifts.
-	return &pos, storageKey[len(storageKey)-1]
+	return &pos, suffix
 }
