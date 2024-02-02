@@ -685,7 +685,6 @@ func TestProcessVerkleiInvalidContractCreation(t *testing.T) {
 			} else if suffixDiff.Suffix > 4 {
 				t.Fatalf("invalid suffix diff found for %x in block #2: %d\n", stemStateDiff.Stem, suffixDiff.Suffix)
 			}
-
 		}
 	}
 }
