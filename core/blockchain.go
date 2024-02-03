@@ -251,11 +251,13 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 	if _, ok := genesisErr.(*params.ConfigCompatError); genesisErr != nil && !ok {
 		return nil, genesisErr
 	}
-	if overrides.OverrideProofInBlock != nil {
-		chainConfig.ProofInBlocks = *overrides.OverrideProofInBlock
-	}
-	if overrides.OverrideOverlayStride != nil {
-		chainConfig.OverlayStride = *overrides.OverrideOverlayStride
+	if overrides != nil {
+		if overrides.OverrideProofInBlock != nil {
+			chainConfig.ProofInBlocks = *overrides.OverrideProofInBlock
+		}
+		if overrides.OverrideOverlayStride != nil {
+			chainConfig.OverlayStride = *overrides.OverrideOverlayStride
+		}
 	}
 	log.Info("")
 	log.Info(strings.Repeat("-", 153))
