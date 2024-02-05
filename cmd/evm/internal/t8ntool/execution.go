@@ -184,6 +184,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		misc.ApplyDAOHardFork(statedb)
 	}
 	if chainConfig.IsPrague(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) {
+		// XXX figure out what to do for older hashes?
 		core.ProcessParentBlockHash(statedb, pre.Env.Number-1, *pre.Env.ParentHash)
 	}
 	var blobGasUsed uint64
