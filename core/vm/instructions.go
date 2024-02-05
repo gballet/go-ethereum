@@ -378,7 +378,7 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 
 	contractAddr := scope.Contract.Address()
 	paddedCodeCopy, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(scope.Contract.Code, uint64CodeOffset, length.Uint64())
-	if interpreter.evm.chainRules.IsPrague {
+	if interpreter.evm.chainRules.IsPrague && !scope.Contract.IsDeployment {
 		statelessGas := touchCodeChunksRangeOnReadAndChargeGas(contractAddr[:], copyOffset, nonPaddedCopyLength, uint64(len(scope.Contract.Code)), interpreter.evm.Accesses)
 		if !scope.Contract.UseGas(statelessGas) {
 			scope.Contract.Gas = 0
