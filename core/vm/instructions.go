@@ -506,6 +506,13 @@ func getBlockHashFromContract(number uint64, statedb StateDB, witness *state.Acc
 	return statedb.GetState(params.HistoryStorageAddress, pnum)
 }
 
+func max(a, b uint64) uint64 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	num := scope.Stack.peek()
 	num64, overflow := num.Uint64WithOverflow()
@@ -518,10 +525,12 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 	bnum := evm.Context.BlockNumber.Uint64()
 	// if Prague is active, check if we are past the 256th block so that
 	// reading from the contract can be activated (EIP 2935).
-	if evm.chainRules.IsPrague && bnum > 256 {
-		if getBlockHashFromContract(bnum-256, evm.StateDB, evm.Accesses) != (common.Hash{}) {
+	// For testnets that start with eip2935 activated at genesis time,
+	// activate this code at block 1.
+	if evm.chainRules.IsPrague {
+		if getBlockHashFromContract(max(bnum, 256)-256, evm.StateDB, evm.Accesses) != (common.Hash{}) {
 			// EIP-2935 case: get the block number from the fork, as we are 256 blocks
-			// after the fork activation.
+			// after the fork activation or within 256 blocks of an eip2935 genesis.
 
 			num.SetBytes(getBlockHashFromContract(num64, evm.StateDB, evm.Accesses).Bytes())
 			return nil, nil
