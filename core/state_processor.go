@@ -88,7 +88,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	)
 	if p.config.IsPrague(block.Number(), block.Time()) {
 		parent := p.bc.GetBlockByHash(block.ParentHash())
-		if p.config.IsPrague(parent.Number(), parent.Time()) {
+		if !p.config.IsPrague(parent.Number(), parent.Time()) {
 			InsertBlockHashHistoryAtEip2935Fork(statedb, block.NumberU64()-1, block.ParentHash(), p.bc)
 		} else {
 			ProcessParentBlockHash(statedb, block.NumberU64()-1, block.ParentHash())
@@ -373,7 +373,7 @@ func InsertBlockHashHistoryAtEip2935Fork(statedb *state.StateDB, prevNumber uint
 	ancestor := chain.GetHeader(prevHash, prevNumber)
 	for i := prevNumber; i > 0 && i >= prevNumber-256; i-- {
 		ProcessParentBlockHash(statedb, i, ancestor.Hash())
-		ancestor = chain.GetHeader(ancestor.ParentHash, ancestor.Number.Uint64())
+		ancestor = chain.GetHeader(ancestor.ParentHash, ancestor.Number.Uint64()-1)
 	}
 }
 
