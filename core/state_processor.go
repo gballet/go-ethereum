@@ -24,7 +24,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/consensus/aura"
+	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -79,8 +79,9 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		vmenv   = vm.NewEVM(context, vm.TxContext{}, statedb, p.config, cfg)
 		signer  = types.MakeSigner(p.config, header.Number, header.Time)
 	)
-	if a, ok := p.engine.(*aura.AuRa); ok {
-		a.Syscall = func(contractaddr common.Address, data []byte) ([]byte, error) {
+	b, ok := p.engine.(*beacon.Beacon)
+	if ok {
+		b.SetAuraSyscall(func(contractaddr common.Address, data []byte) ([]byte, error) {
 			sysaddr := common.HexToAddress("fffffffffffffffffffffffffffffffffffffffe")
 			msg := &Message{
 				To:                &contractaddr,
@@ -104,8 +105,9 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 			}
 			statedb.Finalise(true)
 			return ret, err
-		}
+		})
 	}
+	b.AuraPrepare(p.bc, block.Header(), statedb)
 	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
 		ProcessBeaconBlockRoot(*beaconRoot, vmenv, statedb)
 	}

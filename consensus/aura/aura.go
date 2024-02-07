@@ -30,12 +30,11 @@ import (
 	// "github.com/ethereum/erigon-lib/kv"
 
 	"github.com/cockroachdb/pebble"
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
-	"github.com/ethereum/go-ethereum/consensus/aura/contracts"
 	"github.com/ethereum/go-ethereum/consensus/clique"
 	"github.com/ethereum/go-ethereum/consensus/misc"
+	// "github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -46,7 +45,6 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
-	lru "github.com/hashicorp/golang-lru/v2"
 	"github.com/holiman/uint256"
 	"golang.org/x/exp/constraints"
 	"golang.org/x/exp/slices"
@@ -200,7 +198,7 @@ func (e *EpochManager) noteNewEpoch() { e.force = true }
 // zoomValidators - Zooms to the epoch after the header with the given hash. Returns true if succeeded, false otherwise.
 // It's analog of zoom_to_after function in OE, but doesn't require external locking
 // nolint
-func (e *EpochManager) zoomToAfter(chain consensus.ChainHeaderReader, er *NonTransactionalEpochReader, validators ValidatorSet, hash common.Hash, call syscall) (*RollingFinality, uint64, bool) {
+func (e *EpochManager) zoomToAfter(chain consensus.ChainHeaderReader, er *NonTransactionalEpochReader, validators ValidatorSet, hash common.Hash, call Syscall) (*RollingFinality, uint64, bool) {
 	var lastWasParent bool
 	if e.finalityChecker.lastPushed != nil {
 		lastWasParent = *e.finalityChecker.lastPushed == hash
@@ -279,7 +277,7 @@ func epochTransitionFor(chain consensus.ChainHeaderReader, e *NonTransactionalEp
 	return EpochTransition{BlockNumber: num, BlockHash: hash, ProofRlp: transitionProof}, true
 }
 
-type syscall func(common.Address, []byte) ([]byte, error)
+type Syscall func(common.Address, []byte) ([]byte, error)
 
 // AuRa
 // nolint
@@ -299,37 +297,7 @@ type AuRa struct {
 	certifier     *common.Address // certifies service transactions
 	certifierLock sync.RWMutex
 
-	Syscall syscall
-}
-
-type GasLimitOverride struct {
-	cache *lru.Cache[common.Hash, *uint256.Int]
-}
-
-func NewGasLimitOverride() *GasLimitOverride {
-	// The number of recent block hashes for which the gas limit override is memoized.
-	const GasLimitOverrideCacheCapacity = 10
-
-	cache, err := lru.New[common.Hash, *uint256.Int](GasLimitOverrideCacheCapacity)
-	if err != nil {
-		panic("error creating prefetching cache for blocks")
-	}
-	return &GasLimitOverride{cache: cache}
-}
-
-func (pb *GasLimitOverride) Pop(hash common.Hash) *uint256.Int {
-	if val, ok := pb.cache.Get(hash); ok && val != nil {
-		pb.cache.Remove(hash)
-		return val
-	}
-	return nil
-}
-
-func (pb *GasLimitOverride) Add(hash common.Hash, b *uint256.Int) {
-	if b == nil {
-		return
-	}
-	pb.cache.ContainsOrAdd(hash, b)
+	Syscall Syscall
 }
 
 func SortedKeys[K constraints.Ordered, V any](m map[K]V) []K {
@@ -669,6 +637,8 @@ func (c *AuRa) Prepare(chain consensus.ChainHeaderReader, header *types.Header, 
 	//return nil
 	// }
 
+	c.verifyGasLimitOverride(chain.Config(), chain, header, statedb, c.Syscall)
+
 	// func (c *AuRa) Initialize(config *params.ChainConfig, chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []types.Transaction, uncles []*types.Header, syscall consensus.SystemCall) {
 	blockNum := header.Number.Uint64()
 	for address, rewrittenCode := range c.cfg.RewriteBytecode[blockNum] {
@@ -763,7 +733,7 @@ func (c *AuRa) Finalize(chain consensus.ChainHeaderReader, header *types.Header,
 	}
 }
 
-func buildFinality(e *EpochManager, chain consensus.ChainHeaderReader, er *NonTransactionalEpochReader, validators ValidatorSet, header *types.Header, syscall syscall) []unAssembledHeader {
+func buildFinality(e *EpochManager, chain consensus.ChainHeaderReader, er *NonTransactionalEpochReader, validators ValidatorSet, header *types.Header, syscall Syscall) []unAssembledHeader {
 	// commit_block -> aura.build_finality
 	_, _, ok := e.zoomToAfter(chain, er, validators, header.ParentHash, syscall)
 	if !ok {
@@ -1123,71 +1093,6 @@ func (c *AuRa) CalculateRewards(_ *params.ChainConfig, header *types.Header, _ [
 	return []consensus.Reward{r}, nil
 }
 
-func callBlockRewardAbi(contractAddr common.Address, syscall syscall, beneficiaries []common.Address, rewardKind []consensus.RewardKind) ([]common.Address, []*big.Int) {
-	castedKind := make([]uint16, len(rewardKind))
-	for i := range rewardKind {
-		castedKind[i] = uint16(rewardKind[i])
-	}
-	packed, err := blockRewardAbi().Pack("reward", beneficiaries, castedKind)
-	if err != nil {
-		panic(err)
-	}
-	out, err := syscall(contractAddr, packed)
-	if err != nil {
-		panic(err)
-	}
-	if len(out) == 0 {
-		return nil, nil
-	}
-	res, err := blockRewardAbi().Unpack("reward", out)
-	if err != nil {
-		panic(err)
-	}
-	beneficiariesRes := res[0].([]common.Address)
-	rewardsBig := res[1].([]*big.Int)
-	// rewardsU256 := make([]*big.Int, len(rewardsBig))
-	// for i := 0; i < len(rewardsBig); i++ {
-	// 	var overflow bool
-	// 	rewards[i], overflow = uint256.FromBig(rewardsBig[i])
-	// 	if overflow {
-	// 		panic("Overflow in callBlockRewardAbi")
-	// 	}
-	// }
-	return beneficiariesRes, rewardsBig
-}
-
-func blockRewardAbi() abi.ABI {
-	a, err := abi.JSON(bytes.NewReader(contracts.BlockReward))
-	if err != nil {
-		panic(err)
-	}
-	return a
-}
-
-func certifierAbi() abi.ABI {
-	a, err := abi.JSON(bytes.NewReader(contracts.Certifier))
-	if err != nil {
-		panic(err)
-	}
-	return a
-}
-
-func registrarAbi() abi.ABI {
-	a, err := abi.JSON(bytes.NewReader(contracts.Registrar))
-	if err != nil {
-		panic(err)
-	}
-	return a
-}
-
-func withdrawalAbi() abi.ABI {
-	a, err := abi.JSON(bytes.NewReader(contracts.Withdrawal))
-	if err != nil {
-		panic(err)
-	}
-	return a
-}
-
 // See https://github.com/gnosischain/specs/blob/master/execution/withdrawals.md
 func (c *AuRa) ExecuteSystemWithdrawals(withdrawals []*types.Withdrawal) error {
 	if c.cfg.WithdrawalContractAddress == nil {
@@ -1212,27 +1117,6 @@ func (c *AuRa) ExecuteSystemWithdrawals(withdrawals []*types.Withdrawal) error {
 		log.Warn("ExecuteSystemWithdrawals", "err", err)
 	}
 	return err
-}
-
-func getCertifier(registrar common.Address, syscall syscall) *common.Address {
-	hashedKey := crypto.Keccak256Hash([]byte("service_transaction_checker"))
-	packed, err := registrarAbi().Pack("getAddress", hashedKey, "A")
-	if err != nil {
-		panic(err)
-	}
-	out, err := syscall(registrar, packed)
-	if err != nil {
-		panic(err)
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	res, err := registrarAbi().Unpack("getAddress", out)
-	if err != nil {
-		panic(err)
-	}
-	certifier := res[0].(common.Address)
-	return &certifier
 }
 
 // An empty step message that is included in a seal, the only difference is that it doesn't include

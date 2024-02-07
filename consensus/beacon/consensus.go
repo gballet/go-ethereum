@@ -478,3 +478,13 @@ func IsTTDReached(chain consensus.ChainHeaderReader, parentHash common.Hash, par
 	}
 	return td.Cmp(chain.Config().TerminalTotalDifficulty) >= 0, nil
 }
+
+func (beacon *Beacon) SetAuraSyscall(sc aura.Syscall) {
+	if a, ok := beacon.ethone.(*aura.AuRa); ok {
+		a.Syscall = sc
+	}
+}
+
+func (beacon *Beacon) AuraPrepare(chain consensus.ChainHeaderReader, header *types.Header, statedb *state.StateDB) {
+	beacon.ethone.Prepare(chain, header, statedb)
+}
