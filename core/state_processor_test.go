@@ -37,6 +37,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/trie/utils"
 
 	//"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
@@ -792,5 +793,132 @@ func TestProcessVerkleContractWithEmptyCode(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+func TestProcessVerklExtCodeHashOpcode(t *testing.T) {
+	var (
+		config = &params.ChainConfig{
+			ChainID:                       big.NewInt(69421),
+			HomesteadBlock:                big.NewInt(0),
+			EIP150Block:                   big.NewInt(0),
+			EIP155Block:                   big.NewInt(0),
+			EIP158Block:                   big.NewInt(0),
+			ByzantiumBlock:                big.NewInt(0),
+			ConstantinopleBlock:           big.NewInt(0),
+			PetersburgBlock:               big.NewInt(0),
+			IstanbulBlock:                 big.NewInt(0),
+			MuirGlacierBlock:              big.NewInt(0),
+			BerlinBlock:                   big.NewInt(0),
+			LondonBlock:                   big.NewInt(0),
+			Ethash:                        new(params.EthashConfig),
+			ShanghaiTime:                  u64(0),
+			PragueTime:                    u64(0),
+			TerminalTotalDifficulty:       common.Big0,
+			TerminalTotalDifficultyPassed: true,
+			ProofInBlocks:                 true,
+		}
+		signer     = types.LatestSigner(config)
+		testKey, _ = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
+		bcdb       = rawdb.NewMemoryDatabase() // Database for the blockchain
+		gendb      = rawdb.NewMemoryDatabase() // Database for the block-generation code, they must be separate as they are path-based.
+		coinbase   = common.HexToAddress("0x71562b71999873DB5b286dF957af199Ec94617F7")
+		account1   = common.HexToAddress("0x687704DB07e902e9A8B3754031D168D46E3D586e")
+		account2   = common.HexToAddress("0x6177843db3138ae69679A54b95cf345ED759450d")
+		gspec      = &Genesis{
+			Config: config,
+			Alloc: GenesisAlloc{
+				coinbase: GenesisAccount{
+					Balance: big.NewInt(1000000000000000000), // 1 ether
+					Nonce:   0,
+				},
+				account1: GenesisAccount{
+					Balance: big.NewInt(1000000000000000000), // 1 ether
+					Nonce:   0,
+				},
+				account2: GenesisAccount{
+					Balance: big.NewInt(1000000000000000000), // 1 ether
+					Nonce:   3,
+				},
+			},
+		}
+	)
+	// Verkle trees use the snapshot, which must be enabled before the
+	// data is saved into the tree+database.
+	genesis := gspec.MustCommit(bcdb)
+
+	// Commit the genesis block to the block-generation database as it
+	// is now independent of the blockchain database.
+	gspec.MustCommit(gendb)
+
+	contractAddr := common.HexToAddress("3a220f351252089d385b29beca14e27f204c296a")
+	_, _, _, statediff := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 1, func(i int, gen *BlockGen) {
+		gen.SetPoS()
+		txData := []byte{
+			0x60, 22, // PUSH1 22
+			0x60, 12, // PUSH1 12
+			0x60, 0x00, // PUSH1 0
+			0x39, // CODECOPY
+
+			0x60, 22, // PUSH1 22
+			0x60, 0x00, // PUSH1 0
+			0xF3, // RETURN
+
+			// Contract that auto-calls EXTCODEHASH
+			0x73, // PUSH20
+			0x3a, 0x22, 0x0f, 0x35, 0x12, 0x52, 0x08, 0x9d, 0x38, 0x5b, 0x29, 0xbe, 0xca, 0x14, 0xe2, 0x7f, 0x20, 0x4c, 0x29, 0x6a,
+			0x3F, // EXTCODEHASH
+		}
+		// Create dummy contract.
+		tx, _ := types.SignTx(types.NewContractCreation(0, big.NewInt(0), 100_000, big.NewInt(875000000), txData), signer, testKey)
+		gen.AddTx(tx)
+
+		tx, _ = types.SignTx(types.NewTransaction(1, contractAddr, big.NewInt(0), 100_000, big.NewInt(875000000), nil), signer, testKey)
+		gen.AddTx(tx)
+
+	})
+
+	contractKeccakTreeKey := utils.GetTreeKeyCodeKeccak(contractAddr[:])
+
+	var stateDiffIdx = -1
+	for i, stemStateDiff := range statediff[0] {
+		if bytes.Equal(stemStateDiff.Stem[:], contractKeccakTreeKey[:31]) {
+			stateDiffIdx = i
+			break
+		}
+	}
+	if stateDiffIdx == -1 {
+		t.Fatalf("no state diff found for account2 header")
+	}
+
+	var one [32]byte
+	one[31] = 1
+	versionStateDiff := statediff[0][stateDiffIdx].SuffixDiffs[0]
+	if versionStateDiff.Suffix != utils.VersionLeafKey {
+		t.Fatalf("invalid suffix diff")
+	}
+	if versionStateDiff.CurrentValue == nil {
+		t.Fatalf("invalid current value")
+	}
+	if *versionStateDiff.CurrentValue == one {
+		t.Fatalf("invalid current value")
+	}
+	if versionStateDiff.NewValue != nil {
+		t.Fatalf("invalid new value")
+	}
+
+	var zero [32]byte
+	codeHashStateDiff := statediff[0][stateDiffIdx].SuffixDiffs[0]
+	if codeHashStateDiff.Suffix != utils.CodeKeccakLeafKey {
+		t.Fatalf("invalid suffix diff")
+	}
+	if codeHashStateDiff.CurrentValue == nil {
+		t.Fatalf("invalid current value")
+	}
+	if *codeHashStateDiff.CurrentValue == zero {
+		t.Fatalf("invalid current value")
+	}
+	if codeHashStateDiff.NewValue != nil {
+		t.Fatalf("invalid new value")
 	}
 }
