@@ -230,6 +230,7 @@ func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.H
                                                     |__|`)
 	db.CurrentTransitionState = &TransitionState{
 		started: true,
+		ended:   false,
 		// initialize so that the first storage-less accounts are processed
 		StorageProcessed: true,
 	}
@@ -577,10 +578,7 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 	// as a verkle database.
 	ts, ok := db.TransitionStatePerRoot[root]
 	if !ok || ts == nil {
-		transitionEnded, err := db.disk.Get(keyVerkleTransitionEnded)
-		if err != nil {
-			panic(err) // This is fine since this branch is only used for replay
-		}
+		transitionEnded, _ := db.disk.Get(keyVerkleTransitionEnded)
 		ended := db.triedb.IsVerkle() || bytes.Equal(transitionEnded, []byte{0x1})
 		// Start with a fresh state
 		ts = &TransitionState{ended: ended}
