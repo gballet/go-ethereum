@@ -240,6 +240,9 @@ func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.H
 	if pragueTime != nil {
 		chainConfig.PragueTime = pragueTime
 	}
+	if err := db.disk.Put(keyVerkleTransitionEnded, []byte{0}); err != nil {
+		panic(err) // This is fine since this branch is only used for replay
+	}
 }
 
 func (db *cachingDB) ReorgThroughVerkleTransition() {
@@ -578,7 +581,7 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 		if err != nil {
 			panic(err) // This is fine since this branch is only used for replay
 		}
-		ended := db.triedb.IsVerkle() || bytes.Equal(transitionEnded, []byte("1"))
+		ended := db.triedb.IsVerkle() || bytes.Equal(transitionEnded, []byte{0x1})
 		// Start with a fresh state
 		ts = &TransitionState{ended: ended}
 	}
