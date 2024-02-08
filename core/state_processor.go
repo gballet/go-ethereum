@@ -31,6 +31,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/trie/utils"
 )
 
 // StateProcessor is a basic Processor, which takes care of transitioning
@@ -184,6 +185,14 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 	blockContext := NewEVMBlockContext(header, bc, author)
 	vmenv := vm.NewEVM(blockContext, vm.TxContext{BlobHashes: tx.BlobHashes()}, statedb, config, cfg)
 	return applyTransaction(msg, config, gp, statedb, header.Number, header.Hash(), tx, usedGas, vmenv)
+}
+
+func InsertBlockHashHistoryAtEip2935Fork(statedb *state.StateDB, prevNumber uint64, prevHash common.Hash, chain consensus.ChainHeaderReader) {
+	ancestor := chain.GetHeader(prevHash, prevNumber)
+	for i := prevNumber; i > 0 && i >= prevNumber-256; i-- {
+		ProcessParentBlockHash(statedb, i, ancestor.Hash())
+		ancestor = chain.GetHeader(ancestor.ParentHash, ancestor.Number.Uint64()-1)
+	}
 }
 
 func ProcessParentBlockHash(statedb *state.StateDB, prevNumber uint64, prevHash common.Hash) {
