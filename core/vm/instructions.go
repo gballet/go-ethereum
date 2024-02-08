@@ -490,6 +490,14 @@ func opExtCodeHash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	} else {
 		slot.SetBytes(interpreter.evm.StateDB.GetCodeHash(address).Bytes())
 	}
+	if interpreter.evm.chainRules.IsPrague {
+		statelessGas := interpreter.evm.Accesses.TouchAddressOnReadAndComputeGas(slot.Bytes(), uint256.Int{}, trieUtils.VersionLeafKey)
+		statelessGas += interpreter.evm.Accesses.TouchAddressOnReadAndComputeGas(slot.Bytes(), uint256.Int{}, trieUtils.CodeKeccakLeafKey)
+		if !scope.Contract.UseGas(statelessGas) {
+			scope.Contract.Gas = 0
+			return nil, ErrOutOfGas
+		}
+	}
 	return nil, nil
 }
 
