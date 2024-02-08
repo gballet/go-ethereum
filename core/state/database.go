@@ -568,7 +568,6 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 }
 
 func (db *cachingDB) LoadTransitionState(root common.Hash) {
-
 	if db.TransitionStatePerRoot == nil {
 		db.TransitionStatePerRoot = make(map[common.Hash]*TransitionState)
 	}
