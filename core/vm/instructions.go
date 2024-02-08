@@ -348,7 +348,8 @@ func opExtCodeSize(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	slot := scope.Stack.peek()
 	cs := uint64(interpreter.evm.StateDB.GetCodeSize(slot.Bytes20()))
 	if interpreter.evm.chainRules.IsPrague {
-		statelessGas := interpreter.evm.Accesses.TouchAddressOnReadAndComputeGas(slot.Bytes(), uint256.Int{}, trieUtils.CodeSizeLeafKey)
+		statelessGas := interpreter.evm.Accesses.TouchAddressOnReadAndComputeGas(slot.Bytes(), uint256.Int{}, trieUtils.VersionLeafKey)
+		statelessGas += interpreter.evm.Accesses.TouchAddressOnReadAndComputeGas(slot.Bytes(), uint256.Int{}, trieUtils.CodeSizeLeafKey)
 		if !scope.Contract.UseGas(statelessGas) {
 			scope.Contract.Gas = 0
 			return nil, ErrOutOfGas
