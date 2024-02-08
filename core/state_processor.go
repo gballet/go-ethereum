@@ -369,7 +369,14 @@ func (kvm *keyValueMigrator) migrateCollectedKeyValues(tree *trie.VerkleTrie) er
 	return nil
 }
 
+// InsertBlockHashHistoryAtEip2935Fork handles the insertion of all previous 256
+// blocks on the eip2935 activation block. It also adds the account header of the
+// history contract to the witness.
 func InsertBlockHashHistoryAtEip2935Fork(statedb *state.StateDB, prevNumber uint64, prevHash common.Hash, chain consensus.ChainHeaderReader) {
+	// Make sure that the historical contract is added to the witness
+	statedb.Witness().TouchAndChargeContractCreateCompleted(params.HistoryStorageAddress[:])
+
+	// Insert all historical block hashes
 	ancestor := chain.GetHeader(prevHash, prevNumber)
 	for i := prevNumber; i > 0 && i >= prevNumber-256; i-- {
 		ProcessParentBlockHash(statedb, i, ancestor.Hash())
