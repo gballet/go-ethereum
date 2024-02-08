@@ -151,7 +151,7 @@ func init() {
 func ActivePrecompiles(rules params.Rules) []common.Address {
 	switch {
 	case rules.IsPrague:
-		return PrecompiledAddressesBerlin
+		return PrecompiledAddressesByzantium
 	case rules.IsCancun:
 		return PrecompiledAddressesCancun
 	case rules.IsBerlin:
