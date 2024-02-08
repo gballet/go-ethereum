@@ -323,7 +323,7 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 		bc.stateCache.EndVerkleTransition()
 	}
 
-	if !bc.HasState(head.Root) {
+	if !bc.stateCache.Transitioned() && !bc.HasState(head.Root) {
 		// Head state is missing, before the state recovery, find out the
 		// disk layer point of snapshot(if it's enabled). Make sure the
 		// rewound point is lower than disk layer.

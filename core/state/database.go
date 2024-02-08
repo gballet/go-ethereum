@@ -17,6 +17,7 @@
 package state
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 
@@ -41,6 +42,8 @@ const (
 	// Cache size granted for caching clean code.
 	codeCacheSize = 64 * 1024 * 1024
 )
+
+var keyVerkleTransitionEnded = []byte("verkle-transition-ended")
 
 // Database wraps access to tries and contract code.
 type Database interface {
@@ -264,6 +267,10 @@ func (db *cachingDB) EndVerkleTransition() {
 	  |____|  |___|  /\___        \___  |____/\___  |   __/|___|  (____  |___|  |__|      |___|  (____  /_____/     |____(____  |___|  \____ |\___  \____ |
                                                     |__|`)
 	db.CurrentTransitionState.ended = true
+
+	if err := db.disk.Put(keyVerkleTransitionEnded, []byte{1}); err != nil {
+		panic(err) // This is fine since this branch is only used for replay
+	}
 }
 
 type TransitionState struct {
@@ -557,6 +564,7 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 }
 
 func (db *cachingDB) LoadTransitionState(root common.Hash) {
+
 	if db.TransitionStatePerRoot == nil {
 		db.TransitionStatePerRoot = make(map[common.Hash]*TransitionState)
 	}
@@ -566,8 +574,13 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 	// as a verkle database.
 	ts, ok := db.TransitionStatePerRoot[root]
 	if !ok || ts == nil {
+		transitionEnded, err := db.disk.Get(keyVerkleTransitionEnded)
+		if err != nil {
+			panic(err) // This is fine since this branch is only used for replay
+		}
+		ended := db.triedb.IsVerkle() || bytes.Equal(transitionEnded, []byte("1"))
 		// Start with a fresh state
-		ts = &TransitionState{ended: db.triedb.IsVerkle()}
+		ts = &TransitionState{ended: ended}
 	}
 
 	// Copy so that the CurrentAddress pointer in the map
