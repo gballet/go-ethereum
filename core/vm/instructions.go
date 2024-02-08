@@ -485,11 +485,6 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 func opExtCodeHash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	slot := scope.Stack.peek()
 	address := common.Address(slot.Bytes20())
-	if interpreter.evm.StateDB.Empty(address) {
-		slot.Clear()
-	} else {
-		slot.SetBytes(interpreter.evm.StateDB.GetCodeHash(address).Bytes())
-	}
 	if interpreter.evm.chainRules.IsPrague {
 		statelessGas := interpreter.evm.Accesses.TouchAddressOnReadAndComputeGas(slot.Bytes(), uint256.Int{}, trieUtils.VersionLeafKey)
 		statelessGas += interpreter.evm.Accesses.TouchAddressOnReadAndComputeGas(slot.Bytes(), uint256.Int{}, trieUtils.CodeKeccakLeafKey)
@@ -497,6 +492,11 @@ func opExtCodeHash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 			scope.Contract.Gas = 0
 			return nil, ErrOutOfGas
 		}
+	}
+	if interpreter.evm.StateDB.Empty(address) {
+		slot.Clear()
+	} else {
+		slot.SetBytes(interpreter.evm.StateDB.GetCodeHash(address).Bytes())
 	}
 	return nil, nil
 }

@@ -851,74 +851,94 @@ func TestProcessVerklExtCodeHashOpcode(t *testing.T) {
 	// is now independent of the blockchain database.
 	gspec.MustCommit(gendb)
 
-	contractAddr := common.HexToAddress("3a220f351252089d385b29beca14e27f204c296a")
-	_, _, _, statediff := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 1, func(i int, gen *BlockGen) {
+	dummyContract := []byte{
+		0x60, 2, // PUSH1 2
+		0x60, 12, // PUSH1 12
+		0x60, 0x00, // PUSH1 0
+		0x39, // CODECOPY
+
+		0x60, 2, // PUSH1 2
+		0x60, 0x00, // PUSH1 0
+		0xF3, // RETURN
+
+		// Contract that auto-calls EXTCODEHASH
+		0x60, 42, // PUSH1 42
+	}
+	dummyContractAddr := common.HexToAddress("3a220f351252089d385b29beca14e27f204c296a")
+	extCodeHashContract := []byte{
+		0x60, 22, // PUSH1 22
+		0x60, 12, // PUSH1 12
+		0x60, 0x00, // PUSH1 0
+		0x39, // CODECOPY
+
+		0x60, 22, // PUSH1 22
+		0x60, 0x00, // PUSH1 0
+		0xF3, // RETURN
+
+		// Contract that auto-calls EXTCODEHASH
+		0x73, // PUSH20
+		0x3a, 0x22, 0x0f, 0x35, 0x12, 0x52, 0x08, 0x9d, 0x38, 0x5b, 0x29, 0xbe, 0xca, 0x14, 0xe2, 0x7f, 0x20, 0x4c, 0x29, 0x6a,
+		0x3F, // EXTCODEHASH
+	}
+	extCodeHashContractAddr := common.HexToAddress("db7d6ab1f17c6b31909ae466702703daef9269cf")
+	_, _, _, statediff := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 2, func(i int, gen *BlockGen) {
 		gen.SetPoS()
-		txData := []byte{
-			0x60, 22, // PUSH1 22
-			0x60, 12, // PUSH1 12
-			0x60, 0x00, // PUSH1 0
-			0x39, // CODECOPY
 
-			0x60, 22, // PUSH1 22
-			0x60, 0x00, // PUSH1 0
-			0xF3, // RETURN
+		if i == 0 {
+			// Create dummy contract.
+			tx, _ := types.SignTx(types.NewContractCreation(0, big.NewInt(0), 100_000, big.NewInt(875000000), dummyContract), signer, testKey)
+			gen.AddTx(tx)
 
-			// Contract that auto-calls EXTCODEHASH
-			0x73, // PUSH20
-			0x3a, 0x22, 0x0f, 0x35, 0x12, 0x52, 0x08, 0x9d, 0x38, 0x5b, 0x29, 0xbe, 0xca, 0x14, 0xe2, 0x7f, 0x20, 0x4c, 0x29, 0x6a,
-			0x3F, // EXTCODEHASH
+			// Create contract with EXTCODEHASH opcode.
+			tx, _ = types.SignTx(types.NewContractCreation(1, big.NewInt(0), 100_000, big.NewInt(875000000), extCodeHashContract), signer, testKey)
+			gen.AddTx(tx)
+		} else {
+			tx, _ := types.SignTx(types.NewTransaction(2, extCodeHashContractAddr, big.NewInt(0), 100_000, big.NewInt(875000000), nil), signer, testKey)
+			gen.AddTx(tx)
 		}
-		// Create dummy contract.
-		tx, _ := types.SignTx(types.NewContractCreation(0, big.NewInt(0), 100_000, big.NewInt(875000000), txData), signer, testKey)
-		gen.AddTx(tx)
-
-		tx, _ = types.SignTx(types.NewTransaction(1, contractAddr, big.NewInt(0), 100_000, big.NewInt(875000000), nil), signer, testKey)
-		gen.AddTx(tx)
 
 	})
 
-	contractKeccakTreeKey := utils.GetTreeKeyCodeKeccak(contractAddr[:])
+	contractKeccakTreeKey := utils.GetTreeKeyCodeKeccak(dummyContractAddr[:])
 
 	var stateDiffIdx = -1
-	for i, stemStateDiff := range statediff[0] {
+	for i, stemStateDiff := range statediff[1] {
 		if bytes.Equal(stemStateDiff.Stem[:], contractKeccakTreeKey[:31]) {
 			stateDiffIdx = i
 			break
 		}
 	}
 	if stateDiffIdx == -1 {
-		t.Fatalf("no state diff found for account2 header")
-	}
-
-	var one [32]byte
-	one[31] = 1
-	versionStateDiff := statediff[0][stateDiffIdx].SuffixDiffs[0]
-	if versionStateDiff.Suffix != utils.VersionLeafKey {
-		t.Fatalf("invalid suffix diff")
-	}
-	if versionStateDiff.CurrentValue == nil {
-		t.Fatalf("invalid current value")
-	}
-	if *versionStateDiff.CurrentValue == one {
-		t.Fatalf("invalid current value")
-	}
-	if versionStateDiff.NewValue != nil {
-		t.Fatalf("invalid new value")
+		t.Fatalf("no state diff found for stem")
 	}
 
 	var zero [32]byte
-	codeHashStateDiff := statediff[0][stateDiffIdx].SuffixDiffs[0]
+	versionStateDiff := statediff[1][stateDiffIdx].SuffixDiffs[0]
+	if versionStateDiff.Suffix != utils.VersionLeafKey {
+		t.Fatalf("version invalid suffix")
+	}
+	if versionStateDiff.CurrentValue == nil {
+		t.Fatalf("version.CurrentValue must not be nil")
+	}
+	if *versionStateDiff.CurrentValue != zero {
+		t.Fatalf("version.CurrentValue must be zero")
+	}
+	if versionStateDiff.NewValue != nil {
+		t.Fatalf("version.NewValue must be nil")
+	}
+
+	codeHashStateDiff := statediff[1][stateDiffIdx].SuffixDiffs[1]
 	if codeHashStateDiff.Suffix != utils.CodeKeccakLeafKey {
-		t.Fatalf("invalid suffix diff")
+		t.Fatalf("code hash invalid suffix")
 	}
 	if codeHashStateDiff.CurrentValue == nil {
-		t.Fatalf("invalid current value")
+		t.Fatalf("codeHash.CurrentValue must not be empty")
 	}
-	if *codeHashStateDiff.CurrentValue == zero {
-		t.Fatalf("invalid current value")
+	expCodeHash := crypto.Keccak256Hash(dummyContract[12:])
+	if *codeHashStateDiff.CurrentValue != expCodeHash {
+		t.Fatalf("codeHash.CurrentValue unexpected code hash")
 	}
 	if codeHashStateDiff.NewValue != nil {
-		t.Fatalf("invalid new value")
+		t.Fatalf("codeHash.NewValue must be nil")
 	}
 }
