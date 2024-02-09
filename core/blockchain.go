@@ -1767,6 +1767,8 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			// is the fork block and that the conversion needs to be marked at started.
 			if !bc.stateCache.InTransition() && !bc.stateCache.Transitioned() {
 				bc.stateCache.StartVerkleTransition(parent.Root, emptyVerkleRoot, bc.Config(), bc.Config().PragueTime, parent.Root)
+			} else {
+				log.Debug("skipped initialization")
 			}
 		}
 		if parent.Number.Uint64() == conversionBlock {
