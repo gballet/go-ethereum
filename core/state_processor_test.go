@@ -912,22 +912,7 @@ func TestProcessVerklExtCodeHashOpcode(t *testing.T) {
 		t.Fatalf("no state diff found for stem")
 	}
 
-	var zero [32]byte
-	versionStateDiff := statediff[1][stateDiffIdx].SuffixDiffs[0]
-	if versionStateDiff.Suffix != utils.VersionLeafKey {
-		t.Fatalf("version invalid suffix")
-	}
-	if versionStateDiff.CurrentValue == nil {
-		t.Fatalf("version.CurrentValue must not be nil")
-	}
-	if *versionStateDiff.CurrentValue != zero {
-		t.Fatalf("version.CurrentValue must be zero")
-	}
-	if versionStateDiff.NewValue != nil {
-		t.Fatalf("version.NewValue must be nil")
-	}
-
-	codeHashStateDiff := statediff[1][stateDiffIdx].SuffixDiffs[1]
+	codeHashStateDiff := statediff[1][stateDiffIdx].SuffixDiffs[0]
 	if codeHashStateDiff.Suffix != utils.CodeKeccakLeafKey {
 		t.Fatalf("code hash invalid suffix")
 	}
