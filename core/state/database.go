@@ -19,7 +19,6 @@ package state
 import (
 	"errors"
 	"fmt"
-	"runtime/debug"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/lru"
@@ -238,7 +237,6 @@ func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.H
 	if pragueTime != nil {
 		chainConfig.PragueTime = pragueTime
 	}
-	debug.PrintStack()
 }
 
 func (db *cachingDB) ReorgThroughVerkleTransition() {
@@ -357,7 +355,6 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 		// If the verkle conversion has ended, return a single
 		// verkle trie.
 		if db.CurrentTransitionState.ended {
-			debug.PrintStack()
 			log.Debug("transition ended, returning a simple verkle tree")
 			return vkt, nil
 		}
@@ -570,9 +567,8 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 	ts, ok := db.TransitionStatePerRoot[root]
 	if !ok || ts == nil {
 		log.Debug("could not find any transition state, starting with a fresh state", "is verkle", db.triedb.IsVerkle())
-		debug.PrintStack()
 		// Start with a fresh state
-		ts = &TransitionState{ended: db.triedb.IsVerkle()}
+		ts = &TransitionState{ended: false}
 	}
 
 	// Copy so that the CurrentAddress pointer in the map
