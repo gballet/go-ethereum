@@ -535,10 +535,6 @@ func (api *ConsensusAPI) newPayload(params engine.ExecutableData, versionedHashe
 			api.eth.BlockChain().StartVerkleTransition(parent.Root, common.Hash{}, api.eth.BlockChain().Config(), nil, parent.Root)
 		}
 	}
-	// // Reset db merge state in case of a reorg
-	// if !api.eth.BlockChain().Config().IsPrague(block.Number(), block.Time()) {
-	// 	api.eth.BlockChain().ReorgThroughVerkleTransition()
-	// }
 	// Another cornercase: if the node is in snap sync mode, but the CL client
 	// tries to make it import a block. That should be denied as pushing something
 	// into the database directly will conflict with the assumptions of snap sync
