@@ -56,10 +56,6 @@ func NewEVMInterpreter(evm *EVM) *EVMInterpreter {
 	// If jump table was not initialised we set the default one.
 	var table *JumpTable
 	switch {
-	case evm.chainRules.IsPrague:
-		// TODO replace with prooper instruction set when fork is specified
-		// table = &shanghaiInstructionSet
-		table = &byzantiumInstructionSet
 	case evm.chainRules.IsCancun:
 		table = &cancunInstructionSet
 	case evm.chainRules.IsShanghai:
@@ -74,6 +70,10 @@ func NewEVMInterpreter(evm *EVM) *EVMInterpreter {
 		table = &istanbulInstructionSet
 	case evm.chainRules.IsConstantinople:
 		table = &constantinopleInstructionSet
+	case evm.chainRules.IsPrague:
+		// TODO replace with prooper instruction set when fork is specified
+		// table = &shanghaiInstructionSet
+		table = &byzantiumInstructionSet
 	case evm.chainRules.IsByzantium:
 		table = &byzantiumInstructionSet
 	case evm.chainRules.IsEIP158:
