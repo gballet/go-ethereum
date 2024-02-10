@@ -546,8 +546,6 @@ func (db *cachingDB) SetLastMerkleRoot(merkleRoot common.Hash) {
 }
 
 func (db *cachingDB) SaveTransitionState(root common.Hash) {
-	db.TransitionStatePerRoot = lru.NewBasicLRU[common.Hash, *TransitionState](100)
-
 	if db.CurrentTransitionState != nil {
 		encoded, err := rlp.EncodeToBytes(db.CurrentTransitionState)
 		if err != nil {
