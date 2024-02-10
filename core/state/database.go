@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/ethereum/go-ethereum/trie/utils"
@@ -189,22 +190,24 @@ func NewDatabase(db ethdb.Database) Database {
 // large memory cache.
 func NewDatabaseWithConfig(db ethdb.Database, config *trie.Config) Database {
 	return &cachingDB{
-		disk:          db,
-		codeSizeCache: lru.NewCache[common.Hash, int](codeSizeCacheSize),
-		codeCache:     lru.NewSizeConstrainedCache[common.Hash, []byte](codeCacheSize),
-		triedb:        trie.NewDatabaseWithConfig(db, config),
-		addrToPoint:   utils.NewPointCache(),
+		disk:                   db,
+		codeSizeCache:          lru.NewCache[common.Hash, int](codeSizeCacheSize),
+		codeCache:              lru.NewSizeConstrainedCache[common.Hash, []byte](codeCacheSize),
+		triedb:                 trie.NewDatabaseWithConfig(db, config),
+		addrToPoint:            utils.NewPointCache(),
+		TransitionStatePerRoot: lru.NewBasicLRU[common.Hash, *TransitionState](100),
 	}
 }
 
 // NewDatabaseWithNodeDB creates a state database with an already initialized node database.
 func NewDatabaseWithNodeDB(db ethdb.Database, triedb *trie.Database) Database {
 	return &cachingDB{
-		disk:          db,
-		codeSizeCache: lru.NewCache[common.Hash, int](codeSizeCacheSize),
-		codeCache:     lru.NewSizeConstrainedCache[common.Hash, []byte](codeCacheSize),
-		triedb:        triedb,
-		addrToPoint:   utils.NewPointCache(),
+		disk:                   db,
+		codeSizeCache:          lru.NewCache[common.Hash, int](codeSizeCacheSize),
+		codeCache:              lru.NewSizeConstrainedCache[common.Hash, []byte](codeCacheSize),
+		triedb:                 triedb,
+		addrToPoint:            utils.NewPointCache(),
+		TransitionStatePerRoot: lru.NewBasicLRU[common.Hash, *TransitionState](100),
 	}
 }
 
@@ -305,7 +308,7 @@ type cachingDB struct {
 	// TODO ensure that this info is in the DB
 	LastMerkleRoot         common.Hash // root hash of the read-only base tree
 	CurrentTransitionState *TransitionState
-	TransitionStatePerRoot map[common.Hash]*TransitionState
+	TransitionStatePerRoot lru.BasicLRU[common.Hash, *TransitionState]
 
 	addrToPoint *utils.PointCache
 
@@ -543,37 +546,60 @@ func (db *cachingDB) SetLastMerkleRoot(merkleRoot common.Hash) {
 }
 
 func (db *cachingDB) SaveTransitionState(root common.Hash) {
-	if db.TransitionStatePerRoot == nil {
-		db.TransitionStatePerRoot = make(map[common.Hash]*TransitionState)
-	}
+	db.TransitionStatePerRoot = lru.NewBasicLRU[common.Hash, *TransitionState](100)
 
 	if db.CurrentTransitionState != nil {
+		encoded, err := rlp.EncodeToBytes(db.CurrentTransitionState)
+		if err != nil {
+			log.Error("failed to encode transition state", "err", err)
+			return
+		}
+
 		// Copy so that the address pointer isn't updated after
 		// it has been saved.
-		db.TransitionStatePerRoot[root] = db.CurrentTransitionState.Copy()
+		db.TransitionStatePerRoot.Add(root, db.CurrentTransitionState.Copy())
 
-		fmt.Println("saving transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
+		rawdb.WriteVerkleTransitionState(db.DiskDB(), root, encoded)
+
+		log.Debug("saving transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
 	}
 }
 
 func (db *cachingDB) LoadTransitionState(root common.Hash) {
-	if db.TransitionStatePerRoot == nil {
-		db.TransitionStatePerRoot = make(map[common.Hash]*TransitionState)
-	}
+	var ts *TransitionState
+	if !db.TransitionStatePerRoot.Contains(root) {
+		// Not in the cache, try getting it from the DB
+		data, err := rawdb.ReadVerkleTransitionState(db.DiskDB(), root)
+		if err != nil {
+			log.Error("failed to read transition state", "err", err)
+			return
+		}
 
-	// Initialize the first transition state, with the "ended"
-	// field set to true if the database was created
-	// as a verkle database.
-	ts, ok := db.TransitionStatePerRoot[root]
-	if !ok || ts == nil {
-		fmt.Println("could not find any transition state, starting with a fresh state", "is verkle", db.triedb.IsVerkle())
-		// Start with a fresh state
-		ts = &TransitionState{ended: false}
+		if len(data) > 0 {
+			var newts TransitionState
+			// Decode transition state
+			err = rlp.DecodeBytes(data, &newts)
+			if err != nil {
+				log.Error("failed to decode transition state", "err", err)
+				return
+			}
+			ts = &newts
+		}
+
+		// Fallback
+		if ts == nil {
+			// Initialize the first transition state, with the "ended"
+			// field set to true if the database was created
+			// as a verkle database.
+			log.Debug("no transition state found, starting fresh", "is verkle", db.triedb.IsVerkle())
+			// Start with a fresh state
+			ts = &TransitionState{ended: db.triedb.IsVerkle()}
+		}
 	}
 
 	// Copy so that the CurrentAddress pointer in the map
 	// doesn't get overwritten.
 	db.CurrentTransitionState = ts.Copy()
 
-	fmt.Println("loaded transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
+	log.Debug("loaded transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
 }
