@@ -17,6 +17,8 @@
 package state
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
 	"fmt"
 
@@ -28,7 +30,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/ethereum/go-ethereum/trie/utils"
@@ -547,9 +548,10 @@ func (db *cachingDB) SetLastMerkleRoot(merkleRoot common.Hash) {
 
 func (db *cachingDB) SaveTransitionState(root common.Hash) {
 	if db.CurrentTransitionState != nil {
-		encoded, err := rlp.EncodeToBytes(db.CurrentTransitionState)
+		var buf bytes.Buffer
+		err := binary.Write(&buf, binary.LittleEndian, db.CurrentTransitionState)
 		if err != nil {
-			log.Error("failed to encode transition state", "err", err)
+			log.Crit("failed to encode transition state", "err", err)
 			return
 		}
 
@@ -559,7 +561,7 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 			db.TransitionStatePerRoot.Add(root, db.CurrentTransitionState.Copy())
 		}
 
-		rawdb.WriteVerkleTransitionState(db.DiskDB(), root, encoded)
+		rawdb.WriteVerkleTransitionState(db.DiskDB(), root, buf.Bytes())
 
 		log.Debug("saving transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
 	}
@@ -576,9 +578,12 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 		}
 
 		if len(data) > 0 {
-			var newts TransitionState
+			var (
+				newts TransitionState
+				buf   = bytes.NewReader(data[:])
+			)
 			// Decode transition state
-			err = rlp.DecodeBytes(data, &newts)
+			err = binary.Read(buf, binary.LittleEndian, &newts)
 			if err != nil {
 				log.Error("failed to decode transition state", "err", err)
 				return
