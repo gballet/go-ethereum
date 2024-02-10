@@ -553,9 +553,11 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 			return
 		}
 
-		// Copy so that the address pointer isn't updated after
-		// it has been saved.
-		db.TransitionStatePerRoot.Add(root, db.CurrentTransitionState.Copy())
+		if !db.TransitionStatePerRoot.Contains(root) {
+			// Copy so that the address pointer isn't updated after
+			// it has been saved.
+			db.TransitionStatePerRoot.Add(root, db.CurrentTransitionState.Copy())
+		}
 
 		rawdb.WriteVerkleTransitionState(db.DiskDB(), root, encoded)
 
