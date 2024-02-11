@@ -569,8 +569,10 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 }
 
 func (db *cachingDB) LoadTransitionState(root common.Hash) {
-	var ts *TransitionState
-	if !db.TransitionStatePerRoot.Contains(root) {
+	// Try to get the transition state from the cache and
+	// the DB if it's not there.
+	ts, ok := db.TransitionStatePerRoot.Get(root)
+	if !ok {
 		// Not in the cache, try getting it from the DB
 		data, err := rawdb.ReadVerkleTransitionState(db.DiskDB(), root)
 		if err != nil {
