@@ -18,7 +18,7 @@ package state
 
 import (
 	"bytes"
-	"encoding/binary"
+	"encoding/gob"
 	"errors"
 	"fmt"
 
@@ -549,7 +549,8 @@ func (db *cachingDB) SetLastMerkleRoot(merkleRoot common.Hash) {
 func (db *cachingDB) SaveTransitionState(root common.Hash) {
 	if db.CurrentTransitionState != nil {
 		var buf bytes.Buffer
-		err := binary.Write(&buf, binary.LittleEndian, db.CurrentTransitionState)
+		enc := gob.NewEncoder(&buf)
+		err := enc.Encode(db.CurrentTransitionState)
 		if err != nil {
 			log.Crit("failed to encode transition state", "err", err)
 			return
@@ -559,9 +560,9 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 			// Copy so that the address pointer isn't updated after
 			// it has been saved.
 			db.TransitionStatePerRoot.Add(root, db.CurrentTransitionState.Copy())
-		}
 
-		rawdb.WriteVerkleTransitionState(db.DiskDB(), root, buf.Bytes())
+			rawdb.WriteVerkleTransitionState(db.DiskDB(), root, buf.Bytes())
+		}
 
 		log.Debug("saving transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
 	}
@@ -580,10 +581,11 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 		if len(data) > 0 {
 			var (
 				newts TransitionState
-				buf   = bytes.NewReader(data[:])
+				buf   = bytes.NewBuffer(data[:])
+				dec   = gob.NewDecoder(buf)
 			)
 			// Decode transition state
-			err = binary.Read(buf, binary.LittleEndian, &newts)
+			err = dec.Decode(&newts)
 			if err != nil {
 				log.Error("failed to decode transition state", "err", err)
 				return
