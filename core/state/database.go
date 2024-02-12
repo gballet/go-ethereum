@@ -75,7 +75,7 @@ type Database interface {
 
 	Transitioned() bool
 
-	InitTransitionStatus(bool, bool, *common.Address, *common.Hash, *bool)
+	InitTransitionStatus(bool, bool)
 
 	SetCurrentSlotHash(common.Hash)
 
@@ -243,17 +243,10 @@ func (db *cachingDB) ReorgThroughVerkleTransition() {
 	log.Warn("trying to reorg through the transition, which makes no sense at this point")
 }
 
-func (db *cachingDB) InitTransitionStatus(started, ended bool, addr *common.Address, storageHash *common.Hash, processed *bool) {
+func (db *cachingDB) InitTransitionStatus(started, ended bool) {
 	db.CurrentTransitionState = &TransitionState{
-		ended:                 ended,
-		started:               started,
-		CurrentAccountAddress: addr,
-	}
-	if storageHash != nil {
-		db.CurrentTransitionState.CurrentSlotHash = *storageHash
-	}
-	if processed != nil {
-		db.CurrentTransitionState.StorageProcessed = *processed
+		ended:   ended,
+		started: started,
 	}
 }
 
