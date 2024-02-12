@@ -42,8 +42,9 @@ import (
 )
 
 type Prestate struct {
-	Env stEnv             `json:"env"`
-	Pre core.GenesisAlloc `json:"pre"`
+	Env    stEnv             `json:"env"`
+	Pre    core.GenesisAlloc `json:"pre"`
+	MPTPre core.GenesisAlloc `json:"mptPre,omitempty"`
 }
 
 // ExecutionResult contains the execution status after running a state test, any
@@ -371,14 +372,33 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 	if chainConfig.IsPrague(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) {
 		// is this the verkle fork block?
 		if pre.Env.Number == 0 || chainConfig.IsPrague(big.NewInt(int64(pre.Env.Number)-1), pre.Env.ParentTimestamp) {
-			// FIXME: need parent.root here instead of common.Hash{} in first and last argument
-			sdb.StartVerkleTransition(common.Hash{}, common.Hash{}, chainConfig, chainConfig.PragueTime, common.Hash{})
+			// generate the snapshot from the pre state and start with a fresh tree
+			mptSdb := state.NewDatabaseWithConfig(db, &trie.Config{Preimages: true, Verkle: false})
+			statedb, _ := state.New(types.EmptyRootHash, mptSdb, nil)
+			for addr, a := range pre.MPTPre {
+				statedb.SetCode(addr, a.Code)
+				statedb.SetNonce(addr, a.Nonce)
+				statedb.SetBalance(addr, a.Balance)
+				for k, v := range a.Storage {
+					statedb.SetState(addr, k, v)
+				}
+			}
+			// Commit db an create a snapshot from it.
+			mptRoot, _ := statedb.Commit(0, false)
+			snaps, err := snapshot.New(snapshot.Config{AsyncBuild: false, Verkle: verkle}, mptSdb.DiskDB(), mptSdb.TrieDB(), mptRoot)
+			if err != nil {
+				panic(err)
+			}
+			snaps.Cap(mptRoot, 0)
 
-			// TODO generate the snapshot from the pre state and start with a fresh tree
-			// the way to do this is to simulate the previous block's commit, generate the
-			// snapshot and then start over with a fresh state.
+			// The parent root is the root of the MPT, and it is also the one of the base tree. This
+			// is why it's repeated three times here.
+			sdb.StartVerkleTransition(mptRoot, mptRoot, chainConfig, chainConfig.PragueTime, mptRoot)
 
-			return nil // FIXME
+			// Create an empty verkle state
+			statedb, _ = state.New(types.EmptyRootHash, sdb, nil)
+
+			return statedb
 		} else {
 			// has the conversion ended?
 			if *pre.Env.Ended {
