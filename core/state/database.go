@@ -564,7 +564,7 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 			rawdb.WriteVerkleTransitionState(db.DiskDB(), root, buf.Bytes())
 		}
 
-		log.Debug("saving transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
+		fmt.Println("saving transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
 	}
 }
 
@@ -600,7 +600,7 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 			// Initialize the first transition state, with the "ended"
 			// field set to true if the database was created
 			// as a verkle database.
-			log.Debug("no transition state found, starting fresh", "is verkle", db.triedb.IsVerkle())
+			fmt.Println("no transition state found, starting fresh", "is verkle", db.triedb.IsVerkle())
 			// Start with a fresh state
 			ts = &TransitionState{ended: db.triedb.IsVerkle()}
 		}
@@ -610,5 +610,5 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 	// doesn't get overwritten.
 	db.CurrentTransitionState = ts.Copy()
 
-	log.Debug("loaded transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
+	fmt.Println("loaded transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
 }
