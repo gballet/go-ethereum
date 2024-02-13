@@ -77,10 +77,11 @@ var (
 )
 
 type input struct {
-	Alloc core.GenesisAlloc `json:"alloc,omitempty"`
-	Env   *stEnv            `json:"env,omitempty"`
-	Txs   []*txWithKey      `json:"txs,omitempty"`
-	TxRlp string            `json:"txsRlp,omitempty"`
+	Alloc    core.GenesisAlloc  `json:"alloc,omitempty"`
+	AllocMPT *core.GenesisAlloc `json:"allocMPT,omitempty"`
+	Env      *stEnv             `json:"env,omitempty"`
+	Txs      []*txWithKey       `json:"txs,omitempty"`
+	TxRlp    string             `json:"txsRlp,omitempty"`
 }
 
 func Transition(ctx *cli.Context) error {
@@ -146,16 +147,17 @@ func Transition(ctx *cli.Context) error {
 	// stdin input or in files.
 	// Check if anything needs to be read from stdin
 	var (
-		prestate Prestate
-		txs      types.Transactions // txs to apply
-		allocStr = ctx.String(InputAllocFlag.Name)
+		prestate    Prestate
+		txs         types.Transactions // txs to apply
+		allocStr    = ctx.String(InputAllocFlag.Name)
+		allocMPTStr = ctx.String(InputAllocMPTFlag.Name)
 
 		envStr    = ctx.String(InputEnvFlag.Name)
 		txStr     = ctx.String(InputTxsFlag.Name)
 		inputData = &input{}
 	)
 	// Figure out the prestate alloc
-	if allocStr == stdinSelector || envStr == stdinSelector || txStr == stdinSelector {
+	if allocStr == stdinSelector || allocMPTStr == stdinSelector || envStr == stdinSelector || txStr == stdinSelector {
 		decoder := json.NewDecoder(os.Stdin)
 		if err := decoder.Decode(inputData); err != nil {
 			return NewError(ErrorJson, fmt.Errorf("failed unmarshaling stdin: %v", err))
@@ -167,6 +169,12 @@ func Transition(ctx *cli.Context) error {
 		}
 	}
 	prestate.Pre = inputData.Alloc
+	if allocMPTStr != stdinSelector && allocMPTStr != "" {
+		if err := readFile(allocMPTStr, "allocMPT", &inputData.AllocMPT); err != nil {
+			return err
+		}
+	}
+	prestate.MPTPre = inputData.AllocMPT
 
 	// Set the block environment
 	if envStr != stdinSelector {

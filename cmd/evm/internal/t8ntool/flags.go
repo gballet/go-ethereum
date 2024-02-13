@@ -91,6 +91,10 @@ var (
 		Usage: "`stdin` or file name of where to find the prestate alloc to use.",
 		Value: "alloc.json",
 	}
+	InputAllocMPTFlag = &cli.StringFlag{
+		Name:  "input.allocMPT",
+		Usage: "`stdin` or file name of where to find the prestate alloc of the MPT to use.",
+	}
 	InputEnvFlag = &cli.StringFlag{
 		Name:  "input.env",
 		Usage: "`stdin` or file name of where to find the prestate env to use.",

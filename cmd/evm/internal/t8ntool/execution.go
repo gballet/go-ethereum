@@ -42,9 +42,9 @@ import (
 )
 
 type Prestate struct {
-	Env    stEnv             `json:"env"`
-	Pre    core.GenesisAlloc `json:"pre"`
-	MPTPre core.GenesisAlloc `json:"mptPre,omitempty"`
+	Env    stEnv              `json:"env"`
+	Pre    core.GenesisAlloc  `json:"pre"`
+	MPTPre *core.GenesisAlloc `json:"mptPre,omitempty"`
 }
 
 // ExecutionResult contains the execution status after running a state test, any
@@ -373,9 +373,12 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		// is this the verkle fork block?
 		if pre.Env.Number == 0 || chainConfig.IsPrague(big.NewInt(int64(pre.Env.Number)-1), pre.Env.ParentTimestamp) {
 			// generate the snapshot from the pre state and start with a fresh tree
+			if pre.MPTPre == nil {
+				panic("MPTPre is required for verkle transition")
+			}
 			mptSdb := state.NewDatabaseWithConfig(db, &trie.Config{Preimages: true, Verkle: false})
 			statedb, _ := state.New(types.EmptyRootHash, mptSdb, nil)
-			for addr, a := range pre.MPTPre {
+			for addr, a := range *pre.MPTPre {
 				statedb.SetCode(addr, a.Code)
 				statedb.SetNonce(addr, a.Nonce)
 				statedb.SetBalance(addr, a.Balance)
@@ -388,6 +391,8 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 			snaps, err := snapshot.New(snapshot.Config{AsyncBuild: false, Verkle: verkle}, mptSdb.DiskDB(), mptSdb.TrieDB(), mptRoot)
 			if err != nil {
 				panic(err)
+			} else if snaps == nil {
+				panic("snapshot is nil")
 			}
 			snaps.Cap(mptRoot, 0)
 
@@ -412,8 +417,11 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 
 				// ongoing conversion, generate the snapshot from the pre state but also
 				// the intermediate verkle tree.
+				if pre.MPTPre == nil {
+					panic("MPTPre is required for verkle transition")
+				}
 				statedb, _ := state.New(types.EmptyRootHash, sdb, nil)
-				for addr, a := range pre.MPTPre {
+				for addr, a := range *pre.MPTPre {
 					statedb.SetCode(addr, a.Code)
 					statedb.SetNonce(addr, a.Nonce)
 					statedb.SetBalance(addr, a.Balance)
@@ -426,6 +434,8 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 				snaps, err := snapshot.New(snapshot.Config{AsyncBuild: false, Verkle: verkle}, sdb.DiskDB(), sdb.TrieDB(), mptRoot)
 				if err != nil {
 					panic(err)
+				} else if snaps == nil {
+					panic("snapshot is nil")
 				}
 				snaps.Cap(mptRoot, 0)
 
