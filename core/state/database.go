@@ -500,18 +500,25 @@ func (db *cachingDB) SetCurrentAccountAddress(addr common.Address) {
 
 func (db *cachingDB) GetCurrentAccountHash() common.Hash {
 	var addrHash common.Hash
-	if db.CurrentTransitionState.CurrentAccountAddress != nil {
+	if db.CurrentTransitionState != nil && db.CurrentTransitionState.CurrentAccountAddress != nil {
 		addrHash = crypto.Keccak256Hash(db.CurrentTransitionState.CurrentAccountAddress[:])
 	}
 	return addrHash
 }
 
 func (db *cachingDB) GetCurrentAccountAddress() *common.Address {
+	if db.CurrentTransitionState == nil {
+		return nil
+	}
 	return db.CurrentTransitionState.CurrentAccountAddress
 }
 
 func (db *cachingDB) GetCurrentPreimageOffset() int64 {
-	return db.CurrentTransitionState.CurrentPreimageOffset
+	var offset int64
+	if db.CurrentTransitionState != nil {
+		offset = db.CurrentTransitionState.CurrentPreimageOffset
+	}
+	return offset
 }
 
 func (db *cachingDB) SetCurrentPreimageOffset(offset int64) {
@@ -523,7 +530,11 @@ func (db *cachingDB) SetCurrentSlotHash(hash common.Hash) {
 }
 
 func (db *cachingDB) GetCurrentSlotHash() common.Hash {
-	return db.CurrentTransitionState.CurrentSlotHash
+	var slotHash common.Hash
+	if db.CurrentTransitionState != nil {
+		slotHash = db.CurrentTransitionState.CurrentSlotHash
+	}
+	return slotHash
 }
 
 func (db *cachingDB) SetStorageProcessed(processed bool) {
@@ -531,7 +542,11 @@ func (db *cachingDB) SetStorageProcessed(processed bool) {
 }
 
 func (db *cachingDB) GetStorageProcessed() bool {
-	return db.CurrentTransitionState.StorageProcessed
+	var processed bool
+	if db.CurrentTransitionState != nil {
+		processed = db.CurrentTransitionState.StorageProcessed
+	}
+	return processed
 }
 
 func (db *cachingDB) AddRootTranslation(originalRoot, translatedRoot common.Hash) {
