@@ -208,7 +208,7 @@ func (kvm *keyValueMigrator) migrateCollectedKeyValues(tree *trie.VerkleTrie) er
 	if kvm.prepareErr != nil {
 		return fmt.Errorf("failed to prepare key values: %w", kvm.prepareErr)
 	}
-	log.Info("Prepared key values from base tree", "duration", time.Since(now))
+	fmt.Println("Prepared key values from base tree", "duration", time.Since(now))
 
 	// Insert into the tree.
 	if err := tree.InsertMigratedLeaves(kvm.newLeaves); err != nil {
@@ -289,7 +289,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 		for count < maxMovedCount {
 			acc, err := types.FullAccount(accIt.Account())
 			if err != nil {
-				log.Error("Invalid account encountered during traversal", "error", err)
+				fmt.Println("Invalid account encountered during traversal", "error", err)
 				return err
 			}
 			vkt.SetStorageRootConversion(*migrdb.GetCurrentAccountAddress(), acc.Root)
@@ -416,7 +416,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 		}
 		migrdb.SetCurrentPreimageOffset(preimageSeek)
 
-		log.Info("Collected key values from base tree", "count", count, "duration", time.Since(now), "last account", statedb.Database().GetCurrentAccountHash(), "storage processed", statedb.Database().GetStorageProcessed(), "last storage", statedb.Database().GetCurrentSlotHash())
+		fmt.Println("Collected key values from base tree", "count", count, "duration", time.Since(now), "last account", statedb.Database().GetCurrentAccountHash(), "storage processed", statedb.Database().GetStorageProcessed(), "last storage", statedb.Database().GetCurrentSlotHash())
 
 		// Take all the collected key-values and prepare the new leaf values.
 		// This fires a background routine that will start doing the work that
@@ -431,7 +431,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 		if err := mkv.migrateCollectedKeyValues(tt.Overlay()); err != nil {
 			return fmt.Errorf("could not migrate key values: %w", err)
 		}
-		log.Info("Inserted key values in overlay tree", "count", count, "duration", time.Since(now))
+		fmt.Println("Inserted key values in overlay tree", "count", count, "duration", time.Since(now))
 	}
 
 	return nil
