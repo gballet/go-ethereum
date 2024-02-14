@@ -507,18 +507,11 @@ func (db *cachingDB) GetCurrentAccountHash() common.Hash {
 }
 
 func (db *cachingDB) GetCurrentAccountAddress() *common.Address {
-	if db.CurrentTransitionState == nil {
-		return nil
-	}
 	return db.CurrentTransitionState.CurrentAccountAddress
 }
 
 func (db *cachingDB) GetCurrentPreimageOffset() int64 {
-	var offset int64
-	if db.CurrentTransitionState != nil {
-		offset = db.CurrentTransitionState.CurrentPreimageOffset
-	}
-	return offset
+return db.CurrentTransitionState.CurrentPreimageOffset
 }
 
 func (db *cachingDB) SetCurrentPreimageOffset(offset int64) {
@@ -530,11 +523,7 @@ func (db *cachingDB) SetCurrentSlotHash(hash common.Hash) {
 }
 
 func (db *cachingDB) GetCurrentSlotHash() common.Hash {
-	var slotHash common.Hash
-	if db.CurrentTransitionState != nil {
-		slotHash = db.CurrentTransitionState.CurrentSlotHash
-	}
-	return slotHash
+	return db.CurrentTransitionState.CurrentSlotHash
 }
 
 func (db *cachingDB) SetStorageProcessed(processed bool) {
@@ -542,11 +531,7 @@ func (db *cachingDB) SetStorageProcessed(processed bool) {
 }
 
 func (db *cachingDB) GetStorageProcessed() bool {
-	var processed bool
-	if db.CurrentTransitionState != nil {
-		processed = db.CurrentTransitionState.StorageProcessed
-	}
-	return processed
+	return db.CurrentTransitionState.StorageProcessed
 }
 
 func (db *cachingDB) AddRootTranslation(originalRoot, translatedRoot common.Hash) {
