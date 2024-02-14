@@ -500,7 +500,7 @@ func (db *cachingDB) SetCurrentAccountAddress(addr common.Address) {
 
 func (db *cachingDB) GetCurrentAccountHash() common.Hash {
 	var addrHash common.Hash
-	if db.CurrentTransitionState != nil && db.CurrentTransitionState.CurrentAccountAddress != nil {
+	if db.CurrentTransitionState.CurrentAccountAddress != nil {
 		addrHash = crypto.Keccak256Hash(db.CurrentTransitionState.CurrentAccountAddress[:])
 	}
 	return addrHash
@@ -511,7 +511,7 @@ func (db *cachingDB) GetCurrentAccountAddress() *common.Address {
 }
 
 func (db *cachingDB) GetCurrentPreimageOffset() int64 {
-return db.CurrentTransitionState.CurrentPreimageOffset
+	return db.CurrentTransitionState.CurrentPreimageOffset
 }
 
 func (db *cachingDB) SetCurrentPreimageOffset(offset int64) {
