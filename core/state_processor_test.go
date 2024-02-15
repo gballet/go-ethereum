@@ -897,7 +897,6 @@ func TestProcessVerklExtCodeHashOpcode(t *testing.T) {
 			tx, _ := types.SignTx(types.NewTransaction(2, extCodeHashContractAddr, big.NewInt(0), 100_000, big.NewInt(875000000), nil), signer, testKey)
 			gen.AddTx(tx)
 		}
-
 	})
 
 	contractKeccakTreeKey := utils.GetTreeKeyCodeKeccak(dummyContractAddr[:])
