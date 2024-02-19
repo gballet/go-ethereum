@@ -399,11 +399,10 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 							return fmt.Errorf("account address len is zero is not 20: %d", len(addr))
 						}
 					}
-					// fmt.Printf("account switch: %s != %s\n", crypto.Keccak256Hash(addr[:]), accIt.Hash())
 					if crypto.Keccak256Hash(addr[:]) != accIt.Hash() {
 						return fmt.Errorf("preimage file does not match account hash: %s != %s", crypto.Keccak256Hash(addr[:]), accIt.Hash())
 					}
-					log.Trace("Converting account address", "hash", accIt.Hash(), "addr", addr)
+					fmt.Printf("Converting account address hash=%x addr=%x", accIt.Hash(), addr)
 					preimageSeek += int64(len(addr))
 					migrdb.SetCurrentAccountAddress(addr)
 				} else {
@@ -416,7 +415,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 		}
 		migrdb.SetCurrentPreimageOffset(preimageSeek)
 
-		fmt.Println("Collected key values from base tree", "count", count, "duration", time.Since(now), "last account", statedb.Database().GetCurrentAccountHash(), "storage processed", statedb.Database().GetStorageProcessed(), "last storage", statedb.Database().GetCurrentSlotHash())
+		fmt.Println("Collected key values from base tree", "count", count, "duration", time.Since(now), "last account hash", statedb.Database().GetCurrentAccountHash(), "last account address", statedb.Database().GetCurrentAccountAddress(), "storage processed", statedb.Database().GetStorageProcessed(), "last storage", statedb.Database().GetCurrentSlotHash())
 
 		// Take all the collected key-values and prepare the new leaf values.
 		// This fires a background routine that will start doing the work that
