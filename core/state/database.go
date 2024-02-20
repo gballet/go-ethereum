@@ -525,7 +525,7 @@ func (db *cachingDB) SetCurrentAccountAddress(addr common.Address) {
 func (db *cachingDB) GetCurrentAccountHash() common.Hash {
 	var addrHash common.Hash
 	if db.CurrentTransitionState.CurrentAccountAddress != nil {
-		db.CurrentTransitionState.CurrentAccountAddressHash()
+		addrHash = db.CurrentTransitionState.CurrentAccountAddressHash()
 	}
 	return addrHash
 }
