@@ -238,7 +238,8 @@ func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.H
 	db.CurrentTransitionState = &TransitionState{
 		started: true,
 		// initialize so that the first storage-less accounts are processed
-		StorageProcessed: true,
+		StorageProcessed:      true,
+		CurrentAccountAddress: &common.Address{},
 	}
 	// db.AddTranslation(originalRoot, translatedRoot)
 	db.baseRoot = originalRoot
