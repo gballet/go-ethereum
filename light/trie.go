@@ -177,6 +177,14 @@ func (db *odrDatabase) LoadTransitionState(common.Hash) {
 	panic("not implemented") // TODO: Implement
 }
 
+func (db *odrDatabase) GetTransitionStateCopy(common.Hash) *state.TransitionState {
+	panic("not implemented")
+}
+
+func (db *odrDatabase) SetActiveTransitionState(*state.TransitionState) {
+	panic("not implemented")
+}
+
 type odrTrie struct {
 	db   *odrDatabase
 	id   *TrieID

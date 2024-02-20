@@ -105,6 +105,10 @@ type Database interface {
 	SaveTransitionState(common.Hash)
 
 	LoadTransitionState(common.Hash)
+
+	GetTransitionStateCopy(common.Hash) *TransitionState
+
+	SetActiveTransitionState(*TransitionState)
 }
 
 // Trie is a Ethereum Merkle Patricia trie.
@@ -257,18 +261,7 @@ func (db *cachingDB) InitTransitionStatus(started, ended bool) {
 }
 
 func (db *cachingDB) EndVerkleTransition() {
-	if !db.CurrentTransitionState.started {
-		db.CurrentTransitionState.started = true
-	}
-
-	fmt.Println(`
-	__________.__                       .__                .__                   __       .__                       .__                    .___         .___
-	\__    ___|  |__   ____        ____ |  |   ____ ______ |  |__ _____    _____/  |_     |  |__ _____    ______    |  | _____    ____   __| _/____   __| _/
-	  |    |  |  |  \_/ __ \     _/ __ \|  | _/ __ \\____ \|  |  \\__  \  /    \   __\    |  |  \\__  \  /  ___/    |  | \__  \  /    \ / __ _/ __ \ / __ |
-	  |    |  |   Y  \  ___/     \  ___/|  |_\  ___/|  |_> |   Y  \/ __ \|   |  |  |      |   Y  \/ __ \_\___ \     |  |__/ __ \|   |  / /_/ \  ___// /_/ |
-	  |____|  |___|  /\___        \___  |____/\___  |   __/|___|  (____  |___|  |__|      |___|  (____  /_____/     |____(____  |___|  \____ |\___  \____ |
-                                                    |__|`)
-	db.CurrentTransitionState.ended = true
+	db.CurrentTransitionState.EndVerkleTransition()
 }
 
 type TransitionState struct {
@@ -298,6 +291,29 @@ func (ts *TransitionState) Copy() *TransitionState {
 	}
 
 	return ret
+}
+
+func (ts *TransitionState) CurrentAccountAddressHash() common.Hash {
+	return crypto.Keccak256Hash(ts.CurrentAccountAddress[:])
+}
+
+func (ts *TransitionState) InTransition() bool {
+	return !ts.ended && ts.started
+}
+
+func (ts *TransitionState) EndVerkleTransition() {
+	if !ts.started {
+		ts.started = true
+	}
+
+	fmt.Println(`
+	__________.__                       .__                .__                   __       .__                       .__                    .___         .___
+	\__    ___|  |__   ____        ____ |  |   ____ ______ |  |__ _____    _____/  |_     |  |__ _____    ______    |  | _____    ____   __| _/____   __| _/
+	  |    |  |  |  \_/ __ \     _/ __ \|  | _/ __ \\____ \|  |  \\__  \  /    \   __\    |  |  \\__  \  /  ___/    |  | \__  \  /    \ / __ _/ __ \ / __ |
+	  |    |  |   Y  \  ___/     \  ___/|  |_\  ___/|  |_> |   Y  \/ __ \|   |  |  |      |   Y  \/ __ \_\___ \     |  |__/ __ \|   |  / /_/ \  ___// /_/ |
+	  |____|  |___|  /\___        \___  |____/\___  |   __/|___|  (____  |___|  |__|      |___|  (____  /_____/     |____(____  |___|  \____ |\___  \____ |
+                                                    |__|`)
+	ts.ended = true
 }
 
 type cachingDB struct {
@@ -507,7 +523,7 @@ func (db *cachingDB) SetCurrentAccountAddress(addr common.Address) {
 func (db *cachingDB) GetCurrentAccountHash() common.Hash {
 	var addrHash common.Hash
 	if db.CurrentTransitionState.CurrentAccountAddress != nil {
-		addrHash = crypto.Keccak256Hash(db.CurrentTransitionState.CurrentAccountAddress[:])
+		db.CurrentTransitionState.CurrentAccountAddressHash()
 	}
 	return addrHash
 }
@@ -569,7 +585,7 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 	}
 }
 
-func (db *cachingDB) LoadTransitionState(root common.Hash) {
+func (db *cachingDB) getTransitionState(root common.Hash) *TransitionState {
 	// Try to get the transition state from the cache and
 	// the DB if it's not there.
 	ts, ok := db.TransitionStatePerRoot.Get(root)
@@ -578,7 +594,7 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 		data, err := rawdb.ReadVerkleTransitionState(db.DiskDB(), root)
 		if err != nil {
 			log.Error("failed to read transition state", "err", err)
-			return
+			return nil
 		}
 
 		if len(data) > 0 {
@@ -591,7 +607,7 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 			err = dec.Decode(&newts)
 			if err != nil {
 				log.Error("failed to decode transition state", "err", err)
-				return
+				return nil
 			}
 			ts = &newts
 		}
@@ -607,10 +623,33 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 		}
 	}
 
+	return ts
+}
+
+// LoadTransitionState loads the transition state at root into
+// the "active" transition state.
+func (db *cachingDB) LoadTransitionState(root common.Hash) {
+	ts := db.getTransitionState(root)
+	if ts == nil {
+		panic("nil ts, should not happen")
+	}
+
 	// Copy so that the CurrentAddress pointer in the map
 	// doesn't get overwritten.
 	db.CurrentTransitionState = ts.Copy()
 
 	fmt.Println("loaded transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
 	debug.PrintStack()
+}
+
+// GetTransitionStateCopy gets the current transition state and
+// makes a copy of it to avoid concurrency issues. It doesn't
+// make it the "active" state.
+func (db *cachingDB) GetTransitionStateCopy(root common.Hash) *TransitionState {
+	ts := db.getTransitionState(root)
+	return ts.Copy()
+}
+
+func (db *cachingDB) SetActiveTransitionState(ts *TransitionState) {
+	db.CurrentTransitionState = ts
 }

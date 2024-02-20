@@ -221,18 +221,19 @@ func (kvm *keyValueMigrator) migrateCollectedKeyValues(tree *trie.VerkleTrie) er
 // OverlayVerkleTransition contains the overlay conversion logic
 func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedCount uint64) error {
 	migrdb := statedb.Database()
+	t8nst8 := migrdb.GetTransitionStateCopy(root)
 
 	// verkle transition: if the conversion process is in progress, move
 	// N values from the MPT into the verkle tree.
-	if migrdb.InTransition() {
-		fmt.Printf("Processing verkle conversion starting at %x %x, building on top of %x\n", migrdb.GetCurrentAccountHash(), migrdb.GetCurrentSlotHash(), root)
+	if t8nst8.InTransition() {
+		fmt.Printf("Processing verkle conversion starting at %x %x, building on top of %x\n", t8nst8.CurrentAccountAddressHash(), t8nst8.CurrentSlotHash, root)
 		var (
 			now             = time.Now()
 			tt              = statedb.GetTrie().(*trie.TransitionTrie)
 			mpt             = tt.Base()
 			vkt             = tt.Overlay()
 			hasPreimagesBin = false
-			preimageSeek    = migrdb.GetCurrentPreimageOffset()
+			preimageSeek    = t8nst8.CurrentPreimageOffset
 			fpreimages      *bufio.Reader
 		)
 
@@ -250,7 +251,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 			hasPreimagesBin = true
 		}
 
-		accIt, err := statedb.Snaps().AccountIterator(mpt.Hash(), migrdb.GetCurrentAccountHash())
+		accIt, err := statedb.Snaps().AccountIterator(mpt.Hash(), t8nst8.CurrentAccountAddressHash())
 		if err != nil {
 			return err
 		}
@@ -258,7 +259,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 		accIt.Next()
 
 		// If we're about to start with the migration process, we have to read the first account hash preimage.
-		if migrdb.GetCurrentAccountAddress() == nil {
+		if t8nst8.CurrentAccountAddress == nil {
 			var addr common.Address
 			if hasPreimagesBin {
 				if _, err := io.ReadFull(fpreimages, addr[:]); err != nil {
@@ -270,8 +271,8 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 					return fmt.Errorf("addr len is zero is not 32: %d", len(addr))
 				}
 			}
-			migrdb.SetCurrentAccountAddress(addr)
-			if migrdb.GetCurrentAccountHash() != accIt.Hash() {
+			t8nst8.CurrentAccountAddress = &addr
+			if t8nst8.CurrentAccountAddressHash() != accIt.Hash() {
 				return fmt.Errorf("preimage file does not match account hash: %s != %s", crypto.Keccak256Hash(addr[:]), accIt.Hash())
 			}
 			preimageSeek += int64(len(addr))
@@ -292,7 +293,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 				fmt.Println("Invalid account encountered during traversal", "error", err)
 				return err
 			}
-			vkt.SetStorageRootConversion(*migrdb.GetCurrentAccountAddress(), acc.Root)
+			vkt.SetStorageRootConversion(*t8nst8.CurrentAccountAddress, acc.Root)
 
 			// Start with processing the storage, because once the account is
 			// converted, the `stateRoot` field loses its meaning. Which means
@@ -304,7 +305,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 			// to during normal block execution. A mitigation strategy has been
 			// introduced with the `*StorageRootConversion` fields in VerkleDB.
 			if acc.HasStorage() {
-				stIt, err := statedb.Snaps().StorageIterator(mpt.Hash(), accIt.Hash(), migrdb.GetCurrentSlotHash())
+				stIt, err := statedb.Snaps().StorageIterator(mpt.Hash(), accIt.Hash(), t8nst8.CurrentSlotHash)
 				if err != nil {
 					return err
 				}
@@ -321,8 +322,8 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 				// processing the storage for that account where we left off.
 				// If the entire storage was processed, then the iterator was
 				// created in vain, but it's ok as this will not happen often.
-				for ; !migrdb.GetStorageProcessed() && count < maxMovedCount; count++ {
-					log.Trace("Processing storage", "count", count, "slot", stIt.Slot(), "storage processed", migrdb.GetStorageProcessed(), "current account", migrdb.GetCurrentAccountAddress(), "current account hash", migrdb.GetCurrentAccountHash())
+				for ; !t8nst8.StorageProcessed && count < maxMovedCount; count++ {
+					log.Trace("Processing storage", "count", count, "slot", stIt.Slot(), "storage processed", t8nst8.StorageProcessed, "current account", t8nst8.CurrentAccountAddress, "current account hash", t8nst8.CurrentAccountAddressHash())
 					var (
 						value     []byte   // slot value after RLP decoding
 						safeValue [32]byte // 32-byte aligned value
@@ -351,12 +352,12 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 					}
 					preimageSeek += int64(len(slotnr))
 
-					mkv.addStorageSlot(migrdb.GetCurrentAccountAddress().Bytes(), slotnr, safeValue[:])
+					mkv.addStorageSlot(t8nst8.CurrentAccountAddress.Bytes(), slotnr, safeValue[:])
 
 					// advance the storage iterator
-					migrdb.SetStorageProcessed(!stIt.Next())
-					if !migrdb.GetStorageProcessed() {
-						migrdb.SetCurrentSlotHash(stIt.Hash())
+					t8nst8.StorageProcessed = !stIt.Next()
+					if !t8nst8.StorageProcessed {
+						t8nst8.CurrentSlotHash = stIt.Hash()
 					}
 				}
 				stIt.Release()
@@ -369,20 +370,20 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 			if count < maxMovedCount {
 				count++ // count increase for the account itself
 
-				mkv.addAccount(migrdb.GetCurrentAccountAddress().Bytes(), acc)
-				vkt.ClearStrorageRootConversion(*migrdb.GetCurrentAccountAddress())
+				mkv.addAccount(t8nst8.CurrentAccountAddress.Bytes(), acc)
+				vkt.ClearStrorageRootConversion(*t8nst8.CurrentAccountAddress)
 
 				// Store the account code if present
 				if !bytes.Equal(acc.CodeHash, types.EmptyCodeHash[:]) {
 					code := rawdb.ReadCode(statedb.Database().DiskDB(), common.BytesToHash(acc.CodeHash))
 					chunks := trie.ChunkifyCode(code)
 
-					mkv.addAccountCode(migrdb.GetCurrentAccountAddress().Bytes(), uint64(len(code)), chunks)
+					mkv.addAccountCode(t8nst8.CurrentAccountAddress.Bytes(), uint64(len(code)), chunks)
 				}
 
 				// reset storage iterator marker for next account
-				migrdb.SetStorageProcessed(false)
-				migrdb.SetCurrentSlotHash(common.Hash{})
+				t8nst8.StorageProcessed = false
+				t8nst8.CurrentSlotHash = common.Hash{}
 
 				// Move to the next account, if available - or end
 				// the transition otherwise.
@@ -404,16 +405,16 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 					}
 					fmt.Printf("Converting account address hash=%x addr=%x", accIt.Hash(), addr)
 					preimageSeek += int64(len(addr))
-					migrdb.SetCurrentAccountAddress(addr)
+					t8nst8.CurrentAccountAddress = &addr
 				} else {
 					// case when the account iterator has
 					// reached the end but count < maxCount
-					migrdb.EndVerkleTransition()
+					t8nst8.EndVerkleTransition()
 					break
 				}
 			}
 		}
-		migrdb.SetCurrentPreimageOffset(preimageSeek)
+		t8nst8.CurrentPreimageOffset = preimageSeek
 
 		fmt.Println("Collected key values from base tree", "count", count, "duration", time.Since(now), "last account hash", statedb.Database().GetCurrentAccountHash(), "last account address", statedb.Database().GetCurrentAccountAddress(), "storage processed", statedb.Database().GetStorageProcessed(), "last storage", statedb.Database().GetCurrentSlotHash())
 
@@ -432,6 +433,8 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 		}
 		fmt.Println("Inserted key values in overlay tree", "count", count, "duration", time.Since(now))
 	}
+
+	migrdb.SetActiveTransitionState(t8nst8)
 
 	return nil
 }
