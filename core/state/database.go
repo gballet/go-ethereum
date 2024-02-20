@@ -592,7 +592,7 @@ func (db *cachingDB) getTransitionState(root common.Hash) *TransitionState {
 	if !ok {
 		// Not in the cache, try getting it from the DB
 		data, err := rawdb.ReadVerkleTransitionState(db.DiskDB(), root)
-		if err != nil {
+		if err != nil && err.Error() != "not found" {
 			log.Error("failed to read transition state", "err", err)
 			return nil
 		}
