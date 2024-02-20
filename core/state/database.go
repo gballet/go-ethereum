@@ -107,6 +107,7 @@ type Database interface {
 	LoadTransitionState(common.Hash)
 
 	GetTransitionStateCopy(common.Hash) *TransitionState
+	GetCurrentTransitionStateCopy() *TransitionState
 
 	SetActiveTransitionState(*TransitionState)
 }
@@ -648,6 +649,10 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 func (db *cachingDB) GetTransitionStateCopy(root common.Hash) *TransitionState {
 	ts := db.getTransitionState(root)
 	return ts.Copy()
+}
+
+func (db *cachingDB) GetCurrentTransitionStateCopy() *TransitionState {
+	return db.CurrentTransitionState.Copy()
 }
 
 func (db *cachingDB) SetActiveTransitionState(ts *TransitionState) {

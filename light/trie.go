@@ -181,6 +181,10 @@ func (db *odrDatabase) GetTransitionStateCopy(common.Hash) *state.TransitionStat
 	panic("not implemented")
 }
 
+func (db *odrDatabase) GetCurrentTransitionStateCopy() *state.TransitionState {
+	panic("not implemented")
+}
+
 func (db *odrDatabase) SetActiveTransitionState(*state.TransitionState) {
 	panic("not implemented")
 }
