@@ -113,13 +113,13 @@ type StateDB struct {
 	preimages map[common.Hash][]byte
 
 	// Per-transaction access list
-	accessList *accessList
+	accessList accessList
 
 	// Transient storage
 	transientStorage transientStorage
 
 	// Verkle witness
-	witness *AccessWitness
+	witness accessList
 
 	// Journal of state modifications. This is the backbone of
 	// Snapshot and RevertToSnapshot.
@@ -192,7 +192,7 @@ func (s *StateDB) NewAccessWitness() *AccessWitness {
 	return NewAccessWitness(s.db.(*cachingDB).addrToPoint)
 }
 
-func (s *StateDB) Witness() *AccessWitness {
+func (s *StateDB) Witness() accessList {
 	if s.witness == nil {
 		s.witness = s.NewAccessWitness()
 	}

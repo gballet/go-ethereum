@@ -348,7 +348,7 @@ func opExtCodeSize(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	slot := scope.Stack.peek()
 	cs := uint64(interpreter.evm.StateDB.GetCodeSize(slot.Bytes20()))
 	if interpreter.evm.chainRules.IsPrague {
-		statelessGas := interpreter.evm.Accesses.TouchAddressOnReadAndComputeGas(slot.Bytes(), uint256.Int{}, trieUtils.CodeSizeLeafKey)
+		statelessGas := interpreter.evm.Accesses.TouchAddressOnReadAndComputeGas(slot.Bytes(), common.Hash{}, trieUtils.CodeSizeLeafKey)
 		if !scope.Contract.UseGas(statelessGas) {
 			scope.Contract.Gas = 0
 			return nil, ErrOutOfGas
@@ -411,7 +411,9 @@ func touchCodeChunksRangeOnReadAndChargeGas(contractAddr []byte, startPC, size u
 	for chunkNumber := startPC / 31; chunkNumber <= endPC/31; chunkNumber++ {
 		treeIndex := *uint256.NewInt((chunkNumber + 128) / 256)
 		subIndex := byte((chunkNumber + 128) % 256)
-		gas := accesses.TouchAddressOnReadAndComputeGas(contractAddr, treeIndex, subIndex)
+		var index common.Hash
+		copy(index[:31], treeIndex.Bytes())
+		gas := accesses.TouchAddressOnReadAndComputeGas(contractAddr, index, subIndex)
 		var overflow bool
 		statelessGasCharged, overflow = math.SafeAdd(statelessGasCharged, gas)
 		if overflow {
@@ -502,7 +504,7 @@ func opGasprice(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 func getBlockHashFromContract(number uint64, statedb StateDB, witness *state.AccessWitness) common.Hash {
 	var pnum common.Hash
 	binary.BigEndian.PutUint64(pnum[24:], number)
-	witness.TouchAddressOnReadAndComputeGas(params.HistoryStorageAddress[:], *uint256.NewInt(number / 256), byte(number&0xFF))
+	witness.TouchAddressOnReadAndComputeGas(params.HistoryStorageAddress[:], pnum, pnum[31])
 	return statedb.GetState(params.HistoryStorageAddress, pnum)
 }
 

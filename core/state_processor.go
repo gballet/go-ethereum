@@ -194,6 +194,6 @@ func ProcessParentBlockHash(statedb *state.StateDB, prevNumber uint64, prevHash 
 	var key common.Hash
 	binary.BigEndian.PutUint64(key[24:], prevNumber)
 	statedb.SetState(params.HistoryStorageAddress, key, prevHash)
-	index, suffix := utils.GetTreeKeyStorageSlotTreeIndexes(key[:])
-	statedb.Witness().TouchAddressOnWriteAndComputeGas(params.HistoryStorageAddress[:], *index, suffix)
+	// index, suffix := utils.GetTreeKeyStorageSlotTreeIndexes(key[:])
+	statedb.Witness().TouchAddressOnWriteAndComputeGas(params.HistoryStorageAddress[:], key, key[31])
 }

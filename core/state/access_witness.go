@@ -34,7 +34,7 @@ const (
 	AccessWitnessWriteFlag = mode(2)
 )
 
-var zeroTreeIndex uint256.Int
+var zeroTreeIndex common.Hash
 
 // AccessWitness lists the locations of the state that are being accessed
 // during the production of a block.
@@ -72,13 +72,15 @@ func (aw *AccessWitness) Keys() [][]byte {
 	keys := make([][]byte, 0, len(aw.chunks))
 	for chunk := range aw.chunks {
 		basePoint := aw.pointCache.GetTreeKeyHeader(chunk.addr[:])
-		key := utils.GetTreeKeyWithEvaluatedAddess(basePoint, &chunk.treeIndex, chunk.leafKey)
+		var index uint256.Int
+		index.SetBytes31(chunk.index[:])
+		key := utils.GetTreeKeyWithEvaluatedAddess(basePoint, &index, chunk.leafKey)
 		keys = append(keys, key)
 	}
 	return keys
 }
 
-func (aw *AccessWitness) Copy() *AccessWitness {
+func (aw *AccessWitness) Copy() accessList {
 	naw := &AccessWitness{
 		branches:   make(map[branchAccessKey]mode),
 		chunks:     make(map[chunkAccessKey]mode),
@@ -128,13 +130,14 @@ func (aw *AccessWitness) TouchAndChargeContractCreateInit(addr []byte, createSen
 // TouchAndChargeContractCreateCompleted charges access access costs after
 // the completion of a contract creation to populate the created account in
 // the tree
+// XXX rename this to something that reflects the fact it's used in many locations
 func (aw *AccessWitness) TouchAndChargeContractCreateCompleted(addr []byte) uint64 {
 	var gas uint64
 	gas += aw.TouchAddressOnWriteAndComputeGas(addr, zeroTreeIndex, utils.VersionLeafKey)
 	gas += aw.TouchAddressOnWriteAndComputeGas(addr, zeroTreeIndex, utils.BalanceLeafKey)
+	gas += aw.TouchAddressOnWriteAndComputeGas(addr, zeroTreeIndex, utils.NonceLeafKey)
 	gas += aw.TouchAddressOnWriteAndComputeGas(addr, zeroTreeIndex, utils.CodeSizeLeafKey)
 	gas += aw.TouchAddressOnWriteAndComputeGas(addr, zeroTreeIndex, utils.CodeKeccakLeafKey)
-	gas += aw.TouchAddressOnWriteAndComputeGas(addr, zeroTreeIndex, utils.NonceLeafKey)
 	return gas
 }
 
@@ -170,16 +173,16 @@ func (aw *AccessWitness) TouchTxExistingAndComputeGas(targetAddr []byte, sendsVa
 	return 0
 }
 
-func (aw *AccessWitness) TouchAddressOnWriteAndComputeGas(addr []byte, treeIndex uint256.Int, subIndex byte) uint64 {
-	return aw.touchAddressAndChargeGas(addr, treeIndex, subIndex, true)
+func (aw *AccessWitness) TouchAddressOnWriteAndComputeGas(addr []byte, index common.Hash, subIndex byte) uint64 {
+	return aw.touchAddressAndChargeGas(addr, index, true)
 }
 
-func (aw *AccessWitness) TouchAddressOnReadAndComputeGas(addr []byte, treeIndex uint256.Int, subIndex byte) uint64 {
-	return aw.touchAddressAndChargeGas(addr, treeIndex, subIndex, false)
+func (aw *AccessWitness) TouchAddressOnReadAndComputeGas(addr []byte, index common.Hash, subIndex byte) uint64 {
+	return aw.touchAddressAndChargeGas(addr, index, false)
 }
 
-func (aw *AccessWitness) touchAddressAndChargeGas(addr []byte, treeIndex uint256.Int, subIndex byte, isWrite bool) uint64 {
-	stemRead, selectorRead, stemWrite, selectorWrite, selectorFill := aw.touchAddress(addr, treeIndex, subIndex, isWrite)
+func (aw *AccessWitness) touchAddressAndChargeGas(addr []byte, index common.Hash, isWrite bool) uint64 {
+	stemRead, selectorRead, stemWrite, selectorWrite, selectorFill := aw.touchAddress(addr, index, isWrite)
 
 	var gas uint64
 	if stemRead {
@@ -202,9 +205,9 @@ func (aw *AccessWitness) touchAddressAndChargeGas(addr []byte, treeIndex uint256
 }
 
 // touchAddress adds any missing access event to the witness.
-func (aw *AccessWitness) touchAddress(addr []byte, treeIndex uint256.Int, subIndex byte, isWrite bool) (bool, bool, bool, bool, bool) {
-	branchKey := newBranchAccessKey(addr, treeIndex)
-	chunkKey := newChunkAccessKey(branchKey, subIndex)
+func (aw *AccessWitness) touchAddress(addr []byte, index common.Hash, isWrite bool) (bool, bool, bool, bool, bool) {
+	branchKey := newBranchAccessKey(addr, index)
+	chunkKey := newChunkAccessKey(branchKey, index[31])
 
 	// Read access.
 	var branchRead, chunkRead bool
@@ -238,14 +241,14 @@ func (aw *AccessWitness) touchAddress(addr []byte, treeIndex uint256.Int, subInd
 }
 
 type branchAccessKey struct {
-	addr      common.Address
-	treeIndex uint256.Int
+	addr  common.Address
+	index [31]byte
 }
 
-func newBranchAccessKey(addr []byte, treeIndex uint256.Int) branchAccessKey {
+func newBranchAccessKey(addr []byte, index common.Hash) branchAccessKey {
 	var sk branchAccessKey
 	copy(sk.addr[:], addr)
-	sk.treeIndex = treeIndex
+	copy(sk.index[:], index[:31])
 	return sk
 }
 
@@ -259,4 +262,28 @@ func newChunkAccessKey(branchKey branchAccessKey, leafKey byte) chunkAccessKey {
 	lk.branchAccessKey = branchKey
 	lk.leafKey = leafKey
 	return lk
+}
+
+func (aw *AccessWitness) ContainsAddress(address common.Address) bool {
+	panic("not implemented") // TODO: Implement
+}
+
+func (aw *AccessWitness) Contains(address common.Address, slot common.Hash) (addressPresent bool, slotPresent bool) {
+	panic("not implemented") // TODO: Implement
+}
+
+func (aw *AccessWitness) AddAddress(address common.Address) bool {
+	panic("not implemented") // TODO: Implement
+}
+
+func (aw *AccessWitness) AddSlot(address common.Address, slot common.Hash) (addrChange bool, slotChange bool) {
+	panic("not implemented") // TODO: Implement
+}
+
+func (aw *AccessWitness) DeleteSlot(address common.Address, slot common.Hash) {
+	panic("not implemented") // TODO: Implement
+}
+
+func (aw *AccessWitness) DeleteAddress(address common.Address) {
+	panic("not implemented") // TODO: Implement
 }

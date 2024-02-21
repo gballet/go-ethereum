@@ -20,20 +20,40 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-type accessList struct {
+type accessList interface {
+	ContainsAddress(address common.Address) bool
+	Contains(address common.Address, slot common.Hash) (addressPresent bool, slotPresent bool)
+	Copy() accessList
+	AddAddress(address common.Address) bool
+	AddSlot(address common.Address, slot common.Hash) (addrChange bool, slotChange bool)
+	DeleteSlot(address common.Address, slot common.Hash)
+	DeleteAddress(address common.Address)
+
+	TouchAndChargeProofOfAbsence(addr []byte) uint64
+	TouchAndChargeMessageCall(addr []byte) uint64
+	TouchAndChargeValueTransfer(callerAddr, targetAddr []byte) uint64
+	TouchAndChargeContractCreateInit(addr []byte, createSendsValue bool) uint64
+	TouchAndChargeContractCreateCompleted(addr []byte) uint64
+	TouchTxOriginAndComputeGas(originAddr []byte) uint64
+	TouchTxExistingAndComputeGas(targetAddr []byte, sendsValue bool) uint64
+	TouchAddressOnWriteAndComputeGas(addr []byte, index common.Hash, suffix byte) uint64
+	TouchAddressOnReadAndComputeGas(addr []byte, index common.Hash, suffix byte) uint64
+}
+
+type accessList2929 struct {
 	addresses map[common.Address]int
 	slots     []map[common.Hash]struct{}
 }
 
 // ContainsAddress returns true if the address is in the access list.
-func (al *accessList) ContainsAddress(address common.Address) bool {
+func (al *accessList2929) ContainsAddress(address common.Address) bool {
 	_, ok := al.addresses[address]
 	return ok
 }
 
 // Contains checks if a slot within an account is present in the access list, returning
 // separate flags for the presence of the account and the slot respectively.
-func (al *accessList) Contains(address common.Address, slot common.Hash) (addressPresent bool, slotPresent bool) {
+func (al *accessList2929) Contains(address common.Address, slot common.Hash) (addressPresent bool, slotPresent bool) {
 	idx, ok := al.addresses[address]
 	if !ok {
 		// no such address (and hence zero slots)
@@ -48,15 +68,15 @@ func (al *accessList) Contains(address common.Address, slot common.Hash) (addres
 }
 
 // newAccessList creates a new accessList.
-func newAccessList() *accessList {
-	return &accessList{
+func newAccessList() accessList {
+	return &accessList2929{
 		addresses: make(map[common.Address]int),
 	}
 }
 
 // Copy creates an independent copy of an accessList.
-func (a *accessList) Copy() *accessList {
-	cp := newAccessList()
+func (a *accessList2929) Copy() accessList {
+	cp := newAccessList().(*accessList2929)
 	for k, v := range a.addresses {
 		cp.addresses[k] = v
 	}
@@ -73,7 +93,7 @@ func (a *accessList) Copy() *accessList {
 
 // AddAddress adds an address to the access list, and returns 'true' if the operation
 // caused a change (addr was not previously in the list).
-func (al *accessList) AddAddress(address common.Address) bool {
+func (al *accessList2929) AddAddress(address common.Address) bool {
 	if _, present := al.addresses[address]; present {
 		return false
 	}
@@ -86,7 +106,7 @@ func (al *accessList) AddAddress(address common.Address) bool {
 // - address added
 // - slot added
 // For any 'true' value returned, a corresponding journal entry must be made.
-func (al *accessList) AddSlot(address common.Address, slot common.Hash) (addrChange bool, slotChange bool) {
+func (al *accessList2929) AddSlot(address common.Address, slot common.Hash) (addrChange bool, slotChange bool) {
 	idx, addrPresent := al.addresses[address]
 	if !addrPresent || idx == -1 {
 		// Address not present, or addr present but no slots there
@@ -110,7 +130,7 @@ func (al *accessList) AddSlot(address common.Address, slot common.Hash) (addrCha
 // This operation needs to be performed in the same order as the addition happened.
 // This method is meant to be used  by the journal, which maintains ordering of
 // operations.
-func (al *accessList) DeleteSlot(address common.Address, slot common.Hash) {
+func (al *accessList2929) DeleteSlot(address common.Address, slot common.Hash) {
 	idx, addrOk := al.addresses[address]
 	// There are two ways this can fail
 	if !addrOk {
@@ -131,6 +151,42 @@ func (al *accessList) DeleteSlot(address common.Address, slot common.Hash) {
 // needs to be performed in the same order as the addition happened.
 // This method is meant to be used  by the journal, which maintains ordering of
 // operations.
-func (al *accessList) DeleteAddress(address common.Address) {
+func (al *accessList2929) DeleteAddress(address common.Address) {
 	delete(al.addresses, address)
+}
+
+func (al *accessList2929) TouchAndChargeProofOfAbsence(addr []byte) uint64 {
+	return 0
+}
+
+func (al *accessList2929) TouchAndChargeMessageCall(addr []byte) uint64 {
+	return 0
+}
+
+func (al *accessList2929) TouchAndChargeValueTransfer(callerAddr []byte, targetAddr []byte) uint64 {
+	return 0
+}
+
+func (al *accessList2929) TouchAndChargeContractCreateInit(addr []byte, createSendsValue bool) uint64 {
+	return 0
+}
+
+func (al *accessList2929) TouchAndChargeContractCreateCompleted(addr []byte) uint64 {
+	return 0
+}
+
+func (al *accessList2929) TouchTxOriginAndComputeGas(originAddr []byte) uint64 {
+	return 0
+}
+
+func (al *accessList2929) TouchTxExistingAndComputeGas(targetAddr []byte, sendsValue bool) uint64 {
+	return 0
+}
+
+func (al *accessList2929) TouchAddressOnWriteAndComputeGas(addr []byte, index common.Hash, subIndex byte) uint64 {
+	return 0
+}
+
+func (al *accessList2929) TouchAddressOnReadAndComputeGas(addr []byte, index common.Hash, subIndex byte) uint64 {
+	return 0
 }

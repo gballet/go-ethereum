@@ -80,7 +80,7 @@ type StateDB interface {
 	AddLog(*types.Log)
 	AddPreimage(common.Hash, []byte)
 
-	Witness() *state.AccessWitness
+	Witness() accessList
 	SetWitness(*state.AccessWitness)
 }
 
