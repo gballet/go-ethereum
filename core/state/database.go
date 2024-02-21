@@ -553,6 +553,8 @@ func (db *cachingDB) SetLastMerkleRoot(merkleRoot common.Hash) {
 }
 
 func (db *cachingDB) SaveTransitionState(root common.Hash) {
+	db.transitionStateLock.Lock()
+	defer db.transitionStateLock.Unlock()
 	if db.CurrentTransitionState != nil {
 		var buf bytes.Buffer
 		enc := gob.NewEncoder(&buf)
@@ -575,6 +577,8 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 }
 
 func (db *cachingDB) LoadTransitionState(root common.Hash) {
+	db.transitionStateLock.Lock()
+	defer db.transitionStateLock.Unlock()
 	// Try to get the transition state from the cache and
 	// the DB if it's not there.
 	ts, ok := db.TransitionStatePerRoot.Get(root)
