@@ -221,6 +221,8 @@ func (kvm *keyValueMigrator) migrateCollectedKeyValues(tree *trie.VerkleTrie) er
 // OverlayVerkleTransition contains the overlay conversion logic
 func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedCount uint64) error {
 	migrdb := statedb.Database()
+	migrdb.LockCurrentTransitionState()
+	defer migrdb.UnLockCurrentTransitionState()
 
 	// verkle transition: if the conversion process is in progress, move
 	// N values from the MPT into the verkle tree.
