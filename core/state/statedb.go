@@ -1043,6 +1043,7 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 	if !s.Database().InTransition() && !s.Database().Transitioned() {
 		s.Database().SetLastMerkleRoot(root)
 	}
+	s.Database().SaveTransitionState(root)
 
 	return root
 }

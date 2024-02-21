@@ -25,10 +25,10 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
-	// "github.com/ethereum/go-ethereum/core/overlay"
+	"github.com/ethereum/go-ethereum/core/overlay"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
-	// "github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
@@ -366,13 +366,13 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 		state.Witness().TouchAddressOnWriteAndComputeGas(w.Address[:], uint256.Int{}, utils.CodeSizeLeafKey)
 	}
 
-	// if chain.Config().IsPrague(header.Number, header.Time) {
-	// 	fmt.Println("at block", header.Number, "performing transition?", state.Database().InTransition())
-	// 	parent := chain.GetHeaderByHash(header.ParentHash)
-	// 	if err := overlay.OverlayVerkleTransition(state, parent.Root, chain.Config().OverlayStride); err != nil {
-	// 		log.Error("error performing the transition", "err", err)
-	// 	}
-	// }
+	if chain.Config().IsPrague(header.Number, header.Time) {
+		fmt.Println("at block", header.Number, "performing transition?", state.Database().InTransition())
+		parent := chain.GetHeaderByHash(header.ParentHash)
+		if err := overlay.OverlayVerkleTransition(state, parent.Root, chain.Config().OverlayStride); err != nil {
+			log.Error("error performing the transition", "err", err)
+		}
+	}
 }
 
 // FinalizeAndAssemble implements consensus.Engine, setting the final state and

@@ -312,7 +312,6 @@ type cachingDB struct {
 	triedb        *trie.Database
 
 	// Transition-specific fields
-	// TODO ensure that this info is in the DB
 	LastMerkleRoot         common.Hash // root hash of the read-only base tree
 	CurrentTransitionState *TransitionState
 	TransitionStatePerRoot lru.BasicLRU[common.Hash, *TransitionState]
@@ -572,6 +571,7 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 
 		fmt.Println("saving transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
 	}
+	debug.PrintStack()
 }
 
 func (db *cachingDB) LoadTransitionState(root common.Hash) {
