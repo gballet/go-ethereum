@@ -221,6 +221,8 @@ func (kvm *keyValueMigrator) migrateCollectedKeyValues(tree *trie.VerkleTrie) er
 // OverlayVerkleTransition contains the overlay conversion logic
 func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedCount uint64) error {
 	migrdb := statedb.Database()
+	migrdb.LockCurrentTransitionState()
+	defer migrdb.UnLockCurrentTransitionState()
 
 	// verkle transition: if the conversion process is in progress, move
 	// N values from the MPT into the verkle tree.
@@ -289,7 +291,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 		for count < maxMovedCount {
 			acc, err := types.FullAccount(accIt.Account())
 			if err != nil {
-				log.Error("Invalid account encountered during traversal", "error", err)
+				fmt.Println("Invalid account encountered during traversal", "error", err)
 				return err
 			}
 			vkt.SetStorageRootConversion(*migrdb.GetCurrentAccountAddress(), acc.Root)
@@ -399,7 +401,6 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 							return fmt.Errorf("account address len is zero is not 20: %d", len(addr))
 						}
 					}
-					// fmt.Printf("account switch: %s != %s\n", crypto.Keccak256Hash(addr[:]), accIt.Hash())
 					if crypto.Keccak256Hash(addr[:]) != accIt.Hash() {
 						return fmt.Errorf("preimage file does not match account hash: %s != %s", crypto.Keccak256Hash(addr[:]), accIt.Hash())
 					}
@@ -416,7 +417,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 		}
 		migrdb.SetCurrentPreimageOffset(preimageSeek)
 
-		log.Info("Collected key values from base tree", "count", count, "duration", time.Since(now), "last account", statedb.Database().GetCurrentAccountHash(), "storage processed", statedb.Database().GetStorageProcessed(), "last storage", statedb.Database().GetCurrentSlotHash())
+		log.Info("Collected key values from base tree", "count", count, "duration", time.Since(now), "last account hash", statedb.Database().GetCurrentAccountHash(), "last account address", statedb.Database().GetCurrentAccountAddress(), "storage processed", statedb.Database().GetStorageProcessed(), "last storage", statedb.Database().GetCurrentSlotHash())
 
 		// Take all the collected key-values and prepare the new leaf values.
 		// This fires a background routine that will start doing the work that
