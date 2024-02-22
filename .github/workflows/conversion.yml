@@ -48,7 +48,6 @@ jobs:
 
             # Check for signs that the conversion has started
             if grep -q "Processing verkle conversion starting at" log.txt; then
-              kill -9 $(pgrep -f geth)
               break
             fi
           done
