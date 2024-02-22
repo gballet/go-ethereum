@@ -19,9 +19,9 @@ jobs:
 
       - name: Cleanup from previous runs
         run: |
-          rm log.txt
+          rm -f log.txt
           rm -rf .shadowfork
-          rm genesis.json
+          rm -f genesis.json
 
       - name: Download genesis file
         run: wget https://gist.githubusercontent.com/gballet/0b02a025428aa0e7b67941864d54716c/raw/bfb4e158bca5217b356a19b2ec55c4a45a7b2bad/genesis.json
