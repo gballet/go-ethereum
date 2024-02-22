@@ -30,7 +30,7 @@ jobs:
         run: go run ./cmd/geth --dev --cache.preimages init genesis.json
 
       - name: Run geth in devmode
-        run: go run ./cmd/geth --dev --dev.period=5 --cache.preimages --http --datadir=.shadowfork --override.prague=$(($(date +%s) + 45)) > log.txt &
+        run: go run ./cmd/geth --dev --dev.period=5 --cache.preimages --http --datadir=.shadowfork --override.overlay-stride=10 --override.prague=$(($(date +%s) + 45)) > log.txt &
 
       - name: Wait for the transition to start
         run: |
