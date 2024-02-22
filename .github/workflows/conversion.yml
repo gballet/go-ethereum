@@ -68,7 +68,7 @@ jobs:
             fi
 
             # Check for signs that the conversion has started
-            if egrep -q "at block.*performing conversion\? false" log.txt; then
+            if egrep -q "at block.*performing transition\? false" log.txt; then
               kill -9 $(pgrep -f geth)
               break
             fi
