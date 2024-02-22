@@ -221,6 +221,8 @@ func (kvm *keyValueMigrator) migrateCollectedKeyValues(tree *trie.VerkleTrie) er
 // OverlayVerkleTransition contains the overlay conversion logic
 func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedCount uint64) error {
 	migrdb := statedb.Database()
+	migrdb.LockCurrentTransitionState()
+	defer migrdb.UnLockCurrentTransitionState()
 
 	// verkle transition: if the conversion process is in progress, move
 	// N values from the MPT into the verkle tree.
@@ -402,7 +404,9 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 					if crypto.Keccak256Hash(addr[:]) != accIt.Hash() {
 						return fmt.Errorf("preimage file does not match account hash: %s != %s", crypto.Keccak256Hash(addr[:]), accIt.Hash())
 					}
-					fmt.Printf("Converting account address hash=%x addr=%x", accIt.Hash(), addr)
+					if count%100 == 0 {
+						fmt.Printf("Converting account address hash=%x addr=%x\n", accIt.Hash(), addr)
+					}
 					preimageSeek += int64(len(addr))
 					migrdb.SetCurrentAccountAddress(addr)
 				} else {

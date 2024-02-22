@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime/debug"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/lru"
@@ -105,6 +106,10 @@ type Database interface {
 	SaveTransitionState(common.Hash)
 
 	LoadTransitionState(common.Hash)
+
+	LockCurrentTransitionState()
+
+	UnLockCurrentTransitionState()
 }
 
 // Trie is a Ethereum Merkle Patricia trie.
@@ -311,11 +316,11 @@ type cachingDB struct {
 	LastMerkleRoot         common.Hash // root hash of the read-only base tree
 	CurrentTransitionState *TransitionState
 	TransitionStatePerRoot lru.BasicLRU[common.Hash, *TransitionState]
+	transitionStateLock    sync.Mutex
 
 	addrToPoint *utils.PointCache
 
 	baseRoot common.Hash // hash of the read-only base tree
-
 }
 
 func (db *cachingDB) openMPTTrie(root common.Hash) (Trie, error) {
@@ -548,6 +553,8 @@ func (db *cachingDB) SetLastMerkleRoot(merkleRoot common.Hash) {
 }
 
 func (db *cachingDB) SaveTransitionState(root common.Hash) {
+	db.transitionStateLock.Lock()
+	defer db.transitionStateLock.Unlock()
 	if db.CurrentTransitionState != nil {
 		var buf bytes.Buffer
 		enc := gob.NewEncoder(&buf)
@@ -570,6 +577,8 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 }
 
 func (db *cachingDB) LoadTransitionState(root common.Hash) {
+	db.transitionStateLock.Lock()
+	defer db.transitionStateLock.Unlock()
 	// Try to get the transition state from the cache and
 	// the DB if it's not there.
 	ts, ok := db.TransitionStatePerRoot.Get(root)
@@ -613,4 +622,12 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 
 	fmt.Println("loaded transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
 	debug.PrintStack()
+}
+
+func (db *cachingDB) LockCurrentTransitionState() {
+	db.transitionStateLock.Lock()
+}
+
+func (db *cachingDB) UnLockCurrentTransitionState() {
+	db.transitionStateLock.Unlock()
 }
