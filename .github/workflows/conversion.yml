@@ -61,7 +61,8 @@ jobs:
             elapsed_time=$((current_time - start_time))
 
             # 10 minute timeout
-            if [ $elapsed_time -ge 600 ]; then
+            if [ $elapsed_time -ge 300 ]; then
+              cat log.txt
               kill -9 $(pgrep -f geth)
               exit 1
             fi
