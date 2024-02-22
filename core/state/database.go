@@ -560,7 +560,7 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 		enc := gob.NewEncoder(&buf)
 		err := enc.Encode(db.CurrentTransitionState)
 		if err != nil {
-			log.Crit("failed to encode transition state", "err", err)
+			log.Error("failed to encode transition state", "err", err)
 			return
 		}
 
@@ -572,7 +572,7 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 			rawdb.WriteVerkleTransitionState(db.DiskDB(), root, buf.Bytes())
 		}
 
-		fmt.Println("saving transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
+		log.Debug("saving transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
 	}
 }
 
@@ -590,6 +590,7 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 			return
 		}
 
+                // if a state could be read from the db, attempt to decode it
 		if len(data) > 0 {
 			var (
 				newts TransitionState
@@ -605,12 +606,12 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 			ts = &newts
 		}
 
-		// Fallback
+		// Fallback that should only happen before the transition
 		if ts == nil {
 			// Initialize the first transition state, with the "ended"
 			// field set to true if the database was created
 			// as a verkle database.
-			fmt.Println("no transition state found, starting fresh", "is verkle", db.triedb.IsVerkle())
+			log.Debug("no transition state found, starting fresh", "is verkle", db.triedb.IsVerkle())
 			// Start with a fresh state
 			ts = &TransitionState{ended: db.triedb.IsVerkle()}
 		}
@@ -620,7 +621,7 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 	// doesn't get overwritten.
 	db.CurrentTransitionState = ts.Copy()
 
-	fmt.Println("loaded transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
+	log.Debug("loaded transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
 	debug.PrintStack()
 }
 

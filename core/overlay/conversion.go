@@ -208,7 +208,7 @@ func (kvm *keyValueMigrator) migrateCollectedKeyValues(tree *trie.VerkleTrie) er
 	if kvm.prepareErr != nil {
 		return fmt.Errorf("failed to prepare key values: %w", kvm.prepareErr)
 	}
-	fmt.Println("Prepared key values from base tree", "duration", time.Since(now))
+	log.Info("Prepared key values from base tree", "duration", time.Since(now))
 
 	// Insert into the tree.
 	if err := tree.InsertMigratedLeaves(kvm.newLeaves); err != nil {
@@ -404,9 +404,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 					if crypto.Keccak256Hash(addr[:]) != accIt.Hash() {
 						return fmt.Errorf("preimage file does not match account hash: %s != %s", crypto.Keccak256Hash(addr[:]), accIt.Hash())
 					}
-					if count%100 == 0 {
-						fmt.Printf("Converting account address hash=%x addr=%x\n", accIt.Hash(), addr)
-					}
+					log.Trace("Converting account address", "hash", accIt.Hash(), "addr", addr)
 					preimageSeek += int64(len(addr))
 					migrdb.SetCurrentAccountAddress(addr)
 				} else {
@@ -419,7 +417,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 		}
 		migrdb.SetCurrentPreimageOffset(preimageSeek)
 
-		fmt.Println("Collected key values from base tree", "count", count, "duration", time.Since(now), "last account hash", statedb.Database().GetCurrentAccountHash(), "last account address", statedb.Database().GetCurrentAccountAddress(), "storage processed", statedb.Database().GetStorageProcessed(), "last storage", statedb.Database().GetCurrentSlotHash())
+		log.Info("Collected key values from base tree", "count", count, "duration", time.Since(now), "last account hash", statedb.Database().GetCurrentAccountHash(), "last account address", statedb.Database().GetCurrentAccountAddress(), "storage processed", statedb.Database().GetStorageProcessed(), "last storage", statedb.Database().GetCurrentSlotHash())
 
 		// Take all the collected key-values and prepare the new leaf values.
 		// This fires a background routine that will start doing the work that
@@ -434,7 +432,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 		if err := mkv.migrateCollectedKeyValues(tt.Overlay()); err != nil {
 			return fmt.Errorf("could not migrate key values: %w", err)
 		}
-		fmt.Println("Inserted key values in overlay tree", "count", count, "duration", time.Since(now))
+		log.Info("Inserted key values in overlay tree", "count", count, "duration", time.Since(now))
 	}
 
 	return nil
