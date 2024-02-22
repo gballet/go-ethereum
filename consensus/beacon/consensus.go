@@ -406,6 +406,8 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 			return nil, fmt.Errorf("nil parent header for block %d", header.Number)
 		}
 
+		// Load transition state at beginning of block, because
+		// OpenTrie needs to know what the conversion status is.
 		state.Database().LoadTransitionState(parent.Root)
 
 		if chain.Config().ProofInBlocks {
