@@ -549,7 +549,7 @@ var (
 // AccumulateRewards credits the coinbase of the given block with the mining
 // reward. The total reward consists of the static block reward and rewards for
 // included uncles. The coinbase of each uncle block is also rewarded.
-func accumulateRewards(config *params.ChainConfig, state *state.StateDB, header *types.Header, uncles []*types.Header) {
+func accumulateRewards(config *params.ChainConfig, statedb *state.StateDB, header *types.Header, uncles []*types.Header) {
 	// Select the correct block reward based on chain progression
 	blockReward := FrontierBlockReward
 	if config.IsByzantium(header.Number) {
@@ -567,20 +567,13 @@ func accumulateRewards(config *params.ChainConfig, state *state.StateDB, header 
 		r.Mul(r, blockReward)
 		r.Div(r, big8)
 
-		// This should not happen, but it's useful for replay tests
-		if config.IsPrague(header.Number, header.Time) {
-			state.Witness().TouchAddressOnReadAndComputeGas(uncle.Coinbase.Bytes(), uint256.Int{}, utils.BalanceLeafKey)
-		}
-		state.AddBalance(uncle.Coinbase, r)
+		statedb.AddBalance(uncle.Coinbase, r)
 
 		r.Div(blockReward, big32)
 		reward.Add(reward, r)
 	}
 	if config.IsPrague(header.Number, header.Time) {
-		state.Witness().TouchAddressOnReadAndComputeGas(header.Coinbase.Bytes(), uint256.Int{}, utils.BalanceLeafKey)
-		state.Witness().TouchAddressOnReadAndComputeGas(header.Coinbase.Bytes(), uint256.Int{}, utils.VersionLeafKey)
-		state.Witness().TouchAddressOnReadAndComputeGas(header.Coinbase.Bytes(), uint256.Int{}, utils.NonceLeafKey)
-		state.Witness().TouchAddressOnReadAndComputeGas(header.Coinbase.Bytes(), uint256.Int{}, utils.CodeKeccakLeafKey)
+		statedb.Witness().AddAddress(common.Address(header.Coinbase), state.AccessListWrite)
 	}
-	state.AddBalance(header.Coinbase, reward)
+	statedb.AddBalance(header.Coinbase, reward)
 }

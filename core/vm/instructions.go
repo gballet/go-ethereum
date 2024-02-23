@@ -25,7 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
-	trieUtils "github.com/ethereum/go-ethereum/trie/utils"
+	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/holiman/uint256"
 )
 
@@ -265,7 +265,7 @@ func opBalance(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 	slot := scope.Stack.peek()
 	address := common.Address(slot.Bytes20())
 	if interpreter.evm.chainRules.IsPrague {
-		statelessGas := interpreter.evm.Accesses.TouchAddressOnReadAndComputeGas(slot.Bytes(), uint256.Int{}, trieUtils.BalanceLeafKey)
+		statelessGas := interpreter.evm.Accesses.TouchAddressOnReadAndComputeGas(slot.Bytes(), uint256.Int{}, utils.BalanceLeafKey)
 		if !scope.Contract.UseGas(statelessGas) {
 			scope.Contract.Gas = 0
 			return nil, ErrOutOfGas
@@ -354,13 +354,6 @@ func opReturnDataCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeConte
 func opExtCodeSize(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	slot := scope.Stack.peek()
 	cs := uint64(interpreter.evm.StateDB.GetCodeSize(slot.Bytes20()))
-	if interpreter.evm.chainRules.IsPrague {
-		statelessGas := interpreter.evm.Accesses.TouchAddressOnReadAndComputeGas(slot.Bytes(), uint256.Int{}, trieUtils.CodeSizeLeafKey)
-		if !scope.Contract.UseGas(statelessGas) {
-			scope.Contract.Gas = 0
-			return nil, ErrOutOfGas
-		}
-	}
 	slot.SetUint64(cs)
 	return nil, nil
 }
@@ -397,7 +390,8 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 }
 
 // touchCodeChunksRangeOnReadAndChargeGas is a helper function to touch every chunk in a code range and charge witness gas costs
-func touchCodeChunksRangeOnReadAndChargeGas(contractAddr []byte, startPC, size uint64, codeLen uint64, accesses *state.AccessWitness) uint64 {
+func touchCodeChunksRangeOnReadAndChargeGas(contractAddr []byte, startPC, size uint64, codeLen uint64, al state.AccessList) uint64 {
+	accesses := al.(*state.AccessWitness)
 	// note that in the case where the copied code is outside the range of the
 	// contract code but touches the last leaf with contract code in it,
 	// we don't include the last leaf of code in the AccessWitness.  The
@@ -495,7 +489,7 @@ func opExtCodeHash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	slot := scope.Stack.peek()
 	address := common.Address(slot.Bytes20())
 	if interpreter.evm.chainRules.IsPrague {
-		statelessGas := interpreter.evm.Accesses.TouchAddressOnReadAndComputeGas(slot.Bytes(), uint256.Int{}, trieUtils.CodeKeccakLeafKey)
+		statelessGas := interpreter.evm.Accesses.TouchAddressOnReadAndComputeGas(slot.Bytes(), uint256.Int{}, utils.CodeKeccakLeafKey)
 		if !scope.Contract.UseGas(statelessGas) {
 			scope.Contract.Gas = 0
 			return nil, ErrOutOfGas
@@ -515,10 +509,10 @@ func opGasprice(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	return nil, nil
 }
 
-func getBlockHashFromContract(number uint64, statedb StateDB, witness *state.AccessWitness) common.Hash {
+func getBlockHashFromContract(number uint64, statedb StateDB, witness state.AccessList) common.Hash {
 	var pnum common.Hash
 	binary.BigEndian.PutUint64(pnum[24:], number)
-	witness.TouchAddressOnReadAndComputeGas(params.HistoryStorageAddress[:], *uint256.NewInt(number / 256), byte(number&0xFF))
+	witness.AddSlot(params.HistoryStorageAddress, pnum, state.AccessListRead)
 	return statedb.GetState(params.HistoryStorageAddress, pnum)
 }
 
@@ -942,22 +936,6 @@ func opSelfdestruct(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 	if tracer := interpreter.evm.Config.Tracer; tracer != nil {
 		tracer.CaptureEnter(SELFDESTRUCT, scope.Contract.Address(), beneficiary.Bytes20(), []byte{}, 0, balance)
 		tracer.CaptureExit([]byte{}, 0, nil)
-	}
-	if interpreter.evm.chainRules.IsPrague {
-		contractAddr := scope.Contract.Address()
-		beneficiaryAddr := beneficiary.Bytes20()
-		// If the beneficiary isn't the contract, we need to touch the beneficiary's balance.
-		// If the beneficiary is the contract itself, there're two possibilities:
-		// 1. The contract was created in the same transaction: the balance is already touched (no need to touch again)
-		// 2. The contract wasn't created in the same transaction: there's no net change in balance,
-		//    and SELFDESTRUCT will perform no action on the account header. (we touch since we did SubBalance+AddBalance above)
-		if contractAddr != beneficiaryAddr || interpreter.evm.StateDB.WasCreatedInCurrentTx(contractAddr) {
-			statelessGas := interpreter.evm.Accesses.TouchAddressOnReadAndComputeGas(beneficiaryAddr[:], uint256.Int{}, trieUtils.BalanceLeafKey)
-			if !scope.Contract.UseGas(statelessGas) {
-				scope.Contract.Gas = 0
-				return nil, ErrOutOfGas
-			}
-		}
 	}
 	return nil, errStopToken
 }

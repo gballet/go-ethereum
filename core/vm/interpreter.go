@@ -59,6 +59,9 @@ func NewEVMInterpreter(evm *EVM) *EVMInterpreter {
 	case evm.chainRules.IsPrague:
 		// TODO replace with prooper instruction set when fork is specified
 		table = &pragueInstructionSet
+		if err := EnableEIP(2935, table); err != nil {
+			log.Error("EIP 2935 activation failed", "error", err)
+		}
 	case evm.chainRules.IsCancun:
 		table = &cancunInstructionSet
 	case evm.chainRules.IsShanghai:

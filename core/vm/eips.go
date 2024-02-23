@@ -37,6 +37,7 @@ var activators = map[int]func(*JumpTable){
 	1884: enable1884,
 	1344: enable1344,
 	1153: enable1153,
+	2935: enable2935,
 }
 
 // EnableEIP enables the given EIP on the config.
@@ -126,13 +127,13 @@ func enable2929(jt *JumpTable) {
 	jt[EXTCODECOPY].constantGas = params.WarmStorageReadCostEIP2929
 	jt[EXTCODECOPY].dynamicGas = gasExtCodeCopyEIP2929
 
-	jt[EXTCODESIZE].constantGas = params.WarmStorageReadCostEIP2929
+	jt[EXTCODESIZE].constantGas = 0
 	jt[EXTCODESIZE].dynamicGas = gasEip2929AccountCheck
 
-	jt[EXTCODEHASH].constantGas = params.WarmStorageReadCostEIP2929
+	jt[EXTCODEHASH].constantGas = 0
 	jt[EXTCODEHASH].dynamicGas = gasEip2929AccountCheck
 
-	jt[BALANCE].constantGas = params.WarmStorageReadCostEIP2929
+	jt[BALANCE].constantGas = 0
 	jt[BALANCE].dynamicGas = gasEip2929AccountCheck
 
 	jt[CALL].constantGas = params.WarmStorageReadCostEIP2929
@@ -302,4 +303,9 @@ func enable6780(jt *JumpTable) {
 		minStack:    minStack(1, 0),
 		maxStack:    maxStack(1, 0),
 	}
+}
+
+// enable4762 applies EIP-2935 (save historical block hash)
+func enable2935(jt *JumpTable) {
+	jt[BLOCKHASH].dynamicGas = gasBlockHashEip2935
 }

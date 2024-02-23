@@ -66,14 +66,13 @@ type StateDB interface {
 	// is defined according to EIP161 (balance = nonce = code = 0).
 	Empty(common.Address) bool
 
-	AddressInAccessList(addr common.Address) bool
-	SlotInAccessList(addr common.Address, slot common.Hash) (addressOk bool, slotOk bool)
-	// AddAddressToAccessList adds the given address to the access list. This operation is safe to perform
-	// even if the feature/fork is not active yet
-	AddAddressToAccessList(addr common.Address)
+	// AddAddressToAccessList adds the given address to the access list if it's not already
+	// present. It will return the amount of gas that should be charged . This operation is
+	// safe to perform even if the feature/fork is not active yet
+	AddAddressToAccessList(addr common.Address, write state.AccessListAccessMode) uint64
 	// AddSlotToAccessList adds the given (address,slot) to the access list. This operation is safe to perform
 	// even if the feature/fork is not active yet
-	AddSlotToAccessList(addr common.Address, slot common.Hash)
+	AddSlotToAccessList(addr common.Address, slot common.Hash, write state.AccessListAccessMode) uint64
 	Prepare(rules params.Rules, sender, coinbase common.Address, dest *common.Address, precompiles []common.Address, txAccesses types.AccessList)
 
 	RevertToSnapshot(int)
@@ -82,8 +81,8 @@ type StateDB interface {
 	AddLog(*types.Log)
 	AddPreimage(common.Hash, []byte)
 
-	Witness() *state.AccessWitness
-	SetWitness(*state.AccessWitness)
+	Witness() state.AccessList
+	SetWitness(state.AccessList)
 }
 
 // CallContext provides a basic interface for the EVM calling conventions. The EVM

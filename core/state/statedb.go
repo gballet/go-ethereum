@@ -113,13 +113,13 @@ type StateDB struct {
 	preimages map[common.Hash][]byte
 
 	// Per-transaction access list
-	accessList *accessList
+	accessList AccessList
 
 	// Transient storage
 	transientStorage transientStorage
 
 	// Verkle witness
-	witness *AccessWitness
+	witness AccessList
 
 	// Journal of state modifications. This is the backbone of
 	// Snapshot and RevertToSnapshot.
@@ -188,18 +188,18 @@ func (s *StateDB) Snaps() *snapshot.Tree {
 	return s.snaps
 }
 
-func (s *StateDB) NewAccessWitness() *AccessWitness {
+func (s *StateDB) NewAccessWitness() AccessList {
 	return NewAccessWitness(s.db.(*cachingDB).addrToPoint)
 }
 
-func (s *StateDB) Witness() *AccessWitness {
+func (s *StateDB) Witness() AccessList {
 	if s.witness == nil {
 		s.witness = s.NewAccessWitness()
 	}
 	return s.witness
 }
 
-func (s *StateDB) SetWitness(aw *AccessWitness) {
+func (s *StateDB) SetWitness(aw AccessList) {
 	s.witness = aw
 }
 
@@ -1378,22 +1378,22 @@ func (s *StateDB) Prepare(rules params.Rules, sender, coinbase common.Address, d
 		al := newAccessList()
 		s.accessList = al
 
-		al.AddAddress(sender)
+		al.AddAddress(sender, false)
 		if dst != nil {
-			al.AddAddress(*dst)
+			al.AddAddress(*dst, false)
 			// If it's a create-tx, the destination will be added inside evm.create
 		}
 		for _, addr := range precompiles {
-			al.AddAddress(addr)
+			al.AddAddress(addr, false)
 		}
 		for _, el := range list {
-			al.AddAddress(el.Address)
+			al.AddAddress(el.Address, false)
 			for _, key := range el.StorageKeys {
-				al.AddSlot(el.Address, key)
+				al.AddSlot(el.Address, key, false)
 			}
 		}
 		if rules.IsShanghai { // EIP-3651: warm coinbase
-			al.AddAddress(coinbase)
+			al.AddAddress(coinbase, false)
 		}
 	}
 	// Reset transient storage at the beginning of transaction execution
@@ -1401,37 +1401,37 @@ func (s *StateDB) Prepare(rules params.Rules, sender, coinbase common.Address, d
 }
 
 // AddAddressToAccessList adds the given address to the access list
-func (s *StateDB) AddAddressToAccessList(addr common.Address) {
-	if s.accessList.AddAddress(addr) {
+func (s *StateDB) AddAddressToAccessList(addr common.Address, isWrite AccessListAccessMode) uint64 {
+	gas := s.accessList.AddAddress(addr, isWrite)
+	if gas > 0 {
 		s.journal.append(accessListAddAccountChange{&addr})
 	}
+	return gas
 }
 
 // AddSlotToAccessList adds the given (address, slot)-tuple to the access list
-func (s *StateDB) AddSlotToAccessList(addr common.Address, slot common.Hash) {
-	addrMod, slotMod := s.accessList.AddSlot(addr, slot)
-	if addrMod {
-		// In practice, this should not happen, since there is no way to enter the
-		// scope of 'address' without having the 'address' become already added
-		// to the access list (via call-variant, create, etc).
-		// Better safe than sorry, though
-		s.journal.append(accessListAddAccountChange{&addr})
-	}
-	if slotMod {
+func (s *StateDB) AddSlotToAccessList(addr common.Address, slot common.Hash, isWrite AccessListAccessMode) uint64 {
+	gas := s.accessList.AddSlot(addr, slot, isWrite)
+
+	// if the gas is higher than the warm read cost,
+	// not presuming what the value is, then it means
+	// that the value was updated.
+	if gas > params.WarmStorageReadCostEIP2929 {
 		s.journal.append(accessListAddSlotChange{
 			address: &addr,
 			slot:    &slot,
 		})
 	}
+	return gas
 }
 
-// AddressInAccessList returns true if the given address is in the access list.
-func (s *StateDB) AddressInAccessList(addr common.Address) bool {
+// addressInAccessList returns true if the given address is in the access list.
+func (s *StateDB) addressInAccessList(addr common.Address) bool {
 	return s.accessList.ContainsAddress(addr)
 }
 
 // SlotInAccessList returns true if the given (address, slot)-tuple is in the access list.
-func (s *StateDB) SlotInAccessList(addr common.Address, slot common.Hash) (addressPresent bool, slotPresent bool) {
+func (s *StateDB) slotInAccessList(addr common.Address, slot common.Hash) (addressPresent bool, slotPresent bool) {
 	return s.accessList.Contains(addr, slot)
 }
 
