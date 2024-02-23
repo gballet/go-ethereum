@@ -113,13 +113,13 @@ type StateDB struct {
 	preimages map[common.Hash][]byte
 
 	// Per-transaction access list
-	accessList *accessList
+	accessList AccessList
 
 	// Transient storage
 	transientStorage transientStorage
 
 	// Verkle witness
-	witness *AccessWitness
+	witness AccessList
 
 	// Journal of state modifications. This is the backbone of
 	// Snapshot and RevertToSnapshot.
@@ -188,18 +188,18 @@ func (s *StateDB) Snaps() *snapshot.Tree {
 	return s.snaps
 }
 
-func (s *StateDB) NewAccessWitness() *AccessWitness {
+func (s *StateDB) NewAccessWitness() AccessList {
 	return NewAccessWitness(s.db.(*cachingDB).addrToPoint)
 }
 
-func (s *StateDB) Witness() *AccessWitness {
+func (s *StateDB) Witness() AccessList {
 	if s.witness == nil {
 		s.witness = s.NewAccessWitness()
 	}
 	return s.witness
 }
 
-func (s *StateDB) SetWitness(aw *AccessWitness) {
+func (s *StateDB) SetWitness(aw AccessList) {
 	s.witness = aw
 }
 
@@ -1460,4 +1460,28 @@ func copy2DSet[k comparable](set map[k]map[common.Hash][]byte) map[k]map[common.
 		}
 	}
 	return copied
+}
+
+func (aw *AccessWitness) ContainsAddress(address common.Address) bool {
+	panic("not implemented") // TODO: Implement
+}
+
+func (aw *AccessWitness) Contains(address common.Address, slot common.Hash) (addressPresent bool, slotPresent bool) {
+	panic("not implemented") // TODO: Implement
+}
+
+func (aw *AccessWitness) AddAddress(address common.Address) bool {
+	panic("not implemented") // TODO: Implement
+}
+
+func (aw *AccessWitness) AddSlot(address common.Address, slot common.Hash) (addrChange bool, slotChange bool) {
+	panic("not implemented") // TODO: Implement
+}
+
+func (aw *AccessWitness) DeleteSlot(address common.Address, slot common.Hash) {
+	panic("not implemented") // TODO: Implement
+}
+
+func (aw *AccessWitness) DeleteAddress(address common.Address) {
+	panic("not implemented") // TODO: Implement
 }

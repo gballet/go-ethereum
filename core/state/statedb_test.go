@@ -823,7 +823,7 @@ func TestStateDBAccessList(t *testing.T) {
 			}
 		}
 		// Check that only the expected addresses are present in the access list
-		for address := range state.accessList.addresses {
+		for address := range state.accessList.(*accessList2929).addresses {
 			if _, exist := addressMap[address]; !exist {
 				t.Fatalf("extra address %x in access list", address)
 			}
@@ -849,9 +849,9 @@ func TestStateDBAccessList(t *testing.T) {
 			}
 		}
 		// Check that no extra elements are in the access list
-		index := state.accessList.addresses[address]
+		index := state.accessList.(*accessList2929).addresses[address]
 		if index >= 0 {
-			stateSlots := state.accessList.slots[index]
+			stateSlots := state.accessList.(*accessList2929).slots[index]
 			for s := range stateSlots {
 				if _, slotPresent := slotMap[s]; !slotPresent {
 					t.Fatalf("scope has extra slot %v (address %v)", s, addrString)
@@ -947,10 +947,10 @@ func TestStateDBAccessList(t *testing.T) {
 	if state.AddressInAccessList(addr("aa")) {
 		t.Fatalf("addr present, expected missing")
 	}
-	if got, exp := len(state.accessList.addresses), 0; got != exp {
+	if got, exp := len(state.accessList.(*accessList2929).addresses), 0; got != exp {
 		t.Fatalf("expected empty, got %d", got)
 	}
-	if got, exp := len(state.accessList.slots), 0; got != exp {
+	if got, exp := len(state.accessList.(*accessList2929).slots), 0; got != exp {
 		t.Fatalf("expected empty, got %d", got)
 	}
 	// Check the copy
@@ -958,10 +958,10 @@ func TestStateDBAccessList(t *testing.T) {
 	state = stateCopy1
 	verifyAddrs("aa", "bb")
 	verifySlots("bb", "01", "02")
-	if got, exp := len(state.accessList.addresses), 2; got != exp {
+	if got, exp := len(state.accessList.(*accessList2929).addresses), 2; got != exp {
 		t.Fatalf("expected empty, got %d", got)
 	}
-	if got, exp := len(state.accessList.slots), 1; got != exp {
+	if got, exp := len(state.accessList.(*accessList2929).slots), 1; got != exp {
 		t.Fatalf("expected empty, got %d", got)
 	}
 }

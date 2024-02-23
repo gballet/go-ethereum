@@ -390,7 +390,8 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 }
 
 // touchCodeChunksRangeOnReadAndChargeGas is a helper function to touch every chunk in a code range and charge witness gas costs
-func touchCodeChunksRangeOnReadAndChargeGas(contractAddr []byte, startPC, size uint64, codeLen uint64, accesses *state.AccessWitness) uint64 {
+func touchCodeChunksRangeOnReadAndChargeGas(contractAddr []byte, startPC, size uint64, codeLen uint64, al state.AccessList) uint64 {
+	accesses := al.(*state.AccessWitness)
 	// note that in the case where the copied code is outside the range of the
 	// contract code but touches the last leaf with contract code in it,
 	// we don't include the last leaf of code in the AccessWitness.  The
@@ -499,7 +500,7 @@ func opGasprice(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	return nil, nil
 }
 
-func getBlockHashFromContract(number uint64, statedb StateDB, witness *state.AccessWitness) common.Hash {
+func getBlockHashFromContract(number uint64, statedb StateDB, witness state.AccessList) common.Hash {
 	var pnum common.Hash
 	binary.BigEndian.PutUint64(pnum[24:], number)
 	witness.TouchAddressOnReadAndComputeGas(params.HistoryStorageAddress[:], *uint256.NewInt(number / 256), byte(number&0xFF))

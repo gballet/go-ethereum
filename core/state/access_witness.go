@@ -56,7 +56,8 @@ func NewAccessWitness(pointCache *utils.PointCache) *AccessWitness {
 // Merge is used to merge the witness that got generated during the execution
 // of a tx, with the accumulation of witnesses that were generated during the
 // execution of all the txs preceding this one in a given block.
-func (aw *AccessWitness) Merge(other *AccessWitness) {
+func (aw *AccessWitness) Merge(o AccessList) {
+	other := o.(*AccessWitness)
 	for k := range other.branches {
 		aw.branches[k] |= other.branches[k]
 	}
@@ -78,7 +79,7 @@ func (aw *AccessWitness) Keys() [][]byte {
 	return keys
 }
 
-func (aw *AccessWitness) Copy() *AccessWitness {
+func (aw *AccessWitness) Copy() AccessList {
 	naw := &AccessWitness{
 		branches:   make(map[branchAccessKey]mode),
 		chunks:     make(map[chunkAccessKey]mode),
