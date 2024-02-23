@@ -21,7 +21,6 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
-	"runtime/debug"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -590,7 +589,7 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 			return
 		}
 
-                // if a state could be read from the db, attempt to decode it
+		// if a state could be read from the db, attempt to decode it
 		if len(data) > 0 {
 			var (
 				newts TransitionState
@@ -622,7 +621,6 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 	db.CurrentTransitionState = ts.Copy()
 
 	log.Debug("loaded transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
-	debug.PrintStack()
 }
 
 func (db *cachingDB) LockCurrentTransitionState() {

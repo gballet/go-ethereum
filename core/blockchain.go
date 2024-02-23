@@ -18,15 +18,11 @@
 package core
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"math/big"
-	"os"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -327,10 +323,9 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 		// but that's left out to a later PR since there's not really a need
 		// right now.
 		bc.stateCache.InitTransitionStatus(true, true)
-		bc.stateCache.EndVerkleTransition()
 	}
 
-	if !bc.HasState(head.Root) {
+	if !bc.stateCache.Transitioned() && !bc.HasState(head.Root) {
 		// Head state is missing, before the state recovery, find out the
 		// disk layer point of snapshot(if it's enabled). Make sure the
 		// rewound point is lower than disk layer.
@@ -1535,30 +1530,6 @@ func (bc *BlockChain) InsertChain(chain types.Blocks) (int, error) {
 	return bc.insertChain(chain, true)
 }
 
-func findVerkleConversionBlock() (uint64, error) {
-	if _, err := os.Stat("conversion.txt"); os.IsNotExist(err) {
-		return math.MaxUint64, nil
-	}
-
-	f, err := os.Open("conversion.txt")
-	if err != nil {
-		log.Error("Failed to open conversion.txt", "err", err)
-		return 0, err
-	}
-	defer f.Close()
-
-	scanner := bufio.NewScanner(f)
-	scanner.Scan()
-	conversionBlock, err := strconv.ParseUint(scanner.Text(), 10, 64)
-	if err != nil {
-		log.Error("Failed to parse conversionBlock", "err", err)
-		return 0, err
-	}
-	log.Info("Found conversion block info", "conversionBlock", conversionBlock)
-
-	return conversionBlock, nil
-}
-
 // insertChain is the internal implementation of InsertChain, which assumes that
 // 1) chains are contiguous, and 2) The chain mutex is held.
 //
@@ -1571,11 +1542,6 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 	// If the chain is terminating, don't even bother starting up.
 	if bc.insertStopped() {
 		return 0, nil
-	}
-
-	conversionBlock, err := findVerkleConversionBlock()
-	if err != nil {
-		return 0, err
 	}
 
 	// Start a parallel signature recovery (signer will fluke on fork transition, minimal perf loss)
@@ -1767,11 +1733,8 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			// is the fork block and that the conversion needs to be marked at started.
 			if !bc.stateCache.InTransition() && !bc.stateCache.Transitioned() {
 				bc.stateCache.StartVerkleTransition(parent.Root, emptyVerkleRoot, bc.Config(), bc.Config().PragueTime, parent.Root)
+				bc.stateCache.SetLastMerkleRoot(parent.Root)
 			}
-		}
-		if parent.Number.Uint64() == conversionBlock {
-			bc.StartVerkleTransition(parent.Root, emptyVerkleRoot, bc.Config(), &parent.Time, parent.Root)
-			bc.stateCache.SetLastMerkleRoot(parent.Root)
 		}
 		statedb, err := state.New(parent.Root, bc.stateCache, bc.snaps)
 		if err != nil {

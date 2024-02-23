@@ -505,7 +505,7 @@ func (c *ChainConfig) IsCancun(num *big.Int, time uint64) bool {
 
 // IsPrague returns whether num is either equal to the Prague fork time or greater.
 func (c *ChainConfig) IsPrague(num *big.Int, time uint64) bool {
-	return c.IsLondon(num) && isTimestampForked(c.PragueTime, time)
+	return c.IsByzantium(num) && isTimestampForked(c.PragueTime, time)
 }
 
 // CheckCompatible checks whether scheduled fork transitions have been imported
@@ -550,6 +550,7 @@ func (c *ChainConfig) CheckConfigForkOrder() error {
 		{name: "eip155Block", block: c.EIP155Block},
 		{name: "eip158Block", block: c.EIP158Block},
 		{name: "byzantiumBlock", block: c.ByzantiumBlock},
+		{name: "pragueTime", timestamp: c.PragueTime, optional: true},
 		{name: "constantinopleBlock", block: c.ConstantinopleBlock},
 		{name: "petersburgBlock", block: c.PetersburgBlock},
 		{name: "istanbulBlock", block: c.IstanbulBlock},
@@ -561,7 +562,6 @@ func (c *ChainConfig) CheckConfigForkOrder() error {
 		{name: "mergeNetsplitBlock", block: c.MergeNetsplitBlock, optional: true},
 		{name: "shanghaiTime", timestamp: c.ShanghaiTime},
 		{name: "cancunTime", timestamp: c.CancunTime, optional: true},
-		{name: "pragueTime", timestamp: c.PragueTime, optional: true},
 	} {
 		if lastFork.name != "" {
 			switch {
