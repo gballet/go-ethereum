@@ -18,19 +18,26 @@ package state
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
+)
+
+type AccessListAccessMode bool
+
+var (
+	AccessListRead  = AccessListAccessMode(false)
+	AccessListWrite = AccessListAccessMode(true)
 )
 
 type AccessList interface {
 	ContainsAddress(address common.Address) bool
 	Contains(address common.Address, slot common.Hash) (addressPresent bool, slotPresent bool)
 	Copy() AccessList
-	AddAddress(address common.Address) bool
-	AddSlot(address common.Address, slot common.Hash) (addrChange bool, slotChange bool)
+	AddAddress(address common.Address, isWrite AccessListAccessMode) uint64
+	AddSlot(address common.Address, slot common.Hash, isWrite AccessListAccessMode) uint64
 	DeleteSlot(address common.Address, slot common.Hash)
 	DeleteAddress(address common.Address)
 
-	TouchAndChargeProofOfAbsence(addr []byte) uint64
 	TouchAndChargeMessageCall(addr []byte) uint64
 	TouchAndChargeValueTransfer(callerAddr, targetAddr []byte) uint64
 	TouchAndChargeContractCreateInit(addr []byte, createSendsValue bool) uint64
@@ -96,37 +103,35 @@ func (a *accessList2929) Copy() AccessList {
 
 // AddAddress adds an address to the access list, and returns 'true' if the operation
 // caused a change (addr was not previously in the list).
-func (al *accessList2929) AddAddress(address common.Address) bool {
+func (al *accessList2929) AddAddress(address common.Address, _ AccessListAccessMode) uint64 {
 	if _, present := al.addresses[address]; present {
-		return false
+		return 0
 	}
 	al.addresses[address] = -1
-	return true
+	return params.ColdAccountAccessCostEIP2929
 }
 
 // AddSlot adds the specified (addr, slot) combo to the access list.
-// Return values are:
-// - address added
-// - slot added
-// For any 'true' value returned, a corresponding journal entry must be made.
-func (al *accessList2929) AddSlot(address common.Address, slot common.Hash) (addrChange bool, slotChange bool) {
+// Returns the gas consumed.
+// For any non-zero gas value returned, a corresponding journal entry must be made.
+func (al *accessList2929) AddSlot(address common.Address, slot common.Hash, isWrite AccessListAccessMode) (gas uint64) {
 	idx, addrPresent := al.addresses[address]
 	if !addrPresent || idx == -1 {
 		// Address not present, or addr present but no slots there
 		al.addresses[address] = len(al.slots)
 		slotmap := map[common.Hash]struct{}{slot: {}}
 		al.slots = append(al.slots, slotmap)
-		return !addrPresent, true
+		return params.ColdSloadCostEIP2929
 	}
 	// There is already an (address,slot) mapping
 	slotmap := al.slots[idx]
 	if _, ok := slotmap[slot]; !ok {
 		slotmap[slot] = struct{}{}
 		// Journal add slot change
-		return false, true
+		return params.ColdSloadCostEIP2929
 	}
 	// No changes required
-	return false, false
+	return params.WarmStorageReadCostEIP2929
 }
 
 // DeleteSlot removes an (address, slot)-tuple from the access list.

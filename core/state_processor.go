@@ -31,7 +31,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/trie/utils"
 )
 
 // StateProcessor is a basic Processor, which takes care of transitioning
@@ -193,6 +192,5 @@ func ProcessParentBlockHash(statedb *state.StateDB, prevNumber uint64, prevHash 
 	var key common.Hash
 	binary.BigEndian.PutUint64(key[24:], prevNumber)
 	statedb.SetState(params.HistoryStorageAddress, key, prevHash)
-	index, suffix := utils.GetTreeKeyStorageSlotTreeIndexes(key[:])
-	statedb.Witness().TouchAddressOnWriteAndComputeGas(params.HistoryStorageAddress[:], *index, suffix)
+	statedb.Witness().AddSlot(params.HistoryStorageAddress, key, state.AccessListWrite)
 }

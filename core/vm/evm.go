@@ -214,7 +214,7 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 		if !isPrecompile && evm.chainRules.IsEIP158 && value.Sign() == 0 {
 			if evm.chainRules.IsPrague {
 				// proof of absence
-				tryConsumeGas(&gas, evm.Accesses.TouchAndChargeProofOfAbsence(addr.Bytes()))
+				tryConsumeGas(&gas, evm.Accesses.AddAddress(addr, state.AccessListWrite))
 			}
 			// Calling a non existing account, don't do anything, but ping the tracer
 			if debug {
@@ -464,7 +464,7 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	// We add this to the access list _before_ taking a snapshot. Even if the creation fails,
 	// the access-list change should not be rolled back
 	if evm.chainRules.IsBerlin {
-		evm.StateDB.AddAddressToAccessList(address)
+		evm.StateDB.AddAddressToAccessList(address, state.AccessListWrite)
 	}
 	// Ensure there's no existing contract already at the designated address
 	contractHash := evm.StateDB.GetCodeHash(address)

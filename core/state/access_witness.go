@@ -180,22 +180,22 @@ func (aw *AccessWitness) TouchAddressOnReadAndComputeGas(addr []byte, treeIndex 
 }
 
 func (aw *AccessWitness) touchAddressAndChargeGas(addr []byte, treeIndex uint256.Int, subIndex byte, isWrite bool) uint64 {
-	stemRead, selectorRead, stemWrite, selectorWrite, selectorFill := aw.touchAddress(addr, treeIndex, subIndex, isWrite)
+	stemRead, suffixRead, stemWrite, suffixWrite, suffixFill := aw.touchAddress(addr, treeIndex, subIndex, isWrite)
 
 	var gas uint64
 	if stemRead {
 		gas += params.WitnessBranchReadCost
 	}
-	if selectorRead {
+	if suffixRead {
 		gas += params.WitnessChunkReadCost
 	}
 	if stemWrite {
 		gas += params.WitnessBranchWriteCost
 	}
-	if selectorWrite {
+	if suffixWrite {
 		gas += params.WitnessChunkWriteCost
 	}
-	if selectorFill {
+	if suffixFill {
 		gas += params.WitnessChunkFillCost
 	}
 
@@ -260,4 +260,35 @@ func newChunkAccessKey(branchKey branchAccessKey, leafKey byte) chunkAccessKey {
 	lk.branchAccessKey = branchKey
 	lk.leafKey = leafKey
 	return lk
+}
+
+func (aw *AccessWitness) ContainsAddress(address common.Address) bool {
+	panic("not implemented") // TODO: Implement
+}
+
+func (aw *AccessWitness) Contains(address common.Address, slot common.Hash) (addressPresent bool, slotPresent bool) {
+	panic("not implemented") // TODO: Implement
+}
+
+func (aw *AccessWitness) AddAddress(addr common.Address, isWrite AccessListAccessMode) uint64 {
+	var gas uint64
+	gas += aw.touchAddressAndChargeGas(addr[:], zeroTreeIndex, utils.VersionLeafKey, bool(isWrite))
+	gas += aw.touchAddressAndChargeGas(addr[:], zeroTreeIndex, utils.BalanceLeafKey, bool(isWrite))
+	gas += aw.touchAddressAndChargeGas(addr[:], zeroTreeIndex, utils.CodeSizeLeafKey, bool(isWrite))
+	gas += aw.touchAddressAndChargeGas(addr[:], zeroTreeIndex, utils.CodeKeccakLeafKey, bool(isWrite))
+	gas += aw.touchAddressAndChargeGas(addr[:], zeroTreeIndex, utils.NonceLeafKey, bool(isWrite))
+	return gas
+}
+
+func (aw *AccessWitness) AddSlot(address common.Address, slot common.Hash, isWrite AccessListAccessMode) uint64 {
+	treeIndex, suffix := utils.GetTreeKeyStorageSlotTreeIndexes(slot.Bytes())
+	return aw.TouchAddressOnReadAndComputeGas(address[:], *treeIndex, suffix)
+}
+
+func (aw *AccessWitness) DeleteSlot(address common.Address, slot common.Hash) {
+	// Should remain in the witness
+}
+
+func (aw *AccessWitness) DeleteAddress(address common.Address) {
+	// Should remain in the witness
 }

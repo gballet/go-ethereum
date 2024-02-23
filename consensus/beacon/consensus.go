@@ -34,7 +34,6 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/ethereum/go-verkle"
-	"github.com/holiman/uint256"
 )
 
 // Proof-of-stake protocol constants.
@@ -346,9 +345,9 @@ func (beacon *Beacon) Prepare(chain consensus.ChainHeaderReader, header *types.H
 }
 
 // Finalize implements consensus.Engine and processes withdrawals on top.
-func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal) {
+func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.Header, statedb *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal) {
 	if !beacon.IsPoSHeader(header) {
-		beacon.ethone.Finalize(chain, header, state, txs, uncles, nil)
+		beacon.ethone.Finalize(chain, header, statedb, txs, uncles, nil)
 		return
 	}
 	// Withdrawals processing.
@@ -356,20 +355,16 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 		// Convert amount from gwei to wei.
 		amount := new(big.Int).SetUint64(w.Amount)
 		amount = amount.Mul(amount, big.NewInt(params.GWei))
-		state.AddBalance(w.Address, amount)
+		statedb.AddBalance(w.Address, amount)
 
 		// The returned gas is not charged
-		state.Witness().TouchAddressOnWriteAndComputeGas(w.Address[:], uint256.Int{}, utils.VersionLeafKey)
-		state.Witness().TouchAddressOnWriteAndComputeGas(w.Address[:], uint256.Int{}, utils.BalanceLeafKey)
-		state.Witness().TouchAddressOnWriteAndComputeGas(w.Address[:], uint256.Int{}, utils.NonceLeafKey)
-		state.Witness().TouchAddressOnWriteAndComputeGas(w.Address[:], uint256.Int{}, utils.CodeKeccakLeafKey)
-		state.Witness().TouchAddressOnWriteAndComputeGas(w.Address[:], uint256.Int{}, utils.CodeSizeLeafKey)
+		statedb.Witness().AddAddress(w.Address, state.AccessListWrite)
 	}
 
 	if chain.Config().IsPrague(header.Number, header.Time) {
-		fmt.Println("at block", header.Number, "performing transition?", state.Database().InTransition())
+		fmt.Println("at block", header.Number, "performing transition?", statedb.Database().InTransition())
 		parent := chain.GetHeaderByHash(header.ParentHash)
-		if err := overlay.OverlayVerkleTransition(state, parent.Root, chain.Config().OverlayStride); err != nil {
+		if err := overlay.OverlayVerkleTransition(statedb, parent.Root, chain.Config().OverlayStride); err != nil {
 			log.Error("error performing the transition", "err", err)
 		}
 	}
