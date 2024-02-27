@@ -305,6 +305,14 @@ func (ts *TransitionState) Copy() *TransitionState {
 	return ret
 }
 
+func (ts *TransitionState) Started() bool {
+	return ts.started
+}
+
+func (ts *TransitionState) Ended() bool {
+	return ts.ended
+}
+
 type cachingDB struct {
 	disk          ethdb.KeyValueStore
 	codeSizeCache *lru.Cache[common.Hash, int]
@@ -590,7 +598,7 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 			return
 		}
 
-                // if a state could be read from the db, attempt to decode it
+		// if a state could be read from the db, attempt to decode it
 		if len(data) > 0 {
 			var (
 				newts TransitionState
