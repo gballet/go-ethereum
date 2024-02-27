@@ -1356,8 +1356,11 @@ func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, er
 	s.storagesOrigin = make(map[common.Address]map[common.Hash][]byte)
 	s.stateObjectsDirty = make(map[common.Address]struct{})
 	s.stateObjectsDestruct = make(map[common.Address]*types.StateAccount)
+	LastCommittedRoot = root
 	return root, nil
 }
+
+var LastCommittedRoot common.Hash
 
 // Prepare handles the preparatory steps for executing a state transition with.
 // This method must be invoked before state transition.

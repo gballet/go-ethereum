@@ -347,10 +347,6 @@ func (beacon *Beacon) Prepare(chain consensus.ChainHeaderReader, header *types.H
 
 // Finalize implements consensus.Engine and processes withdrawals on top.
 func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal) {
-	if false && !beacon.IsPoSHeader(header) {
-		beacon.ethone.Finalize(chain, header, state, txs, uncles, nil)
-		return
-	}
 	// Withdrawals processing.
 	for _, w := range withdrawals {
 		// Convert amount from gwei to wei.
@@ -372,6 +368,11 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 		if err := overlay.OverlayVerkleTransition(state, parent.Root, chain.Config().OverlayStride); err != nil {
 			log.Error("error performing the transition", "err", err)
 		}
+	}
+
+	if !beacon.IsPoSHeader(header) {
+		beacon.ethone.Finalize(chain, header, state, txs, uncles, nil)
+		return
 	}
 }
 

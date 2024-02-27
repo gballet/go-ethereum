@@ -322,7 +322,7 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 		// for it to be able to recover if interrupted during the transition
 		// but that's left out to a later PR since there's not really a need
 		// right now.
-		bc.stateCache.InitTransitionStatus(true, true)
+		bc.stateCache.InitTransitionStatus(false, false)
 	}
 
 	if !bc.stateCache.Transitioned() && !bc.HasState(head.Root) {
@@ -1530,6 +1530,8 @@ func (bc *BlockChain) InsertChain(chain types.Blocks) (int, error) {
 	return bc.insertChain(chain, true)
 }
 
+var count int
+
 // insertChain is the internal implementation of InsertChain, which assumes that
 // 1) chains are contiguous, and 2) The chain mutex is held.
 //
@@ -1667,7 +1669,6 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			activeState.StopPrefetcher()
 		}
 	}()
-
 	for ; block != nil && err == nil || errors.Is(err, ErrKnownBlock); block, err = it.next() {
 		// If the chain is terminating, stop processing blocks
 		if bc.insertStopped() {
@@ -1736,7 +1737,12 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 				bc.stateCache.SetLastMerkleRoot(parent.Root)
 			}
 		}
-		statedb, err := state.New(parent.Root, bc.stateCache, bc.snaps)
+		rootz := parent.Root
+		if count > 0 {
+			rootz = state.LastCommittedRoot
+		}
+		count++
+		statedb, err := state.New(rootz, bc.stateCache, bc.snaps)
 		if err != nil {
 			return it.index, err
 		}
