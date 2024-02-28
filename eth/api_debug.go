@@ -449,7 +449,9 @@ func (api *DebugAPI) ConversionStatus(ctx context.Context, blockNrOrHash rpc.Blo
 	if err != nil {
 		return nil, err
 	}
+	log.Info("found entry", "data", data)
 	if len(data) == 0 {
+		log.Info("found no data")
 		// started and ended will be false as no conversion has started
 		return &ConversionStatusResult{}, nil
 	}
