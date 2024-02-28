@@ -1738,8 +1738,9 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			}
 		}
 		rootz := parent.Root
-		if count > 0 {
-			rootz = state.LastCommittedRoot
+		if count == 1 {
+			// Force first block to fallback to the tree.
+			rootz = common.HexToHash("0x00")
 		}
 		count++
 		statedb, err := state.New(rootz, bc.stateCache, bc.snaps)
