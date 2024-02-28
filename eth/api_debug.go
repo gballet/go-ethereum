@@ -447,6 +447,9 @@ func (api *DebugAPI) ConversionStatus(ctx context.Context, blockNrOrHash rpc.Blo
 	}
 	data, err := rawdb.ReadVerkleTransitionState(api.eth.ChainDb(), block.Root())
 	if err != nil {
+		if err.Error() == "pebble: not found" {
+			return &ConversionStatusResult{}, nil
+		}
 		return nil, err
 	}
 	log.Info("found entry", "data", data)
@@ -467,5 +470,5 @@ func (api *DebugAPI) ConversionStatus(ctx context.Context, blockNrOrHash rpc.Blo
 		return nil, fmt.Errorf("failed to decode transition state, err=%v", err)
 	}
 
-	return &ConversionStatusResult{Started: ts.Started(), Ended: ts.Ended()}, nil
+	return &ConversionStatusResult{Started: true, Ended: ts.Ended()}, nil
 }
