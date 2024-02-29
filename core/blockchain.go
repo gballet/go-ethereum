@@ -1530,8 +1530,6 @@ func (bc *BlockChain) InsertChain(chain types.Blocks) (int, error) {
 	return bc.insertChain(chain, true)
 }
 
-var count int
-
 // insertChain is the internal implementation of InsertChain, which assumes that
 // 1) chains are contiguous, and 2) The chain mutex is held.
 //
@@ -1738,11 +1736,10 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			}
 		}
 		rootz := parent.Root
-		if count == 1 {
+		if block.Header().Number.Uint64() == 4702178 {
 			// Force first block to fallback to the tree.
 			rootz = common.HexToHash("0x00")
 		}
-		count++
 		statedb, err := state.New(rootz, bc.stateCache, bc.snaps)
 		if err != nil {
 			return it.index, err
