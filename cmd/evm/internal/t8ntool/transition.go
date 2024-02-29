@@ -147,17 +147,17 @@ func Transition(ctx *cli.Context) error {
 	// stdin input or in files.
 	// Check if anything needs to be read from stdin
 	var (
-		prestate    Prestate
-		txs         types.Transactions // txs to apply
-		allocStr    = ctx.String(InputAllocFlag.Name)
-		allocMPTStr = ctx.String(InputAllocMPTFlag.Name)
+		prestate Prestate
+		txs      types.Transactions // txs to apply
+		allocStr = ctx.String(InputAllocFlag.Name)
+		vktStr   = ctx.String(InputVKTFlag.Name)
 
 		envStr    = ctx.String(InputEnvFlag.Name)
 		txStr     = ctx.String(InputTxsFlag.Name)
 		inputData = &input{}
 	)
 	// Figure out the prestate alloc
-	if allocStr == stdinSelector || allocMPTStr == stdinSelector || envStr == stdinSelector || txStr == stdinSelector {
+	if allocStr == stdinSelector || vktStr == stdinSelector || envStr == stdinSelector || txStr == stdinSelector {
 		decoder := json.NewDecoder(os.Stdin)
 		if err := decoder.Decode(inputData); err != nil {
 			return NewError(ErrorJson, fmt.Errorf("failed unmarshaling stdin: %v", err))
@@ -169,8 +169,8 @@ func Transition(ctx *cli.Context) error {
 		}
 	}
 	prestate.Pre = inputData.Alloc
-	if allocMPTStr != stdinSelector && allocMPTStr != "" {
-		if err := readFile(allocMPTStr, "VKT", &inputData.VKT); err != nil {
+	if vktStr != stdinSelector && vktStr != "" {
+		if err := readFile(vktStr, "VKT", &inputData.VKT); err != nil {
 			return err
 		}
 	}
@@ -308,15 +308,16 @@ func Transition(ctx *cli.Context) error {
 	body, _ := rlp.EncodeToBytes(txs)
 	// Dump the excution result
 	collector := make(Alloc)
-	vktleaves := make(map[common.Hash][]byte)
+	var vktleaves map[common.Hash][]byte
 	if !chainConfig.IsPrague(big.NewInt(int64(prestate.Env.Number)), prestate.Env.Timestamp) {
 		// Only dump accounts in MPT mode, verkle does not have the
 		// concept of an alloc.
 		s.DumpToCollector(collector, nil)
 	} else {
+		vktleaves = make(map[common.Hash][]byte)
 		s.DumpVKTLeaves(vktleaves)
 	}
-	return dispatchOutput(ctx, baseDir, result, collector, body)
+	return dispatchOutput(ctx, baseDir, result, collector, vktleaves, body)
 }
 
 // txWithKey is a helper-struct, to allow us to use the types.Transaction along with
@@ -441,7 +442,7 @@ func saveFile(baseDir, filename string, data interface{}) error {
 
 // dispatchOutput writes the output data to either stderr or stdout, or to the specified
 // files
-func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, alloc Alloc, body hexutil.Bytes) error {
+func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, alloc Alloc, vkt map[common.Hash][]byte, body hexutil.Bytes) error {
 	stdOutObject := make(map[string]interface{})
 	stdErrObject := make(map[string]interface{})
 	dispatch := func(baseDir, fName, name string, obj interface{}) error {
@@ -467,6 +468,11 @@ func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, a
 	}
 	if err := dispatch(baseDir, ctx.String(OutputBodyFlag.Name), "body", body); err != nil {
 		return err
+	}
+	if vkt != nil {
+		if err := dispatch(baseDir, ctx.String(OutputVKTFlag.Name), "vkt", vkt); err != nil {
+			return err
+		}
 	}
 	if len(stdOutObject) > 0 {
 		b, err := json.MarshalIndent(stdOutObject, "", "  ")

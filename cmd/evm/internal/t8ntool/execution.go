@@ -388,25 +388,27 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 			statedb.SetState(addr, k, v)
 		}
 	}
-	// Commit db an create a snapshot from it.
-	mptRoot, err := statedb.Commit(0, false)
-	if err != nil {
-		panic(err)
-	}
-	rawdb.WritePreimages(mptSdb.DiskDB(), statedb.Preimages())
-	mptSdb.TrieDB().WritePreimages()
-	snaps, err := snapshot.New(snapshot.Config{AsyncBuild: false, CacheSize: 10}, mptSdb.DiskDB(), mptSdb.TrieDB(), mptRoot)
-	if err != nil {
-		panic(err)
-	}
-	if snaps == nil {
-		panic("snapshot is nil")
-	}
-	snaps.Cap(mptRoot, 0)
 
 	// If verkle mode started, establish the conversion
 	if verkle {
-		sdb := state.NewDatabaseWithConfig(db, &trie.Config{Verkle: true})
+		// Commit db an create a snapshot from it.
+		mptRoot, err := statedb.Commit(0, false)
+		if err != nil {
+			panic(err)
+		}
+		rawdb.WritePreimages(mptSdb.DiskDB(), statedb.Preimages())
+		mptSdb.TrieDB().WritePreimages()
+		snaps, err := snapshot.New(snapshot.Config{AsyncBuild: false, CacheSize: 10}, mptSdb.DiskDB(), mptSdb.TrieDB(), mptRoot)
+		if err != nil {
+			panic(err)
+		}
+		if snaps == nil {
+			panic("snapshot is nil")
+		}
+		snaps.Cap(mptRoot, 0)
+
+                // reuse the backend db so that the snapshot can be enumerated
+		sdb := mptSdb // := state.NewDatabaseWithConfig(db, &trie.Config{Verkle: true})
 
 		// Load the conversion status
 		sdb.InitTransitionStatus(pre.Env.Started != nil && *pre.Env.Started, pre.Env.Ended != nil && *pre.Env.Ended)
@@ -450,7 +452,7 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		}
 
 		root, _ := statedb.Commit(0, false)
-		statedb, err = state.New(root, sdb, nil)
+		statedb, err = state.New(root, sdb, snaps)
 		if err != nil {
 			panic(err)
 		}
