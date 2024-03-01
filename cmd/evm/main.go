@@ -153,6 +153,14 @@ var stateTransitionCommand = &cli.Command{
 		t8ntool.RewardFlag,
 		t8ntool.VerbosityFlag,
 	},
+	Subcommands: []*cli.Command{
+		&cli.Command{
+			Name:    "verkle",
+			Aliases: []string{"v"},
+			Action:  t8ntool.VerkleKeys,
+			Usage:   "compute the verkle tree key given an address and optional slot number",
+		},
+	},
 }
 
 var transactionCommand = &cli.Command{
