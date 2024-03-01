@@ -309,13 +309,13 @@ func Transition(ctx *cli.Context) error {
 	body, _ := rlp.EncodeToBytes(txs)
 	// Dump the excution result
 	collector := make(Alloc)
-	var vktleaves map[common.Hash][]byte
+	var vktleaves map[common.Hash]hexutil.Bytes
 	if !chainConfig.IsPrague(big.NewInt(int64(prestate.Env.Number)), prestate.Env.Timestamp) {
 		// Only dump accounts in MPT mode, verkle does not have the
 		// concept of an alloc.
 		s.DumpToCollector(collector, nil)
 	} else {
-		vktleaves = make(map[common.Hash][]byte)
+		vktleaves = make(map[common.Hash]hexutil.Bytes)
 		s.DumpVKTLeaves(vktleaves)
 	}
 	return dispatchOutput(ctx, baseDir, result, collector, vktleaves, body)
@@ -443,7 +443,7 @@ func saveFile(baseDir, filename string, data interface{}) error {
 
 // dispatchOutput writes the output data to either stderr or stdout, or to the specified
 // files
-func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, alloc Alloc, vkt map[common.Hash][]byte, body hexutil.Bytes) error {
+func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, alloc Alloc, vkt map[common.Hash]hexutil.Bytes, body hexutil.Bytes) error {
 	stdOutObject := make(map[string]interface{})
 	stdErrObject := make(map[string]interface{})
 	dispatch := func(baseDir, fName, name string, obj interface{}) error {

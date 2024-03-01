@@ -220,7 +220,7 @@ func (s *StateDB) DumpToCollector(c DumpCollector, conf *DumpConfig) (nextKey []
 	return nextKey
 }
 
-func (s *StateDB) DumpVKTLeaves(collector map[common.Hash][]byte) {
+func (s *StateDB) DumpVKTLeaves(collector map[common.Hash]hexutil.Bytes) {
 	var vtr *trie.VerkleTrie
 	switch tr := s.trie.(type) {
 	case *trie.VerkleTrie:
