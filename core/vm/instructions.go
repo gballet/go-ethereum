@@ -531,12 +531,6 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 	}
 
 	evm := interpreter.evm
-	// if Prague is active, read it from the history contract (EIP 2935).
-	if evm.chainRules.IsPrague {
-		num.SetBytes(getBlockHashFromContract(num64, evm.StateDB, evm.Accesses).Bytes())
-		return nil, nil
-	}
-
 	var upper, lower uint64
 	upper = interpreter.evm.Context.BlockNumber.Uint64()
 	if upper < 257 {
@@ -544,8 +538,14 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 	} else {
 		lower = upper - 256
 	}
+
 	if num64 >= lower && num64 < upper {
-		num.SetBytes(interpreter.evm.Context.GetHash(num64).Bytes())
+		// if Prague is active, read it from the history contract (EIP 2935).
+		if evm.chainRules.IsPrague {
+			num.SetBytes(getBlockHashFromContract(num64, evm.StateDB, evm.Accesses).Bytes())
+		} else {
+			num.SetBytes(interpreter.evm.Context.GetHash(num64).Bytes())
+		}
 	} else {
 		num.Clear()
 	}
