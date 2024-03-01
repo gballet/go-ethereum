@@ -70,6 +70,14 @@ var (
 			"\t<file> - into the file <file> ",
 		Value: "alloc.json",
 	}
+	OutputVKTFlag = &cli.StringFlag{
+		Name: "output.vkt",
+		Usage: "Determines where to put the `VKT` of the post-state.\n" +
+			"\t`stdout` - into the stdout output\n" +
+			"\t`stderr` - into the stderr output\n" +
+			"\t<file> - into the file <file> ",
+		Value: "vkt.json",
+	}
 	OutputResultFlag = &cli.StringFlag{
 		Name: "output.result",
 		Usage: "Determines where to put the `result` (stateroot, txroot etc) of the post-state.\n" +
@@ -91,9 +99,9 @@ var (
 		Usage: "`stdin` or file name of where to find the prestate alloc to use.",
 		Value: "alloc.json",
 	}
-	InputAllocMPTFlag = &cli.StringFlag{
-		Name:  "input.allocMPT",
-		Usage: "`stdin` or file name of where to find the prestate alloc of the MPT to use.",
+	InputVKTFlag = &cli.StringFlag{
+		Name:  "input.vkt",
+		Usage: "`stdin` or file name of where to find the prestate VKT.",
 	}
 	InputEnvFlag = &cli.StringFlag{
 		Name:  "input.env",

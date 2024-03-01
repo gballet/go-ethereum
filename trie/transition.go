@@ -156,7 +156,7 @@ func (t *TransitionTrie) Commit(collectLeaf bool) (common.Hash, *trienode.NodeSe
 // NodeIterator returns an iterator that returns nodes of the trie. Iteration
 // starts at the key after the given start key.
 func (t *TransitionTrie) NodeIterator(startKey []byte) (NodeIterator, error) {
-	panic("not implemented") // TODO: Implement
+	return t.overlay.NodeIterator(startKey)
 }
 
 // Prove constructs a Merkle proof for key. The result contains all encoded nodes

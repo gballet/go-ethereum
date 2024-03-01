@@ -42,9 +42,9 @@ import (
 )
 
 type Prestate struct {
-	Env    stEnv              `json:"env"`
-	Pre    core.GenesisAlloc  `json:"pre"`
-	MPTPre *core.GenesisAlloc `json:"mptPre,omitempty"`
+	Env stEnv                  `json:"env"`
+	Pre core.GenesisAlloc      `json:"pre"`
+	VKT map[common.Hash][]byte `json:"vkt,omitempty"`
 }
 
 // ExecutionResult contains the execution status after running a state test, any
@@ -375,99 +375,11 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 }
 
 func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prestate, verkle bool) *state.StateDB {
-	sdb := state.NewDatabaseWithConfig(db, &trie.Config{Preimages: true, Verkle: verkle})
+	// Start with generating the MPT DB, which should be empty if it's post-verkle transition
+	mptSdb := state.NewDatabaseWithConfig(db, &trie.Config{Preimages: true, Verkle: false})
+	statedb, _ := state.New(types.EmptyRootHash, mptSdb, nil)
 
-	// Did we pass the verkle fork?
-	if chainConfig.IsPrague(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) {
-		if pre.Env.Ended == nil {
-			panic("Conversion flag `ended` is nil")
-		}
-		// has the conversion ended?
-		if *pre.Env.Ended {
-			sdb.InitTransitionStatus(true, true)
-
-			// Fallthrough to the MPT/post-conversion case
-		} else if pre.MPTPre == nil {
-			// This is the first block of the conversion.
-
-			// generate the snapshot from the pre state and start with a fresh tree
-			mptSdb := state.NewDatabaseWithConfig(db, &trie.Config{Preimages: true, Verkle: false})
-			statedb, _ := state.New(types.EmptyRootHash, mptSdb, nil)
-
-			// MPT pre is the same as the pre state for first conversion block
-			for addr, a := range pre.Pre {
-				statedb.SetCode(addr, a.Code)
-				statedb.SetNonce(addr, a.Nonce)
-				statedb.SetBalance(addr, a.Balance)
-				for k, v := range a.Storage {
-					statedb.SetState(addr, k, v)
-				}
-			}
-			// Commit db an create a snapshot from it.
-			mptRoot, err := statedb.Commit(0, false)
-			if err != nil {
-				panic(err)
-			}
-			rawdb.WritePreimages(mptSdb.DiskDB(), statedb.Preimages())
-			mptSdb.TrieDB().WritePreimages()
-			snaps, err := snapshot.New(snapshot.Config{AsyncBuild: false, CacheSize: 10}, mptSdb.DiskDB(), mptSdb.TrieDB(), mptRoot)
-			if err != nil {
-				panic(err)
-			}
-			if snaps == nil {
-				panic("snapshot is nil")
-			}
-			snaps.Cap(mptRoot, 0)
-
-			// The parent root is the root of the MPT, and it is also the one of the base tree. This
-			// is why it's repeated three times here.
-			mptSdb.StartVerkleTransition(mptRoot, mptRoot, chainConfig, chainConfig.PragueTime, mptRoot)
-
-			// Create an empty verkle state
-			statedb, err = state.New(types.EmptyRootHash, mptSdb, snaps)
-			if err != nil {
-				panic(err)
-			}
-
-			return statedb
-		} else {
-			sdb.InitTransitionStatus(*pre.Env.Started, *pre.Env.Ended)
-			sdb.SetCurrentAccountAddress(*pre.Env.CurrentAccountAddress)
-			sdb.SetCurrentSlotHash(*pre.Env.CurrentSlotHash)
-			sdb.SetStorageProcessed(*pre.Env.StorageProcessed)
-
-			// ongoing conversion, generate the snapshot from the pre state but also
-			// the intermediate verkle tree.
-			statedb, _ := state.New(types.EmptyRootHash, sdb, nil)
-			for addr, a := range *pre.MPTPre {
-				statedb.SetCode(addr, a.Code)
-				statedb.SetNonce(addr, a.Nonce)
-				statedb.SetBalance(addr, a.Balance)
-				for k, v := range a.Storage {
-					statedb.SetState(addr, k, v)
-				}
-			}
-			// Commit and re-open to start with a clean state.
-			mptRoot, _ := statedb.Commit(0, false)
-			snaps, err := snapshot.New(snapshot.Config{AsyncBuild: false, CacheSize: 10}, sdb.DiskDB(), sdb.TrieDB(), mptRoot)
-			if err != nil {
-				panic(err)
-			}
-			if snaps == nil {
-				panic("snapshot is nil")
-			}
-			snaps.Cap(mptRoot, 0)
-
-			// Fallthrough to the MPT/post-conversion case
-			// Note to self: the next state.New should not need snaps as a
-			// parameter, as long as it's available in the diskdb.
-		}
-	}
-
-	// Create the state and the statedb from the allocation. This can be an MPT or
-	// a verkle tree. If the conversion is ongoing, the MPT data has been stored
-	// into another tree that has already been created at this point.
-	statedb, _ := state.New(types.EmptyRootHash, sdb, nil)
+	// MPT pre is the same as the pre state for first conversion block
 	for addr, a := range pre.Pre {
 		statedb.SetCode(addr, a.Code)
 		statedb.SetNonce(addr, a.Nonce)
@@ -476,12 +388,76 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 			statedb.SetState(addr, k, v)
 		}
 	}
-	// Commit and re-open to start with a clean state.
-	root, _ := statedb.Commit(0, false)
-	statedb, err := state.New(root, sdb, nil)
-	if err != nil {
-		panic(err)
+
+	// If verkle mode started, establish the conversion
+	if verkle {
+		// Commit db an create a snapshot from it.
+		mptRoot, err := statedb.Commit(0, false)
+		if err != nil {
+			panic(err)
+		}
+		rawdb.WritePreimages(mptSdb.DiskDB(), statedb.Preimages())
+		mptSdb.TrieDB().WritePreimages()
+		snaps, err := snapshot.New(snapshot.Config{AsyncBuild: false, CacheSize: 10}, mptSdb.DiskDB(), mptSdb.TrieDB(), mptRoot)
+		if err != nil {
+			panic(err)
+		}
+		if snaps == nil {
+			panic("snapshot is nil")
+		}
+		snaps.Cap(mptRoot, 0)
+
+                // reuse the backend db so that the snapshot can be enumerated
+		sdb := mptSdb // := state.NewDatabaseWithConfig(db, &trie.Config{Verkle: true})
+
+		// Load the conversion status
+		sdb.InitTransitionStatus(pre.Env.Started != nil && *pre.Env.Started, pre.Env.Ended != nil && *pre.Env.Ended)
+		if pre.Env.CurrentAccountAddress != nil {
+			sdb.SetCurrentAccountAddress(*pre.Env.CurrentAccountAddress)
+		}
+		if pre.Env.CurrentSlotHash != nil {
+			sdb.SetCurrentSlotHash(*pre.Env.CurrentSlotHash)
+		}
+		if pre.Env.StorageProcessed != nil {
+			sdb.SetStorageProcessed(*pre.Env.StorageProcessed)
+		}
+
+		// start the conversion on the first block
+		if !sdb.InTransition() && !sdb.Transitioned() {
+			sdb.StartVerkleTransition(mptRoot, mptRoot, chainConfig, chainConfig.PragueTime, mptRoot)
+		}
+
+		statedb, err = state.New(types.EmptyRootHash, sdb, nil)
+		if err != nil {
+			panic(err)
+		}
+
+		// Load verkle tree from prestate
+		var vtr *trie.VerkleTrie
+		switch tr := statedb.GetTrie().(type) {
+		case *trie.VerkleTrie:
+			vtr = tr
+		case *trie.TransitionTrie:
+			vtr = tr.Overlay()
+		default:
+			panic("invalid trie type")
+		}
+
+		// create the vkt, should be empty on first insert
+		for k, v := range pre.VKT {
+			values := make([][]byte, 256)
+			values[k[31]] = make([]byte, 32)
+			copy(values[k[31]], v)
+			vtr.UpdateStem(k.Bytes(), values)
+		}
+
+		root, _ := statedb.Commit(0, false)
+		statedb, err = state.New(root, sdb, snaps)
+		if err != nil {
+			panic(err)
+		}
 	}
+
 	return statedb
 }
 

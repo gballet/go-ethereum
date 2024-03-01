@@ -39,6 +39,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/tests"
+	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/urfave/cli/v2"
 )
 
@@ -77,11 +78,11 @@ var (
 )
 
 type input struct {
-	Alloc    core.GenesisAlloc  `json:"alloc,omitempty"`
-	AllocMPT *core.GenesisAlloc `json:"allocMPT,omitempty"`
-	Env      *stEnv             `json:"env,omitempty"`
-	Txs      []*txWithKey       `json:"txs,omitempty"`
-	TxRlp    string             `json:"txsRlp,omitempty"`
+	Alloc core.GenesisAlloc      `json:"alloc,omitempty"`
+	VKT   map[common.Hash][]byte `json:"vkt,omitempty"`
+	Env   *stEnv                 `json:"env,omitempty"`
+	Txs   []*txWithKey           `json:"txs,omitempty"`
+	TxRlp string                 `json:"txsRlp,omitempty"`
 }
 
 func Transition(ctx *cli.Context) error {
@@ -147,17 +148,17 @@ func Transition(ctx *cli.Context) error {
 	// stdin input or in files.
 	// Check if anything needs to be read from stdin
 	var (
-		prestate    Prestate
-		txs         types.Transactions // txs to apply
-		allocStr    = ctx.String(InputAllocFlag.Name)
-		allocMPTStr = ctx.String(InputAllocMPTFlag.Name)
+		prestate Prestate
+		txs      types.Transactions // txs to apply
+		allocStr = ctx.String(InputAllocFlag.Name)
+		vktStr   = ctx.String(InputVKTFlag.Name)
 
 		envStr    = ctx.String(InputEnvFlag.Name)
 		txStr     = ctx.String(InputTxsFlag.Name)
 		inputData = &input{}
 	)
 	// Figure out the prestate alloc
-	if allocStr == stdinSelector || allocMPTStr == stdinSelector || envStr == stdinSelector || txStr == stdinSelector {
+	if allocStr == stdinSelector || vktStr == stdinSelector || envStr == stdinSelector || txStr == stdinSelector {
 		decoder := json.NewDecoder(os.Stdin)
 		if err := decoder.Decode(inputData); err != nil {
 			return NewError(ErrorJson, fmt.Errorf("failed unmarshaling stdin: %v", err))
@@ -169,12 +170,12 @@ func Transition(ctx *cli.Context) error {
 		}
 	}
 	prestate.Pre = inputData.Alloc
-	if allocMPTStr != stdinSelector && allocMPTStr != "" {
-		if err := readFile(allocMPTStr, "allocMPT", &inputData.AllocMPT); err != nil {
+	if vktStr != stdinSelector && vktStr != "" {
+		if err := readFile(vktStr, "VKT", &inputData.VKT); err != nil {
 			return err
 		}
 	}
-	prestate.MPTPre = inputData.AllocMPT
+	prestate.VKT = inputData.VKT
 
 	// Set the block environment
 	if envStr != stdinSelector {
@@ -308,8 +309,16 @@ func Transition(ctx *cli.Context) error {
 	body, _ := rlp.EncodeToBytes(txs)
 	// Dump the excution result
 	collector := make(Alloc)
-	s.DumpToCollector(collector, nil)
-	return dispatchOutput(ctx, baseDir, result, collector, body)
+	var vktleaves map[common.Hash]hexutil.Bytes
+	if !chainConfig.IsPrague(big.NewInt(int64(prestate.Env.Number)), prestate.Env.Timestamp) {
+		// Only dump accounts in MPT mode, verkle does not have the
+		// concept of an alloc.
+		s.DumpToCollector(collector, nil)
+	} else {
+		vktleaves = make(map[common.Hash]hexutil.Bytes)
+		s.DumpVKTLeaves(vktleaves)
+	}
+	return dispatchOutput(ctx, baseDir, result, collector, vktleaves, body)
 }
 
 // txWithKey is a helper-struct, to allow us to use the types.Transaction along with
@@ -434,7 +443,7 @@ func saveFile(baseDir, filename string, data interface{}) error {
 
 // dispatchOutput writes the output data to either stderr or stdout, or to the specified
 // files
-func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, alloc Alloc, body hexutil.Bytes) error {
+func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, alloc Alloc, vkt map[common.Hash]hexutil.Bytes, body hexutil.Bytes) error {
 	stdOutObject := make(map[string]interface{})
 	stdErrObject := make(map[string]interface{})
 	dispatch := func(baseDir, fName, name string, obj interface{}) error {
@@ -461,6 +470,11 @@ func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, a
 	if err := dispatch(baseDir, ctx.String(OutputBodyFlag.Name), "body", body); err != nil {
 		return err
 	}
+	if vkt != nil {
+		if err := dispatch(baseDir, ctx.String(OutputVKTFlag.Name), "vkt", vkt); err != nil {
+			return err
+		}
+	}
 	if len(stdOutObject) > 0 {
 		b, err := json.MarshalIndent(stdOutObject, "", "  ")
 		if err != nil {
@@ -477,5 +491,31 @@ func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, a
 		os.Stderr.Write(b)
 		os.Stderr.WriteString("\n")
 	}
+	return nil
+}
+
+// VerkleKeys computes the tree key given an address and an optional
+// slot number.
+func VerkleKeys(ctx *cli.Context) error {
+	if ctx.Args().Len() == 0 || ctx.Args().Len() > 2 {
+		return errors.New("invalid number of arguments: expecting an address and an optional slot number")
+	}
+	addr, err := hexutil.Decode(ctx.Args().Get(0))
+	if err != nil {
+		return fmt.Errorf("error decoding address: %w", err)
+	}
+
+	if ctx.Args().Len() == 2 {
+		slot, err := hexutil.Decode(ctx.Args().Get(1))
+		if err != nil {
+			return fmt.Errorf("error decoding slot: %w", err)
+		}
+
+		ap := utils.EvaluateAddressPoint(addr)
+		fmt.Printf("%#x\n", utils.GetTreeKeyStorageSlotWithEvaluatedAddress(ap, slot))
+	} else {
+		fmt.Printf("%#x\n", utils.GetTreeKeyVersion(addr))
+	}
+
 	return nil
 }
