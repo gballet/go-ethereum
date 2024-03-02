@@ -219,11 +219,11 @@ func NewDatabaseWithNodeDB(db ethdb.Database, triedb *trie.Database) Database {
 }
 
 func (db *cachingDB) InTransition() bool {
-	return db.CurrentTransitionState != nil && db.CurrentTransitionState.started && !db.CurrentTransitionState.ended
+	return db.CurrentTransitionState != nil && db.CurrentTransitionState.Started && !db.CurrentTransitionState.Ended
 }
 
 func (db *cachingDB) Transitioned() bool {
-	return db.CurrentTransitionState != nil && db.CurrentTransitionState.ended
+	return db.CurrentTransitionState != nil && db.CurrentTransitionState.Ended
 }
 
 // Fork implements the fork
@@ -236,7 +236,7 @@ func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.H
 	  |____|  |___|  /\___        \___  |____/\___  |   __/|___|  (____  |___|  |__|      |___|  (____  /_____/       \/\_/ |__|___|  /_____//_____/
                                                     |__|`)
 	db.CurrentTransitionState = &TransitionState{
-		started: true,
+		Started: true,
 		// initialize so that the first storage-less accounts are processed
 		StorageProcessed: true,
 	}
@@ -255,15 +255,15 @@ func (db *cachingDB) ReorgThroughVerkleTransition() {
 
 func (db *cachingDB) InitTransitionStatus(started, ended bool) {
 	db.CurrentTransitionState = &TransitionState{
-		ended:   ended,
-		started: started,
+		Ended:   ended,
+		Started: started,
 		// TODO add other fields when we handle mid-transition interrupts
 	}
 }
 
 func (db *cachingDB) EndVerkleTransition() {
-	if !db.CurrentTransitionState.started {
-		db.CurrentTransitionState.started = true
+	if !db.CurrentTransitionState.Started {
+		db.CurrentTransitionState.Started = true
 	}
 
 	fmt.Println(`
@@ -273,14 +273,14 @@ func (db *cachingDB) EndVerkleTransition() {
 	  |    |  |   Y  \  ___/     \  ___/|  |_\  ___/|  |_> |   Y  \/ __ \|   |  |  |      |   Y  \/ __ \_\___ \     |  |__/ __ \|   |  / /_/ \  ___// /_/ |
 	  |____|  |___|  /\___        \___  |____/\___  |   __/|___|  (____  |___|  |__|      |___|  (____  /_____/     |____(____  |___|  \____ |\___  \____ |
                                                     |__|`)
-	db.CurrentTransitionState.ended = true
+	db.CurrentTransitionState.Ended = true
 }
 
 type TransitionState struct {
 	CurrentAccountAddress *common.Address // addresss of the last translated account
 	CurrentSlotHash       common.Hash     // hash of the last translated storage slot
 	CurrentPreimageOffset int64           // next byte to read from the preimage file
-	started, ended        bool
+	Started, Ended        bool
 
 	// Mark whether the storage for an account has been processed. This is useful if the
 	// maximum number of leaves of the conversion is reached before the whole storage is
@@ -290,8 +290,8 @@ type TransitionState struct {
 
 func (ts *TransitionState) Copy() *TransitionState {
 	ret := &TransitionState{
-		started:               ts.started,
-		ended:                 ts.ended,
+		Started:               ts.Started,
+		Ended:                 ts.Ended,
 		CurrentSlotHash:       ts.CurrentSlotHash,
 		CurrentPreimageOffset: ts.CurrentPreimageOffset,
 		StorageProcessed:      ts.StorageProcessed,
@@ -334,14 +334,14 @@ func (db *cachingDB) openMPTTrie(root common.Hash) (Trie, error) {
 func (db *cachingDB) openVKTrie(root common.Hash) (Trie, error) {
 	payload, err := db.DiskDB().Get(trie.FlatDBVerkleNodeKeyPrefix)
 	if err != nil {
-		return trie.NewVerkleTrie(verkle.New(), db.triedb, db.addrToPoint, db.CurrentTransitionState.ended), nil
+		return trie.NewVerkleTrie(verkle.New(), db.triedb, db.addrToPoint, db.CurrentTransitionState.Ended), nil
 	}
 
 	r, err := verkle.ParseNode(payload, 0)
 	if err != nil {
 		panic(err)
 	}
-	return trie.NewVerkleTrie(r, db.triedb, db.addrToPoint, db.CurrentTransitionState.ended), err
+	return trie.NewVerkleTrie(r, db.triedb, db.addrToPoint, db.CurrentTransitionState.Ended), err
 }
 
 // OpenTrie opens the main account trie at a specific root hash.
@@ -364,7 +364,7 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 
 		// If the verkle conversion has ended, return a single
 		// verkle trie.
-		if db.CurrentTransitionState.ended {
+		if db.CurrentTransitionState.Ended {
 			log.Debug("transition ended, returning a simple verkle tree")
 			return vkt, nil
 		}
@@ -572,7 +572,7 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 			rawdb.WriteVerkleTransitionState(db.DiskDB(), root, buf.Bytes())
 		}
 
-		log.Debug("saving transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
+		log.Debug("saving transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.Ended, "started", db.CurrentTransitionState.Started)
 	}
 }
 
@@ -590,7 +590,7 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 			return
 		}
 
-                // if a state could be read from the db, attempt to decode it
+		// if a state could be read from the db, attempt to decode it
 		if len(data) > 0 {
 			var (
 				newts TransitionState
@@ -613,7 +613,7 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 			// as a verkle database.
 			log.Debug("no transition state found, starting fresh", "is verkle", db.triedb.IsVerkle())
 			// Start with a fresh state
-			ts = &TransitionState{ended: db.triedb.IsVerkle()}
+			ts = &TransitionState{Ended: db.triedb.IsVerkle()}
 		}
 	}
 
@@ -621,7 +621,7 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 	// doesn't get overwritten.
 	db.CurrentTransitionState = ts.Copy()
 
-	log.Debug("loaded transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.ended, "started", db.CurrentTransitionState.started)
+	log.Debug("loaded transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.Ended, "started", db.CurrentTransitionState.Started)
 	debug.PrintStack()
 }
 
