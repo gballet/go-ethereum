@@ -84,10 +84,9 @@ type BlockContext struct {
 // All fields can change between transactions.
 type TxContext struct {
 	// Message information
-	Origin     common.Address       // Provides information for ORIGIN
-	GasPrice   *big.Int             // Provides information for GASPRICE
-	BlobHashes []common.Hash        // Provides information for BLOBHASH
-	Accesses   *state.AccessWitness // Capture all state accesses for this tx
+	Origin     common.Address // Provides information for ORIGIN
+	GasPrice   *big.Int       // Provides information for GASPRICE
+	BlobHashes []common.Hash  // Provides information for BLOBHASH
 }
 
 // EVM is the Ethereum Virtual Machine base object and provides
@@ -137,9 +136,6 @@ func NewEVM(blockCtx BlockContext, txCtx TxContext, statedb StateDB, chainConfig
 		chainConfig: chainConfig,
 		chainRules:  chainConfig.Rules(blockCtx.BlockNumber, blockCtx.Random != nil, blockCtx.Time),
 	}
-	if txCtx.Accesses == nil && chainConfig.IsPrague(blockCtx.BlockNumber, blockCtx.Time) {
-		evm.Accesses = evm.StateDB.(*state.StateDB).NewAccessWitness()
-	}
 	evm.interpreter = NewEVMInterpreter(evm)
 	return evm
 }
@@ -147,9 +143,6 @@ func NewEVM(blockCtx BlockContext, txCtx TxContext, statedb StateDB, chainConfig
 // Reset resets the EVM with a new transaction context.Reset
 // This is not threadsafe and should only be done very cautiously.
 func (evm *EVM) Reset(txCtx TxContext, statedb StateDB) {
-	if txCtx.Accesses == nil && evm.chainRules.IsPrague {
-		txCtx.Accesses = evm.StateDB.(*state.StateDB).NewAccessWitness()
-	}
 	evm.TxContext = txCtx
 	evm.StateDB = statedb
 }
@@ -214,7 +207,7 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 		if !isPrecompile && evm.chainRules.IsEIP158 && value.Sign() == 0 {
 			if evm.chainRules.IsPrague {
 				// proof of absence
-				tryConsumeGas(&gas, evm.Accesses.TouchAndChargeProofOfAbsence(addr.Bytes()))
+				tryConsumeGas(&gas, evm.StateDB.AddAddressToAccessList(addr, state.ALAllItems, state.AccessListRead))
 			}
 			// Calling a non existing account, don't do anything, but ping the tracer
 			if debug {
@@ -464,7 +457,11 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	// We add this to the access list _before_ taking a snapshot. Even if the creation fails,
 	// the access-list change should not be rolled back
 	if evm.chainRules.IsBerlin {
-		evm.StateDB.AddAddressToAccessList(address)
+		evm.StateDB.AddAddressToAccessList(address, state.ALVersion|state.ALNonce, state.AccessListWrite)
+		// FIXME this is unlike the spec, it should always touch the balance according to the spec
+		if value.Sign() != 0 {
+			evm.StateDB.AddAddressToAccessList(address, state.ALBalance, state.AccessListWrite)
+		}
 	}
 	// Ensure there's no existing contract already at the designated address
 	contractHash := evm.StateDB.GetCodeHash(address)
@@ -521,9 +518,9 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 
 	if err == nil && evm.chainRules.IsPrague {
 		if len(ret) > 0 {
-			touchCodeChunksRangeOnReadAndChargeGas(address.Bytes(), 0, uint64(len(ret)), uint64(len(ret)), evm.Accesses)
+			touchCodeChunksRangeOnReadAndChargeGas(address, 0, uint64(len(ret)), uint64(len(ret)), evm.StateDB)
 		}
-		if !contract.UseGas(evm.Accesses.TouchAndChargeContractCreateCompleted(address.Bytes()[:])) {
+		if !contract.UseGas(evm.StateDB.AddAddressToAccessList(address, state.ALAllItems, state.AccessListWrite)) {
 			err = ErrOutOfGas
 		}
 	}

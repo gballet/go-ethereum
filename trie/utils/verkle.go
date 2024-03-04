@@ -26,11 +26,11 @@ import (
 )
 
 const (
-	VersionLeafKey    = 0
-	BalanceLeafKey    = 1
-	NonceLeafKey      = 2
-	CodeKeccakLeafKey = 3
-	CodeSizeLeafKey   = 4
+	VersionLeafKey = byte(iota)
+	BalanceLeafKey
+	NonceLeafKey
+	CodeKeccakLeafKey
+	CodeSizeLeafKey
 
 	maxPointCacheByteSize = 100 << 20
 )

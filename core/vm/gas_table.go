@@ -17,14 +17,14 @@
 package vm
 
 import (
+	"encoding/binary"
 	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	trieUtils "github.com/ethereum/go-ethereum/trie/utils"
-	"github.com/holiman/uint256"
 )
 
 // memoryGasCost calculates the quadratic gas for memory expansion. It does so
@@ -101,29 +101,15 @@ var (
 func gasExtCodeSize(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	usedGas := uint64(0)
 	slot := stack.Back(0)
-	address := slot.Bytes20()
+	address := common.Address(slot.Bytes20())
 	if evm.chainRules.IsPrague {
-		usedGas += evm.TxContext.Accesses.TouchAddressOnReadAndComputeGas(address[:], uint256.Int{}, trieUtils.CodeSizeLeafKey)
-	}
-
-	return usedGas, nil
-}
-
-func gasSLoad(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	usedGas := uint64(0)
-
-	if evm.chainRules.IsPrague {
-		where := stack.Back(0)
-		treeIndex, subIndex := trieUtils.GetTreeKeyStorageSlotTreeIndexes(where.Bytes())
-		usedGas += evm.Accesses.TouchAddressOnReadAndComputeGas(contract.Address().Bytes(), *treeIndex, subIndex)
+		usedGas += evm.StateDB.AddAddressToAccessList(address, state.ALCodeSize, state.AccessListRead)
 	}
 
 	return usedGas, nil
 }
 
 func gasSStore(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	// Apply the witness access costs, err is nil
-	accessGas, _ := gasSLoad(evm, contract, stack, mem, memorySize)
 	var (
 		y, x    = stack.Back(1), stack.Back(0)
 		current = evm.StateDB.GetState(contract.Address(), x.Bytes32())
@@ -139,12 +125,12 @@ func gasSStore(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySi
 		// 3. From a non-zero to a non-zero                         (CHANGE)
 		switch {
 		case current == (common.Hash{}) && y.Sign() != 0: // 0 => non 0
-			return params.SstoreSetGas + accessGas, nil
+			return params.SstoreSetGas, nil
 		case current != (common.Hash{}) && y.Sign() == 0: // non 0 => 0
 			evm.StateDB.AddRefund(params.SstoreRefundGas)
-			return params.SstoreClearGas + accessGas, nil
+			return params.SstoreClearGas, nil
 		default: // non 0 => non 0 (or 0 => 0)
-			return params.SstoreResetGas + accessGas, nil
+			return params.SstoreResetGas, nil
 		}
 	}
 
@@ -426,13 +412,13 @@ func gasCall(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize
 	}
 	if evm.chainRules.IsPrague {
 		if _, isPrecompile := evm.precompile(address); !isPrecompile {
-			gas, overflow = math.SafeAdd(gas, evm.Accesses.TouchAndChargeMessageCall(address.Bytes()[:]))
+			gas, overflow = math.SafeAdd(gas, evm.StateDB.AddAddressToAccessList(address, state.ALVersion|state.ALCodeSize, state.AccessListRead))
 			if overflow {
 				return 0, ErrGasUintOverflow
 			}
 		}
 		if transfersValue {
-			gas, overflow = math.SafeAdd(gas, evm.Accesses.TouchAndChargeValueTransfer(contract.Address().Bytes()[:], address.Bytes()[:]))
+			gas, overflow = math.SafeAdd(gas, evm.StateDB.TouchAndChargeValueTransfer(contract.Address(), address))
 			if overflow {
 				return 0, ErrGasUintOverflow
 			}
@@ -467,7 +453,7 @@ func gasCallCode(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memory
 	if evm.chainRules.IsPrague {
 		address := common.Address(stack.Back(1).Bytes20())
 		if _, isPrecompile := evm.precompile(address); !isPrecompile {
-			gas, overflow = math.SafeAdd(gas, evm.Accesses.TouchAndChargeMessageCall(address.Bytes()))
+			gas, overflow = math.SafeAdd(gas, evm.StateDB.AddAddressToAccessList(address, state.ALVersion|state.ALCodeSize, state.AccessListRead))
 			if overflow {
 				return 0, ErrGasUintOverflow
 			}
@@ -492,7 +478,7 @@ func gasDelegateCall(evm *EVM, contract *Contract, stack *Stack, mem *Memory, me
 	if evm.chainRules.IsPrague {
 		address := common.Address(stack.Back(1).Bytes20())
 		if _, isPrecompile := evm.precompile(address); !isPrecompile {
-			gas, overflow = math.SafeAdd(gas, evm.Accesses.TouchAndChargeMessageCall(address.Bytes()))
+			gas, overflow = math.SafeAdd(gas, evm.StateDB.AddAddressToAccessList(address, state.ALVersion|state.ALCodeSize, state.AccessListRead))
 			if overflow {
 				return 0, ErrGasUintOverflow
 			}
@@ -517,7 +503,7 @@ func gasStaticCall(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memo
 	if evm.chainRules.IsPrague {
 		address := common.Address(stack.Back(1).Bytes20())
 		if _, isPrecompile := evm.precompile(address); !isPrecompile {
-			gas, overflow = math.SafeAdd(gas, evm.Accesses.TouchAndChargeMessageCall(address.Bytes()))
+			gas, overflow = math.SafeAdd(gas, evm.StateDB.AddAddressToAccessList(address, state.ALVersion|state.ALCodeSize, state.AccessListRead))
 			if overflow {
 				return 0, ErrGasUintOverflow
 			}
@@ -553,4 +539,17 @@ func gasSelfdestruct(evm *EVM, contract *Contract, stack *Stack, mem *Memory, me
 		evm.StateDB.AddRefund(params.SelfdestructRefundGas)
 	}
 	return gas, nil
+}
+
+func gasBlockHashEip2935(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	num := stack.peek()
+	num64, overflow := num.Uint64WithOverflow()
+	if overflow {
+		num.Clear()
+		return 0, ErrBlockNumberUintOverflow
+	}
+
+	var pnum common.Hash
+	binary.BigEndian.PutUint64(pnum[24:], num64)
+	return evm.StateDB.AddSlotToAccessList(params.HistoryStorageAddress, pnum, state.AccessListRead), nil
 }

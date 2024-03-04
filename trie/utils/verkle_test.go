@@ -17,10 +17,10 @@
 package utils
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"math/big"
-	"math/rand"
 	"testing"
 
 	"github.com/ethereum/go-verkle"
@@ -63,6 +63,7 @@ func BenchmarkPedersenHash(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
+		//lint:ignore SA1019 crypto.Read not needed in tests
 		rand.Read(v[:])
 		rand.Read(addr[:])
 		GetTreeKeyCodeSize(addr[:])

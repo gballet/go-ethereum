@@ -25,12 +25,11 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	cmath "github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/trie/utils"
-	"github.com/holiman/uint256"
 )
 
 // ExecutionResult includes all output after executing given evm
@@ -409,14 +408,14 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		targetAddr := msg.To
 		originAddr := msg.From
 
-		statelessGasOrigin := st.evm.Accesses.TouchTxOriginAndComputeGas(originAddr.Bytes())
+		statelessGasOrigin := st.evm.StateDB.TouchTxOriginAndComputeGas(originAddr)
 		if !tryConsumeGas(&st.gasRemaining, statelessGasOrigin) {
 			return nil, fmt.Errorf("%w: Insufficient funds to cover witness access costs for transaction: have %d, want %d", ErrInsufficientBalanceWitness, st.gasRemaining, gas)
 		}
 		originNonce := st.evm.StateDB.GetNonce(originAddr)
 
 		if msg.To != nil {
-			statelessGasDest := st.evm.Accesses.TouchTxExistingAndComputeGas(targetAddr.Bytes(), msg.Value.Sign() != 0)
+			statelessGasDest := st.evm.StateDB.TouchTxExistingAndComputeGas(*targetAddr, msg.Value.Sign() != 0)
 			if !tryConsumeGas(&st.gasRemaining, statelessGasDest) {
 				return nil, fmt.Errorf("%w: Insufficient funds to cover witness access costs for transaction: have %d, want %d", ErrInsufficientBalanceWitness, st.gasRemaining, gas)
 			}
@@ -425,7 +424,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 			st.evm.StateDB.GetCodeSize(*targetAddr)
 		} else {
 			contractAddr := crypto.CreateAddress(originAddr, originNonce)
-			if !tryConsumeGas(&st.gasRemaining, st.evm.Accesses.TouchAndChargeContractCreateInit(contractAddr.Bytes(), msg.Value.Sign() != 0)) {
+			if !tryConsumeGas(&st.gasRemaining, st.evm.StateDB.TouchAndChargeContractCreateInit(contractAddr, msg.Value.Sign() != 0)) {
 				return nil, fmt.Errorf("%w: Insufficient funds to cover witness access costs for transaction: have %d, want %d", ErrInsufficientBalanceWitness, st.gasRemaining, gas)
 			}
 		}
@@ -481,11 +480,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 
 		// add the coinbase to the witness iff the fee is greater than 0
 		if rules.IsPrague && fee.Sign() != 0 {
-			st.evm.Accesses.TouchAddressOnWriteAndComputeGas(st.evm.Context.Coinbase[:], uint256.Int{}, utils.VersionLeafKey)
-			st.evm.Accesses.TouchAddressOnWriteAndComputeGas(st.evm.Context.Coinbase[:], uint256.Int{}, utils.BalanceLeafKey)
-			st.evm.Accesses.TouchAddressOnWriteAndComputeGas(st.evm.Context.Coinbase[:], uint256.Int{}, utils.NonceLeafKey)
-			st.evm.Accesses.TouchAddressOnWriteAndComputeGas(st.evm.Context.Coinbase[:], uint256.Int{}, utils.CodeKeccakLeafKey)
-			st.evm.Accesses.TouchAddressOnWriteAndComputeGas(st.evm.Context.Coinbase[:], uint256.Int{}, utils.CodeSizeLeafKey)
+			st.evm.StateDB.AddAddressToAccessList(st.evm.Context.Coinbase, state.ALAllItems, state.AccessListWrite)
 		}
 	}
 

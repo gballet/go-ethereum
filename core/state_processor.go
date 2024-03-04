@@ -36,7 +36,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
-	tutils "github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/ethereum/go-verkle"
 	"github.com/holiman/uint256"
 )
@@ -133,7 +132,6 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 func applyTransaction(msg *Message, config *params.ChainConfig, gp *GasPool, statedb *state.StateDB, blockNumber *big.Int, blockHash common.Hash, tx *types.Transaction, usedGas *uint64, evm *vm.EVM) (*types.Receipt, error) {
 	// Create a new context to be used in the EVM environment.
 	txContext := NewEVMTxContext(msg)
-	txContext.Accesses = statedb.NewAccessWitness()
 	evm.Reset(txContext, statedb)
 
 	// Apply the transaction to the current state (included in the env).
@@ -167,7 +165,7 @@ func applyTransaction(msg *Message, config *params.ChainConfig, gp *GasPool, sta
 		receipt.ContractAddress = crypto.CreateAddress(evm.TxContext.Origin, tx.Nonce())
 	}
 
-	statedb.Witness().Merge(txContext.Accesses)
+	statedb.MergeTxAccessListIntoBlockWitness()
 
 	// Set the receipt logs and create the bloom filter.
 	receipt.Logs = statedb.GetLogs(tx.Hash(), blockNumber.Uint64(), blockHash)
@@ -240,7 +238,7 @@ func newBranchKey(addr []byte, treeIndex *uint256.Int) branchKey {
 }
 
 func (kvm *keyValueMigrator) addStorageSlot(addr []byte, slotNumber []byte, slotValue []byte) {
-	treeIndex, subIndex := tutils.GetTreeKeyStorageSlotTreeIndexes(slotNumber)
+	treeIndex, subIndex := utils.GetTreeKeyStorageSlotTreeIndexes(slotNumber)
 	leafNodeData := kvm.getOrInitLeafNodeData(newBranchKey(addr, treeIndex))
 	leafNodeData.Values[subIndex] = slotValue
 }
@@ -249,19 +247,19 @@ func (kvm *keyValueMigrator) addAccount(addr []byte, acc *types.StateAccount) {
 	leafNodeData := kvm.getOrInitLeafNodeData(newBranchKey(addr, &zeroTreeIndex))
 
 	var version [verkle.LeafValueSize]byte
-	leafNodeData.Values[tutils.VersionLeafKey] = version[:]
+	leafNodeData.Values[utils.VersionLeafKey] = version[:]
 
 	var balance [verkle.LeafValueSize]byte
 	for i, b := range acc.Balance.Bytes() {
 		balance[len(acc.Balance.Bytes())-1-i] = b
 	}
-	leafNodeData.Values[tutils.BalanceLeafKey] = balance[:]
+	leafNodeData.Values[utils.BalanceLeafKey] = balance[:]
 
 	var nonce [verkle.LeafValueSize]byte
 	binary.LittleEndian.PutUint64(nonce[:8], acc.Nonce)
-	leafNodeData.Values[tutils.NonceLeafKey] = nonce[:]
+	leafNodeData.Values[utils.NonceLeafKey] = nonce[:]
 
-	leafNodeData.Values[tutils.CodeKeccakLeafKey] = acc.CodeHash[:]
+	leafNodeData.Values[utils.CodeKeccakLeafKey] = acc.CodeHash[:]
 }
 
 func (kvm *keyValueMigrator) addAccountCode(addr []byte, codeSize uint64, chunks []byte) {
@@ -270,7 +268,7 @@ func (kvm *keyValueMigrator) addAccountCode(addr []byte, codeSize uint64, chunks
 	// Save the code size.
 	var codeSizeBytes [verkle.LeafValueSize]byte
 	binary.LittleEndian.PutUint64(codeSizeBytes[:8], codeSize)
-	leafNodeData.Values[tutils.CodeSizeLeafKey] = codeSizeBytes[:]
+	leafNodeData.Values[utils.CodeSizeLeafKey] = codeSizeBytes[:]
 
 	// The first 128 chunks are stored in the account header leaf.
 	for i := 0; i < 128 && i < len(chunks)/32; i++ {
@@ -279,7 +277,7 @@ func (kvm *keyValueMigrator) addAccountCode(addr []byte, codeSize uint64, chunks
 
 	// Potential further chunks, have their own leaf nodes.
 	for i := 128; i < len(chunks)/32; {
-		treeIndex, _ := tutils.GetTreeKeyCodeChunkIndices(uint256.NewInt(uint64(i)))
+		treeIndex, _ := utils.GetTreeKeyCodeChunkIndices(uint256.NewInt(uint64(i)))
 		leafNodeData := kvm.getOrInitLeafNodeData(newBranchKey(addr, treeIndex))
 
 		j := i
@@ -331,9 +329,9 @@ func (kvm *keyValueMigrator) prepare() {
 				for i := range batch {
 					if batch[i].branchKey.addr != currAddr {
 						currAddr = batch[i].branchKey.addr
-						currPoint = tutils.EvaluateAddressPoint(currAddr[:])
+						currPoint = utils.EvaluateAddressPoint(currAddr[:])
 					}
-					stem := tutils.GetTreeKeyWithEvaluatedAddess(currPoint, &batch[i].branchKey.treeIndex, 0)
+					stem := utils.GetTreeKeyWithEvaluatedAddess(currPoint, &batch[i].branchKey.treeIndex, 0)
 					stem = stem[:verkle.StemSize]
 					batch[i].leafNodeData.Stem = stem
 				}
@@ -382,6 +380,8 @@ func ProcessParentBlockHash(statedb *state.StateDB, prevNumber uint64, prevHash 
 	var key common.Hash
 	binary.BigEndian.PutUint64(key[24:], ringIndex)
 	statedb.SetState(params.HistoryStorageAddress, key, prevHash)
-	index, suffix := utils.GetTreeKeyStorageSlotTreeIndexes(key[:])
-	statedb.Witness().TouchAddressOnWriteAndComputeGas(params.HistoryStorageAddress[:], *index, suffix)
+
+	// Directly add to the block witness and not the access list,
+	// which will be cleared when executing the first transaction.
+	statedb.Witness().AddSlot(params.HistoryStorageAddress, key, state.AccessListWrite)
 }

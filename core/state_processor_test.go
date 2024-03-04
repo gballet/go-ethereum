@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"encoding/binary"
+	"os"
 
 	//"fmt"
 	"math/big"
@@ -37,6 +38,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie/utils"
 
@@ -476,7 +478,7 @@ func TestProcessVerkle(t *testing.T) {
 	// Verkle trees use the snapshot, which must be enabled before the
 	// data is saved into the tree+database.
 	genesis := gspec.MustCommit(bcdb)
-	blockchain, _ := NewBlockChain(bcdb, nil, gspec, nil, beacon.New(ethash.NewFaker()), vm.Config{}, nil, nil)
+	blockchain, _ := NewBlockChain(bcdb, nil, gspec, nil, beacon.New(ethash.NewFaker()), vm.Config{Tracer: logger.NewJSONLogger(&logger.Config{}, os.Stdout)}, nil, nil)
 	defer blockchain.Stop()
 
 	// Commit the genesis block to the block-generation database as it
@@ -602,7 +604,7 @@ func TestProcessVerkleInvalidContractCreation(t *testing.T) {
 	// Create two blocks that reproduce what is happening on kaustinen.
 	// - The first block contains two failing contract creation transactions, that write to storage before they revert.
 	// - The second block contains a single failing contract creation transaction, that fails right off the bat.
-	_, _, _, statediff := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 2, func(i int, gen *BlockGen) {
+	blocks, _, _, statediff := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 2, func(i int, gen *BlockGen) {
 		gen.SetPoS()
 
 		if i == 0 {
@@ -694,8 +696,9 @@ func TestProcessVerkleInvalidContractCreation(t *testing.T) {
 				if stemStateDiff.SuffixDiffs[0].NewValue == nil {
 					t.Fatalf("missing post state value for BLOCKHASH contract at block #2")
 				}
-				if *stemStateDiff.SuffixDiffs[0].NewValue != common.HexToHash("53abcdfb284720ea59efe923d3dc774bbb7e787d829599f8ec7a81d344dd3d17") {
-					t.Fatalf("invalid post state value for BLOCKHASH contract at block #2: %x != ", (*stemStateDiff.SuffixDiffs[0].NewValue)[:])
+				// This is a different value than the one found on verkle-gen-devnet-4 since the gas consumption has changed.
+				if *stemStateDiff.SuffixDiffs[0].NewValue != blocks[0].Hash() {
+					t.Fatalf("invalid post state value for BLOCKHASH contract at block #2: %x != %x", (*stemStateDiff.SuffixDiffs[0].NewValue)[:], blocks[0].Hash())
 				}
 			} else if suffixDiff.Suffix > 4 {
 				t.Fatalf("invalid suffix diff found for %x in block #2: %d\n", stemStateDiff.Stem, suffixDiff.Suffix)
