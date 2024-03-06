@@ -51,6 +51,6 @@
       }
     },
     "eip1559FeeCollectorTransition": 19040000,
-    "eip1559FeeCollector": "0x6BBe78ee9e474842Dbd4AB4987b3CeFE88426A92",
+    "eip1559FeeCollector": "0x6BBe78ee9e474842Dbd4AB4987b3CeFE88426A92"
   }
 }

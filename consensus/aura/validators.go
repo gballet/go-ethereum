@@ -671,9 +671,6 @@ func (s *ValidatorSafeContract) onEpochBegin(firstInEpoch bool, header *types.He
 }
 
 func (s *ValidatorSafeContract) signalEpochEnd(firstInEpoch bool, header *types.Header, r types.Receipts) ([]byte, error) {
-	if header.Number.Uint64() >= DEBUG_LOG_FROM {
-		fmt.Printf("signalEpochEnd: %d,%t\n", header.Number.Uint64(), firstInEpoch)
-	}
 	// transition to the first block of a contract requires finality but has no log event.
 	if firstInEpoch {
 		/*
@@ -695,9 +692,6 @@ func (s *ValidatorSafeContract) signalEpochEnd(firstInEpoch bool, header *types.
 
 	_, ok := s.extractFromEvent(header, r)
 	if !ok {
-		if header.Number.Uint64() >= DEBUG_LOG_FROM {
-			fmt.Printf("signalEpochEnd: no-no-no %d,%d\n", header.Number.Uint64(), len(r))
-		}
 		return nil, nil
 	}
 	proof, err := rlp.EncodeToBytes(ValidatorSetProof{Header: header, Receipts: r})
