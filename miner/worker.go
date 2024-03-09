@@ -26,6 +26,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
+	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core"
@@ -960,6 +961,12 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 	}
 	state.StartPrefetcher("miner")
 
+	b, ok := w.engine.(*beacon.Beacon)
+	if ok {
+		b.SetAuraSyscall(func(contractaddr common.Address, data []byte) ([]byte, error) {
+			return nil, nil
+		})
+	}
 	// Run the consensus preparation with the default or customized consensus engine.
 	if err := w.engine.Prepare(w.chain, header, state); err != nil {
 		log.Error("Failed to prepare header for sealing", "err", err)
