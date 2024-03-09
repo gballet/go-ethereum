@@ -2,6 +2,7 @@ package params
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 )
 
 // Different ways of specifying validators.
@@ -67,7 +68,7 @@ type AuRaConfig struct {
 	// See https://github.com/gnosischain/specs/blob/master/execution/withdrawals.md
 	WithdrawalContractAddress *common.Address `json:"withdrawalContractAddress"`
 
-	RewriteBytecode map[uint64]map[common.Address][]byte `json:"rewriteBytecode"`
+	RewriteBytecode map[uint64]map[common.Address]hexutil.Bytes `json:"rewriteBytecode"`
 
 	// Burn contract address
 	Eip1559FeeCollector *common.Address `json:"eip1559FeeCollector"`
