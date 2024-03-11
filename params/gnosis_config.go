@@ -32,4 +32,6 @@ var (
 
 	GnosisChainConfig = readChainSpec("chainspecs/gnosis.json")
 	ChiadoChainConfig = readChainSpec("chainspecs/chiado.json")
+
+	GnosisForkBlock = uint64(25349536)
 )
