@@ -93,6 +93,11 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
 	}
 }
 
+func gasSStore4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	gas := evm.StateDB.AddSlotToAccessList(contract.Address(), common.Hash(stack.peek().Bytes32()), state.AccessListWrite)
+	return gas, nil
+}
+
 // gasSLoadEIP2929 calculates dynamic gas for SLOAD according to EIP-2929
 // For SLOAD, if the (address, storage_key) pair (where address is the address of the contract
 // whose storage is being read) is not yet in accessed_storage_keys,
@@ -101,12 +106,7 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
 func gasSLoadEIP2929(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	loc := stack.peek()
 	slot := common.Hash(loc.Bytes32())
-	verkleGas := evm.StateDB.AddSlotToAccessList(contract.Address(), slot, false)
-	// XXX this is for compat with the current testnet but it should be removed.
-	if verkleGas > 0 {
-		return params.ColdSloadCostEIP2929 + verkleGas, nil
-	}
-	return params.WarmStorageReadCostEIP2929, nil
+	return evm.StateDB.AddSlotToAccessList(contract.Address(), slot, false), nil
 }
 
 // gasExtCodeCopyEIP2929 implements extcodecopy according to EIP-2929

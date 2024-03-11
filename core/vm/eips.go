@@ -38,6 +38,7 @@ var activators = map[int]func(*JumpTable){
 	1344: enable1344,
 	1153: enable1153,
 	2935: enable2935,
+	4762: enable4762,
 }
 
 // EnableEIP enables the given EIP on the config.
@@ -307,4 +308,8 @@ func enable6780(jt *JumpTable) {
 
 func enable2935(jt *JumpTable) {
 	jt[BLOCKHASH].dynamicGas = gasBlockHashEip2935
+}
+
+func enable4762(jt *JumpTable) {
+	jt[SSTORE].dynamicGas = gasSStore4762
 }
