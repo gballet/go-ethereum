@@ -45,19 +45,12 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
 		if current == value { // noop (1)
 			// EIP 2200 original clause:
 			//		return params.SloadGasEIP2200, nil
-			return cost + params.WarmStorageReadCostEIP2929, nil // SLOAD_GAS
+			return cost, nil // SLOAD_GAS
 		}
 		original := evm.StateDB.GetCommittedState(contract.Address(), x.Bytes32())
 		if original == current {
 			if original == (common.Hash{}) { // create slot (2.1.1)
-				// This is a hack to that it matches the tests,
-				// this comes from the fact that if the slot hasn't
-				// been previously accessed, the read costs will also
-				// be charged. FIXME
-				if cost == 500 {
-					return cost + params.SstoreSetGasEIP2200, nil
-				}
-				return cost + params.SstoreSetGasEIP2200 + params.ColdSloadCostEIP2929, nil
+				return cost + params.SstoreSetGasEIP2200, nil
 			}
 			if value == (common.Hash{}) { // delete slot (2.1.2b)
 				evm.StateDB.AddRefund(clearingRefund)
@@ -77,19 +70,19 @@ func makeGasSStoreFunc(clearingRefund uint64) gasFunc {
 			if original == (common.Hash{}) { // reset to original inexistent slot (2.2.2.1)
 				// EIP 2200 Original clause:
 				//evm.StateDB.AddRefund(params.SstoreSetGasEIP2200 - params.SloadGasEIP2200)
-				evm.StateDB.AddRefund(params.SstoreSetGasEIP2200 - params.WarmStorageReadCostEIP2929)
+				evm.StateDB.AddRefund(params.SstoreSetGasEIP2200)
 			} else { // reset to original existing slot (2.2.2.2)
 				// EIP 2200 Original clause:
 				//	evm.StateDB.AddRefund(params.SstoreResetGasEIP2200 - params.SloadGasEIP2200)
 				// - SSTORE_RESET_GAS redefined as (5000 - COLD_SLOAD_COST)
 				// - SLOAD_GAS redefined as WARM_STORAGE_READ_COST
 				// Final: (5000 - COLD_SLOAD_COST) - WARM_STORAGE_READ_COST
-				evm.StateDB.AddRefund((params.SstoreResetGasEIP2200 /*- params.ColdSloadCostEIP2929*/) - params.WarmStorageReadCostEIP2929)
+				evm.StateDB.AddRefund((params.SstoreResetGasEIP2200 - params.ColdSloadCostEIP2929) - params.WarmStorageReadCostEIP2929)
 			}
 		}
 		// EIP-2200 original clause:
 		//return params.SloadGasEIP2200, nil // dirty update (2.2)
-		return cost + params.WarmStorageReadCostEIP2929, nil // dirty update (2.2)
+		return cost, nil // dirty update (2.2)
 	}
 }
 
