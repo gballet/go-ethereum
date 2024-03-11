@@ -517,8 +517,9 @@ func opGasprice(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 }
 
 func getBlockHashFromContract(number uint64, statedb StateDB, witness *state.AccessWitness) common.Hash {
+	ringIndex := number % 256
 	var pnum common.Hash
-	binary.BigEndian.PutUint64(pnum[24:], number)
+	binary.BigEndian.PutUint64(pnum[24:], ringIndex)
 	treeIndex, suffix := utils.GetTreeKeyStorageSlotTreeIndexes(pnum.Bytes())
 	witness.TouchAddressOnReadAndComputeGas(params.HistoryStorageAddress[:], *treeIndex, suffix)
 	return statedb.GetState(params.HistoryStorageAddress, pnum)
