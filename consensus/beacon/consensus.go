@@ -384,12 +384,12 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	header.Root = state.IntermediateRoot(true)
 
 	var (
-		p    *verkle.VerkleProof
-		k    verkle.StateDiff
-		keys = state.Witness().Keys()
+		p *verkle.VerkleProof
+		k verkle.StateDiff
 	)
 	if chain.Config().IsPrague(header.Number, header.Time) && chain.Config().ProofInBlocks {
 		// Open the pre-tree to prove the pre-state against
+		keys := state.Witness().Keys()
 		parent := chain.GetHeaderByNumber(header.Number.Uint64() - 1)
 		if parent == nil {
 			return nil, fmt.Errorf("nil parent header for block %d", header.Number)

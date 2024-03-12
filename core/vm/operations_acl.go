@@ -91,6 +91,18 @@ func gasSStore4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memo
 	return gas, nil
 }
 
+func gasBalance4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	return evm.StateDB.AddAddressToAccessList(contract.Address(), state.ALBalance, state.AccessListRead), nil
+}
+
+func gasExtCodeSize4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	return evm.StateDB.AddAddressToAccessList(contract.Address(), state.ALCodeSize, state.AccessListRead), nil
+}
+
+func gasExtCodeHash4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	return evm.StateDB.AddAddressToAccessList(contract.Address(), state.ALCodeHash, state.AccessListRead), nil
+}
+
 // gasSLoadEIP2929 calculates dynamic gas for SLOAD according to EIP-2929
 // For SLOAD, if the (address, storage_key) pair (where address is the address of the contract
 // whose storage is being read) is not yet in accessed_storage_keys,
@@ -114,13 +126,10 @@ func gasExtCodeCopyEIP2929(evm *EVM, contract *Contract, stack *Stack, mem *Memo
 		return 0, err
 	}
 	addr := common.Address(stack.peek().Bytes20())
-	gasDiff := evm.StateDB.AddAddressToAccessList(addr, state.ALCodeSize, state.AccessListRead)
-	if gasDiff == 0 {
-		gasDiff = params.WarmStorageReadCostEIP2929
-	}
+	algas := evm.StateDB.AddAddressToAccessList(addr, state.ALCodeSize, state.AccessListRead)
 	var overflow bool
 	// We charge (cold-warm), since 'warm' is already charged as constantGas
-	if gas, overflow = math.SafeAdd(gas, gasDiff); overflow {
+	if gas, overflow = math.SafeAdd(gas, algas); overflow {
 		return 0, ErrGasUintOverflow
 	}
 	return gas, nil
@@ -144,8 +153,7 @@ func makeCallVariantGasCallEIP2929(oldCalculator gasFunc) gasFunc {
 		addr := common.Address(stack.Back(1).Bytes20())
 		// Check slot presence in the access list
 		cost := evm.StateDB.AddAddressToAccessList(addr, 0, state.AccessListRead)
-		warmAccess := cost > params.WarmStorageReadCostEIP2929
-		if !warmAccess {
+		if cost == params.WarmStorageReadCostEIP2929 {
 			// Charge the remaining difference here already, to correctly calculate available
 			// gas for call
 			if !contract.UseGas(cost) {
@@ -158,7 +166,7 @@ func makeCallVariantGasCallEIP2929(oldCalculator gasFunc) gasFunc {
 		// - memory expansion
 		// - 63/64ths rule
 		gas, err := oldCalculator(evm, contract, stack, mem, memorySize)
-		if warmAccess || err != nil {
+		if cost == params.WarmStorageReadCostEIP2929 || err != nil {
 			return gas, err
 		}
 		// In case of a cold access, we temporarily add the cold charge back, and also

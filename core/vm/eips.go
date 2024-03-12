@@ -312,4 +312,7 @@ func enable2935(jt *JumpTable) {
 
 func enable4762(jt *JumpTable) {
 	jt[SSTORE].dynamicGas = gasSStore4762
+	jt[BALANCE].dynamicGas = gasBalance4762
+	jt[EXTCODESIZE].dynamicGas = gasExtCodeSize4762
+	jt[EXTCODEHASH].dynamicGas = gasExtCodeHash4762
 }

@@ -534,7 +534,7 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 	if num64 >= lower && num64 < upper {
 		// if Prague is active, read it from the history contract (EIP 2935).
 		if evm.chainRules.IsPrague {
-			num.SetBytes(getBlockHashFromContract(num64, evm.StateDB, evm.Accesses).Bytes())
+			num.SetBytes(getBlockHashFromContract(num64, evm.StateDB).Bytes())
 		} else {
 			num.SetBytes(interpreter.evm.Context.GetHash(num64).Bytes())
 		}
