@@ -1768,6 +1768,10 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			if !bc.stateCache.InTransition() && !bc.stateCache.Transitioned() {
 				bc.stateCache.StartVerkleTransition(parent.Root, emptyVerkleRoot, bc.Config(), bc.Config().PragueTime, parent.Root)
 			}
+		} else {
+			// If the verkle activation time hasn't started, declare it as "not started".
+			// This is so that
+			bc.stateCache.InitTransitionStatus(false, false)
 		}
 		if parent.Number.Uint64() == conversionBlock {
 			bc.StartVerkleTransition(parent.Root, emptyVerkleRoot, bc.Config(), &parent.Time, parent.Root)
