@@ -1770,7 +1770,8 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			}
 		} else {
 			// If the verkle activation time hasn't started, declare it as "not started".
-			// This is so that
+			// This is so that if the miner activates the conversion, the insertion happens
+			// in the correct mode.
 			bc.stateCache.InitTransitionStatus(false, false)
 		}
 		if parent.Number.Uint64() == conversionBlock {
