@@ -111,7 +111,7 @@ func gasExtCodeHash4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory,
 func gasSLoadEIP2929(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	loc := stack.peek()
 	slot := common.Hash(loc.Bytes32())
-	return evm.StateDB.AddSlotToAccessList(contract.Address(), slot, false), nil
+	return evm.StateDB.AddSlotToAccessList(contract.Address(), slot, state.AccessModeRead), nil
 }
 
 // gasExtCodeCopyEIP2929 implements extcodecopy according to EIP-2929
@@ -126,7 +126,7 @@ func gasExtCodeCopyEIP2929(evm *EVM, contract *Contract, stack *Stack, mem *Memo
 		return 0, err
 	}
 	addr := common.Address(stack.peek().Bytes20())
-	algas := evm.StateDB.AddAddressToAccessList(addr, state.ALCodeSize, state.AccessListRead)
+	algas := evm.StateDB.AddAddressToAccessList(addr, state.ALVersion|state.ALCodeSize, state.AccessListRead)
 	var overflow bool
 	// We charge (cold-warm), since 'warm' is already charged as constantGas
 	if gas, overflow = math.SafeAdd(gas, algas); overflow {

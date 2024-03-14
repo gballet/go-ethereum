@@ -61,6 +61,7 @@ func NewEVMInterpreter(evm *EVM) *EVMInterpreter {
 		table = &pragueInstructionSet
 		if err := EnableEIP(2935, table); err != nil {
 			log.Error("EIP 2935 activation failed", "error", err)
+			panic(err)
 		}
 	case evm.chainRules.IsCancun:
 		table = &cancunInstructionSet

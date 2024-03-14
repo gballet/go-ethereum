@@ -103,7 +103,7 @@ func gasExtCodeSize(evm *EVM, contract *Contract, stack *Stack, mem *Memory, mem
 	slot := stack.Back(0)
 	address := common.Address(slot.Bytes20())
 	if evm.chainRules.IsPrague {
-		usedGas += evm.StateDB.AddAddressToAccessList(address, state.ALCodeSize, state.AccessListRead)
+		usedGas += evm.StateDB.AddAddressToAccessList(address, state.ALVersion|state.ALCodeSize, state.AccessListRead)
 	}
 
 	return usedGas, nil
