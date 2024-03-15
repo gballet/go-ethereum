@@ -642,7 +642,6 @@ func (c *AuRa) Prepare(chain consensus.ChainHeaderReader, header *types.Header, 
 	// func (c *AuRa) Initialize(config *params.ChainConfig, chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []types.Transaction, uncles []*types.Header, syscall consensus.SystemCall) {
 	blockNum := header.Number.Uint64()
 	for address, rewrittenCode := range c.cfg.RewriteBytecode[blockNum] {
-		fmt.Println("for future debug: rewriting code", blockNum, address)
 		statedb.SetCode(address, rewrittenCode)
 	}
 
@@ -671,7 +670,6 @@ func (c *AuRa) Prepare(chain consensus.ChainHeaderReader, header *types.Header, 
 
 	epoch, err := c.e.GetEpoch(header.ParentHash, blockNum-1)
 	if err != nil {
-		log.Warn("[aura] initialize block: on epoch begin", "err", err)
 		return err
 	}
 	isEpochBegin := epoch != nil
@@ -1333,7 +1331,6 @@ func NewRollingFinality(signers []common.Address) *RollingFinality {
 func (f *RollingFinality) print(num uint64) {
 	if num > DEBUG_LOG_FROM {
 		h := f.headers
-		fmt.Printf("finality_heads: %d\n", num)
 		i := 0
 		for e := h.l.Front(); e != nil; e = e.Next() {
 			i++

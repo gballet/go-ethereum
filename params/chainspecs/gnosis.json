@@ -13,6 +13,7 @@
   "berlinBlock": 16101500,
   "londonBlock": 19040000,
   "shanghaiTime": 1690889660,
+  "cancunTime": 1710181820,
   "terminalTotalDifficulty": 8626000000000000000000058750000000000000000000,
   "terminalTotalDifficultyPassed": true,
   "aura": {
