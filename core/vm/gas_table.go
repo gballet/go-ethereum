@@ -23,8 +23,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	trieUtils "github.com/ethereum/go-ethereum/trie/utils"
-	"github.com/holiman/uint256"
 )
 
 // memoryGasCost calculates the quadratic gas for memory expansion. It does so
@@ -100,23 +98,11 @@ var (
 
 func gasExtCodeSize(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	usedGas := uint64(0)
-	slot := stack.Back(0)
-	address := slot.Bytes20()
-	if evm.chainRules.IsPrague {
-		usedGas += evm.TxContext.Accesses.TouchAddressOnReadAndComputeGas(address[:], uint256.Int{}, trieUtils.CodeSizeLeafKey)
-	}
-
 	return usedGas, nil
 }
 
 func gasSLoad(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	usedGas := uint64(0)
-
-	if evm.chainRules.IsPrague {
-		where := stack.Back(0)
-		treeIndex, subIndex := trieUtils.GetTreeKeyStorageSlotTreeIndexes(where.Bytes())
-		usedGas += evm.Accesses.TouchAddressOnReadAndComputeGas(contract.Address().Bytes(), *treeIndex, subIndex)
-	}
 
 	return usedGas, nil
 }
