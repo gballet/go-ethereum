@@ -97,14 +97,6 @@ func (aw *AccessWitness) TouchFullAccount(addr []byte, isWrite bool) uint64 {
 	return gas
 }
 
-func (aw *AccessWitness) TouchAndChargeProofOfAbsence(addr []byte) uint64 {
-	var gas uint64
-	for i := utils.VersionLeafKey; i <= utils.CodeSizeLeafKey; i++ {
-		gas += aw.touchAddressAndChargeGas(addr, zeroTreeIndex, byte(i), false)
-	}
-	return gas
-}
-
 func (aw *AccessWitness) TouchAndChargeMessageCall(addr []byte) uint64 {
 	var gas uint64
 	gas += aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.VersionLeafKey, false)
@@ -131,17 +123,6 @@ func (aw *AccessWitness) TouchAndChargeContractCreateInit(addr []byte, createSen
 	return gas
 }
 
-// TouchAndChargeContractCreateCompleted charges access access costs after
-// the completion of a contract creation to populate the created account in
-// the tree
-func (aw *AccessWitness) TouchAndChargeContractCreateCompleted(addr []byte) uint64 {
-	var gas uint64
-	for i := utils.VersionLeafKey; i <= utils.CodeSizeLeafKey; i++ {
-		gas += aw.touchAddressAndChargeGas(addr, zeroTreeIndex, byte(i), true)
-	}
-	return gas
-}
-
 func (aw *AccessWitness) TouchTxOriginAndComputeGas(originAddr []byte) uint64 {
 	for i := utils.VersionLeafKey; i <= utils.CodeSizeLeafKey; i++ {
 		aw.touchAddressAndChargeGas(originAddr, zeroTreeIndex, byte(i), i == utils.BalanceLeafKey || i == utils.NonceLeafKey)
@@ -157,7 +138,7 @@ func (aw *AccessWitness) TouchTxOriginAndComputeGas(originAddr []byte) uint64 {
 func (aw *AccessWitness) TouchTxExistingAndComputeGas(targetAddr []byte, sendsValue bool) uint64 {
 	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.VersionLeafKey, false)
 	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.CodeSizeLeafKey, false)
-	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.CodeKeccakLeafKey, false)
+	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.CodeHashLeafKey, false)
 	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.NonceLeafKey, false)
 	if sendsValue {
 		aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BalanceLeafKey, true)
@@ -172,14 +153,9 @@ func (aw *AccessWitness) TouchTxExistingAndComputeGas(targetAddr []byte, sendsVa
 	return 0
 }
 
-func (aw *AccessWitness) TouchAddressOnWriteAndComputeGas(addr []byte, slot common.Hash) uint64 {
+func (aw *AccessWitness) TouchSlotAndChargeGas(addr []byte, slot common.Hash, isWrite bool) uint64 {
 	treeIndex, subIndex := utils.GetTreeKeyStorageSlotTreeIndexes(slot.Bytes())
-	return aw.touchAddressAndChargeGas(addr, *treeIndex, subIndex, true)
-}
-
-func (aw *AccessWitness) TouchAddressOnReadAndComputeGas(addr []byte, slot common.Hash) uint64 {
-	treeIndex, subIndex := utils.GetTreeKeyStorageSlotTreeIndexes(slot.Bytes())
-	return aw.touchAddressAndChargeGas(addr, *treeIndex, subIndex, false)
+	return aw.touchAddressAndChargeGas(addr, *treeIndex, subIndex, isWrite)
 }
 
 func (aw *AccessWitness) touchAddressAndChargeGas(addr []byte, treeIndex uint256.Int, subIndex byte, isWrite bool) uint64 {
@@ -317,5 +293,5 @@ func (aw *AccessWitness) TouchCodeSize(addr []byte, isWrite bool) uint64 {
 }
 
 func (aw *AccessWitness) TouchCodeHash(addr []byte, isWrite bool) uint64 {
-	return aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeKeccakLeafKey, isWrite)
+	return aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeHashLeafKey, isWrite)
 }

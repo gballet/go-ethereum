@@ -199,7 +199,7 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 	if !evm.StateDB.Exist(addr) {
 		if !isPrecompile && evm.chainRules.IsEIP4762 {
 			// add proof of absence to witness
-			wgas := evm.Accesses.TouchAndChargeProofOfAbsence(addr.Bytes())
+			wgas := evm.Accesses.TouchFullAccount(addr.Bytes(), false)
 			if gas < wgas {
 				evm.StateDB.RevertToSnapshot(snapshot)
 				return nil, 0, ErrOutOfGas
@@ -516,7 +516,7 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 		if len(ret) > 0 {
 			evm.Accesses.TouchCodeChunksRangeOnReadAndChargeGas(address.Bytes(), 0, uint64(len(ret)), uint64(len(ret)))
 		}
-		if !contract.UseGas(evm.Accesses.TouchAndChargeContractCreateCompleted(address.Bytes()[:])) {
+		if !contract.UseGas(evm.Accesses.TouchFullAccount(address.Bytes()[:], true)) {
 			err = ErrOutOfGas
 		}
 	}

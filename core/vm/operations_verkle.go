@@ -22,7 +22,7 @@ import (
 )
 
 func gasSStore4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	gas := evm.StateDB.Witness().TouchAddressOnWriteAndComputeGas(contract.Address().Bytes(), common.Hash(stack.peek().Bytes32()))
+	gas := evm.StateDB.Witness().TouchSlotAndChargeGas(contract.Address().Bytes(), common.Hash(stack.peek().Bytes32()), true)
 	if gas == 0 {
 		gas = params.WarmStorageReadCostEIP2929
 	}
@@ -30,7 +30,7 @@ func gasSStore4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memo
 }
 
 func gasSLoad4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	gas := evm.StateDB.Witness().TouchAddressOnReadAndComputeGas(contract.Address().Bytes(), common.Hash(stack.peek().Bytes32()))
+	gas := evm.StateDB.Witness().TouchSlotAndChargeGas(contract.Address().Bytes(), common.Hash(stack.peek().Bytes32()), false)
 	if gas == 0 {
 		gas = params.WarmStorageReadCostEIP2929
 	}
