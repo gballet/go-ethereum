@@ -370,7 +370,7 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 
 	contractAddr := scope.Contract.Address()
 	paddedCodeCopy, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(scope.Contract.Code, uint64CodeOffset, length.Uint64())
-	if interpreter.evm.chainRules.IsPrague && !scope.Contract.IsDeployment {
+	if interpreter.evm.chainRules.IsEIP4762 && !scope.Contract.IsDeployment {
 		statelessGas := interpreter.evm.Accesses.TouchCodeChunksRangeOnReadAndChargeGas(contractAddr[:], copyOffset, nonPaddedCopyLength, uint64(len(scope.Contract.Code)))
 		if !scope.Contract.UseGas(statelessGas) {
 			scope.Contract.Gas = 0
@@ -394,7 +394,7 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 		uint64CodeOffset = 0xffffffffffffffff
 	}
 	addr := common.Address(a.Bytes20())
-	if interpreter.evm.chainRules.IsPrague {
+	if interpreter.evm.chainRules.IsEIP4762 {
 		code := interpreter.evm.StateDB.GetCode(addr)
 		contract := &Contract{
 			Code: code,
@@ -462,7 +462,7 @@ func getBlockHashFromContract(number uint64, statedb StateDB, witness *state.Acc
 	ringIndex := number % 256
 	var pnum common.Hash
 	binary.BigEndian.PutUint64(pnum[24:], ringIndex)
-	witness.TouchAddressOnReadAndComputeGas(params.HistoryStorageAddress[:], pnum)
+	witness.TouchSlotAndChargeGas(params.HistoryStorageAddress[:], pnum, false)
 	return statedb.GetState(params.HistoryStorageAddress, pnum)
 }
 

@@ -260,7 +260,7 @@ func (kvm *keyValueMigrator) addAccount(addr []byte, acc *types.StateAccount) {
 	binary.LittleEndian.PutUint64(nonce[:8], acc.Nonce)
 	leafNodeData.Values[tutils.NonceLeafKey] = nonce[:]
 
-	leafNodeData.Values[tutils.CodeKeccakLeafKey] = acc.CodeHash[:]
+	leafNodeData.Values[tutils.CodeHashLeafKey] = acc.CodeHash[:]
 }
 
 func (kvm *keyValueMigrator) addAccountCode(addr []byte, codeSize uint64, chunks []byte) {
@@ -381,5 +381,5 @@ func ProcessParentBlockHash(statedb *state.StateDB, prevNumber uint64, prevHash 
 	var key common.Hash
 	binary.BigEndian.PutUint64(key[24:], ringIndex)
 	statedb.SetState(params.HistoryStorageAddress, key, prevHash)
-	statedb.Witness().TouchAddressOnWriteAndComputeGas(params.HistoryStorageAddress[:], key)
+	statedb.Witness().TouchSlotAndChargeGas(params.HistoryStorageAddress[:], key, true)
 }
