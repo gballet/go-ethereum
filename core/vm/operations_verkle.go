@@ -44,7 +44,8 @@ func gasBalance4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, mem
 
 func gasExtCodeSize4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	address := stack.peek().Bytes20()
-	return evm.StateDB.Witness().TouchCodeSize(address[:], false), nil
+	versiongas := evm.StateDB.Witness().TouchVersion(address[:], false)
+	return versiongas + evm.StateDB.Witness().TouchCodeSize(address[:], false), nil
 }
 
 func gasExtCodeHash4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
