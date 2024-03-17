@@ -635,7 +635,9 @@ func opCreate(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 	if interpreter.evm.chainRules.IsEIP4762 {
 		contractAddress := crypto.CreateAddress(scope.Contract.Address(), interpreter.evm.StateDB.GetNonce(scope.Contract.Address()))
 		statelessGas := interpreter.evm.Accesses.TouchAndChargeContractCreateInit(contractAddress.Bytes()[:], value.Sign() != 0)
-		scope.Contract.UseGas(statelessGas)
+		if !scope.Contract.UseGas(statelessGas) {
+			return nil, ErrExecutionReverted
+		}
 	}
 
 	// reuse size int for stackvalue
@@ -686,7 +688,9 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 		codeAndHash := &codeAndHash{code: input}
 		contractAddress := crypto.CreateAddress2(scope.Contract.Address(), salt.Bytes32(), codeAndHash.Hash().Bytes())
 		statelessGas := interpreter.evm.Accesses.TouchAndChargeContractCreateInit(contractAddress.Bytes()[:], endowment.Sign() != 0)
-		scope.Contract.UseGas(statelessGas)
+		if !scope.Contract.UseGas(statelessGas) {
+			return nil, ErrExecutionReverted
+		}
 	}
 
 	// Apply EIP150
