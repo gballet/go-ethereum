@@ -504,20 +504,26 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	// be stored due to not enough gas set an error and let it be handled
 	// by the error checking condition below.
 	if err == nil {
-		createDataGas := uint64(len(ret)) * params.CreateDataGas
-		if contract.UseGas(createDataGas) {
-			evm.StateDB.SetCode(address, ret)
+		if !evm.chainRules.IsEIP4762 {
+			createDataGas := uint64(len(ret)) * params.CreateDataGas
+			if contract.UseGas(createDataGas) {
+			} else {
+				err = ErrCodeStoreOutOfGas
+			}
 		} else {
-			err = ErrCodeStoreOutOfGas
+			// Contract creation completed, touch the missing field in the contract
+			if len(ret) > 0 {
+				if !contract.UseGas(evm.Accesses.TouchCodeChunkRangeAndChargeGas(address.Bytes(), 0, uint64(len(ret)), uint64(len(ret)), true)) {
+					err = ErrOutOfGas
+				}
+			}
+			if err == nil && !contract.UseGas(evm.Accesses.TouchFullAccount(address.Bytes()[:], true)) {
+				err = ErrOutOfGas
+			}
 		}
-	}
 
-	if err == nil && evm.chainRules.IsEIP4762 {
-		if len(ret) > 0 {
-			evm.Accesses.TouchCodeChunksRangeOnReadAndChargeGas(address.Bytes(), 0, uint64(len(ret)), uint64(len(ret)))
-		}
-		if !contract.UseGas(evm.Accesses.TouchFullAccount(address.Bytes()[:], true)) {
-			err = ErrOutOfGas
+		if err == nil {
+			evm.StateDB.SetCode(address, ret)
 		}
 	}
 
