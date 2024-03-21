@@ -505,16 +505,16 @@ func VerkleKeys(ctx *cli.Context) error {
 		return fmt.Errorf("error decoding address: %w", err)
 	}
 
+	ap := utils.EvaluateAddressPoint(addr)
 	if ctx.Args().Len() == 2 {
 		slot, err := hexutil.Decode(ctx.Args().Get(1))
 		if err != nil {
 			return fmt.Errorf("error decoding slot: %w", err)
 		}
 
-		ap := utils.EvaluateAddressPoint(addr)
 		fmt.Printf("%#x\n", utils.GetTreeKeyStorageSlotWithEvaluatedAddress(ap, slot))
 	} else {
-		fmt.Printf("%#x\n", utils.GetTreeKeyVersion(addr))
+		fmt.Printf("%#x\n", utils.GetTreeKeyVersionWithEvaluatedAddress(ap))
 	}
 
 	return nil
