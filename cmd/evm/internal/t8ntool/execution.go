@@ -21,6 +21,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/consensus/misc"
@@ -42,9 +43,9 @@ import (
 )
 
 type Prestate struct {
-	Env stEnv                  `json:"env"`
-	Pre core.GenesisAlloc      `json:"pre"`
-	VKT map[common.Hash][]byte `json:"vkt,omitempty"`
+	Env stEnv                         `json:"env"`
+	Pre core.GenesisAlloc             `json:"pre"`
+	VKT map[common.Hash]hexutil.Bytes `json:"vkt,omitempty"`
 }
 
 // ExecutionResult contains the execution status after running a state test, any
@@ -407,7 +408,7 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		}
 		snaps.Cap(mptRoot, 0)
 
-                // reuse the backend db so that the snapshot can be enumerated
+		// reuse the backend db so that the snapshot can be enumerated
 		sdb := mptSdb // := state.NewDatabaseWithConfig(db, &trie.Config{Verkle: true})
 
 		// Load the conversion status

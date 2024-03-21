@@ -78,11 +78,11 @@ var (
 )
 
 type input struct {
-	Alloc core.GenesisAlloc      `json:"alloc,omitempty"`
-	VKT   map[common.Hash][]byte `json:"vkt,omitempty"`
-	Env   *stEnv                 `json:"env,omitempty"`
-	Txs   []*txWithKey           `json:"txs,omitempty"`
-	TxRlp string                 `json:"txsRlp,omitempty"`
+	Alloc core.GenesisAlloc             `json:"alloc,omitempty"`
+	VKT   map[common.Hash]hexutil.Bytes `json:"vkt,omitempty"`
+	Env   *stEnv                        `json:"env,omitempty"`
+	Txs   []*txWithKey                  `json:"txs,omitempty"`
+	TxRlp string                        `json:"txsRlp,omitempty"`
 }
 
 func Transition(ctx *cli.Context) error {
