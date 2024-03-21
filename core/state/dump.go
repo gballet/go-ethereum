@@ -220,6 +220,28 @@ func (s *StateDB) DumpToCollector(c DumpCollector, conf *DumpConfig) (nextKey []
 	return nextKey
 }
 
+func (s *StateDB) DumpVKTLeaves(collector map[common.Hash]hexutil.Bytes) {
+	var vtr *trie.VerkleTrie
+	switch tr := s.trie.(type) {
+	case *trie.VerkleTrie:
+		vtr = tr
+	case *trie.TransitionTrie:
+		vtr = tr.Overlay()
+	default:
+		panic("invalid trie type")
+	}
+
+	it, err := vtr.NodeIterator(nil)
+	if err != nil {
+		panic(err)
+	}
+	for it.Next(true) {
+		if it.Leaf() {
+			collector[common.BytesToHash(it.LeafKey())] = it.LeafBlob()
+		}
+	}
+}
+
 // RawDump returns the entire state an a single large object
 func (s *StateDB) RawDump(opts *DumpConfig) Dump {
 	dump := &Dump{

@@ -227,13 +227,6 @@ func (db *cachingDB) Transitioned() bool {
 
 // Fork implements the fork
 func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, pragueTime *uint64, root common.Hash) {
-	fmt.Println(`
-	__________.__                       .__                .__                   __       .__                               .__          ____         
-	\__    ___|  |__   ____        ____ |  |   ____ ______ |  |__ _____    _____/  |_     |  |__ _____    ______    __  _  _|__| ____   / ___\ ______
-	  |    |  |  |  \_/ __ \     _/ __ \|  | _/ __ \\____ \|  |  \\__  \  /    \   __\    |  |  \\__  \  /  ___/    \ \/ \/ |  |/    \ / /_/  /  ___/
-	  |    |  |   Y  \  ___/     \  ___/|  |_\  ___/|  |_> |   Y  \/ __ \|   |  |  |      |   Y  \/ __ \_\___ \      \     /|  |   |  \\___  /\___ \
-	  |____|  |___|  /\___        \___  |____/\___  |   __/|___|  (____  |___|  |__|      |___|  (____  /_____/       \/\_/ |__|___|  /_____//_____/
-                                                    |__|`)
 	db.CurrentTransitionState = &TransitionState{
 		Started: true,
 		// initialize so that the first storage-less accounts are processed
@@ -265,13 +258,6 @@ func (db *cachingDB) EndVerkleTransition() {
 		db.CurrentTransitionState.Started = true
 	}
 
-	fmt.Println(`
-	__________.__                       .__                .__                   __       .__                       .__                    .___         .___
-	\__    ___|  |__   ____        ____ |  |   ____ ______ |  |__ _____    _____/  |_     |  |__ _____    ______    |  | _____    ____   __| _/____   __| _/
-	  |    |  |  |  \_/ __ \     _/ __ \|  | _/ __ \\____ \|  |  \\__  \  /    \   __\    |  |  \\__  \  /  ___/    |  | \__  \  /    \ / __ _/ __ \ / __ |
-	  |    |  |   Y  \  ___/     \  ___/|  |_\  ___/|  |_> |   Y  \/ __ \|   |  |  |      |   Y  \/ __ \_\___ \     |  |__/ __ \|   |  / /_/ \  ___// /_/ |
-	  |____|  |___|  /\___        \___  |____/\___  |   __/|___|  (____  |___|  |__|      |___|  (____  /_____/     |____(____  |___|  \____ |\___  \____ |
-                                                    |__|`)
 	db.CurrentTransitionState.Ended = true
 }
 
@@ -348,7 +334,6 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 		mpt Trie
 		err error
 	)
-	fmt.Printf("opening trie with root %x, %v %v\n", root, db.InTransition(), db.Transitioned())
 
 	// TODO separate both cases when I can be certain that it won't
 	// find a Verkle trie where is expects a Transitoion trie.

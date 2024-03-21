@@ -24,7 +24,7 @@ import (
 
 type verkleNodeIteratorState struct {
 	Node  verkle.VerkleNode
-	Index int // points to _next_ value
+	Index int // point to the *next* value
 }
 
 type verkleNodeIterator struct {

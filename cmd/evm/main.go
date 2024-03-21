@@ -141,15 +141,34 @@ var stateTransitionCommand = &cli.Command{
 		t8ntool.TraceEnableReturnDataFlag,
 		t8ntool.OutputBasedir,
 		t8ntool.OutputAllocFlag,
+		t8ntool.OutputVKTFlag,
 		t8ntool.OutputResultFlag,
 		t8ntool.OutputBodyFlag,
 		t8ntool.InputAllocFlag,
 		t8ntool.InputEnvFlag,
+		t8ntool.InputVKTFlag,
 		t8ntool.InputTxsFlag,
 		t8ntool.ForknameFlag,
 		t8ntool.ChainIDFlag,
 		t8ntool.RewardFlag,
 		t8ntool.VerbosityFlag,
+	},
+	Subcommands: []*cli.Command{
+		&cli.Command{
+			Name:    "verkle-keys",
+			Aliases: []string{"v"},
+			Usage:   "compute a set of verkle tree keys, given their source addresses and optional slot numbers",
+			Action:  t8ntool.VerkleKeys,
+			Flags: []cli.Flag{
+				t8ntool.InputAllocFlag,
+			},
+		},
+		&cli.Command{
+			Name:    "verkle-key",
+			Aliases: []string{"V"},
+			Usage:   "compute the verkle tree key given an address and optional slot number",
+			Action:  t8ntool.VerkleKey,
+		},
 	},
 }
 
