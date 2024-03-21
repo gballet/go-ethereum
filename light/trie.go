@@ -121,7 +121,7 @@ func (db *odrDatabase) Transitioned() bool {
 	panic("not implemented") // TODO: Implement
 }
 
-func (db *odrDatabase) InitTransitionStatus(bool, bool) {
+func (db *odrDatabase) InitTransitionStatus(bool, bool, common.Hash) {
 	panic("not implemented") // TODO: Implement
 }
 

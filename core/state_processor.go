@@ -79,12 +79,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		signer  = types.MakeSigner(p.config, header.Number, header.Time)
 	)
 	if p.config.IsPrague(block.Number(), block.Time()) {
-		parent := p.bc.GetBlockByHash(block.ParentHash())
-		if !p.config.IsPrague(parent.Number(), parent.Time()) {
-			InsertBlockHashHistoryAtEip2935Fork(statedb, block.NumberU64()-1, block.ParentHash(), p.bc)
-		} else {
-			ProcessParentBlockHash(statedb, block.NumberU64()-1, block.ParentHash())
-		}
+		ProcessParentBlockHash(statedb, block.NumberU64()-1, block.ParentHash())
 	}
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {

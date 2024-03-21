@@ -21,13 +21,16 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
 	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/overlay"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/state/snapshot"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -36,12 +39,14 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-verkle"
 	"golang.org/x/crypto/sha3"
 )
 
 type Prestate struct {
-	Env stEnv             `json:"env"`
-	Pre core.GenesisAlloc `json:"pre"`
+	Env stEnv                         `json:"env"`
+	Pre core.GenesisAlloc             `json:"pre"`
+	VKT map[common.Hash]hexutil.Bytes `json:"vkt,omitempty"`
 }
 
 // ExecutionResult contains the execution status after running a state test, any
@@ -60,6 +65,17 @@ type ExecutionResult struct {
 	WithdrawalsRoot      *common.Hash          `json:"withdrawalsRoot,omitempty"`
 	CurrentExcessBlobGas *math.HexOrDecimal64  `json:"currentExcessBlobGas,omitempty"`
 	CurrentBlobGasUsed   *math.HexOrDecimal64  `json:"currentBlobGasUsed,omitempty"`
+
+	// Verkle witness
+	VerkleProof *verkle.VerkleProof `json:"verkleProof,omitempty"`
+	StateDiff   verkle.StateDiff    `json:"stateDiff,omitempty"`
+
+	// Values to test the verkle conversion
+	CurrentAccountAddress *common.Address `json:"currentConversionAddress,omitempty" gencodec:"optional"`
+	CurrentSlotHash       *common.Hash    `json:"currentConversionSlotHash,omitempty" gencodec:"optional"`
+	Started               *bool           `json:"currentConversionStarted,omitempty" gencodec:"optional"`
+	Ended                 *bool           `json:"currentConversionEnded,omitempty" gencodec:"optional"`
+	StorageProcessed      *bool           `json:"currentConversionStorageProcessed,omitempty" gencodec:"optional"`
 }
 
 type ommer struct {
@@ -89,6 +105,13 @@ type stEnv struct {
 	ParentExcessBlobGas *uint64                             `json:"parentExcessBlobGas,omitempty"`
 	ParentBlobGasUsed   *uint64                             `json:"parentBlobGasUsed,omitempty"`
 	ParentHash          *common.Hash                        `json:"parentHash,omitempty"`
+
+	// Values to test the verkle conversion
+	CurrentAccountAddress *common.Address `json:"currentConversionAddress" gencodec:"optional"`
+	CurrentSlotHash       *common.Hash    `json:"currentConversionSlotHash" gencodec:"optional"`
+	Started               *bool           `json:"currentConversionStarted" gencodec:"optional"`
+	Ended                 *bool           `json:"currentConversionEnded" gencodec:"optional"`
+	StorageProcessed      *bool           `json:"currentConversionStorageProcessed" gencodec:"optional"`
 }
 
 type stEnvMarshaling struct {
@@ -107,6 +130,13 @@ type stEnvMarshaling struct {
 	ExcessBlobGas       *math.HexOrDecimal64
 	ParentExcessBlobGas *math.HexOrDecimal64
 	ParentBlobGasUsed   *math.HexOrDecimal64
+
+	// Values to test the verkle conversion
+	CurrentAccountAddress *common.UnprefixedAddress
+	CurrentSlotHash       *common.UnprefixedHash
+	Started               *bool
+	Ended                 *bool
+	StorageProcessed      *bool
 }
 
 type rejectedTx struct {
@@ -133,7 +163,8 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		return h
 	}
 	var (
-		statedb     = MakePreState(rawdb.NewMemoryDatabase(), pre.Pre)
+		statedb     = MakePreState(rawdb.NewMemoryDatabase(), chainConfig, pre, chainConfig.IsPrague(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp))
+		vtrpre      *trie.VerkleTrie
 		signer      = types.MakeSigner(chainConfig, new(big.Int).SetUint64(pre.Env.Number), pre.Env.Timestamp)
 		gaspool     = new(core.GasPool)
 		blockHash   = common.Hash{0x13, 0x37}
@@ -153,6 +184,17 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		Difficulty:  pre.Env.Difficulty,
 		GasLimit:    pre.Env.GasLimit,
 		GetHash:     getHash,
+	}
+	// Save pre verkle tree to build the proof at the end
+	if pre.VKT != nil && len(pre.VKT) > 0 {
+		switch tr := statedb.GetTrie().(type) {
+		case *trie.VerkleTrie:
+			vtrpre = tr.Copy()
+		case *trie.TransitionTrie:
+			vtrpre = tr.Overlay().Copy()
+		default:
+			panic("invalid trie type")
+		}
 	}
 	// If currentBaseFee is defined, add it to the vmContext.
 	if pre.Env.BaseFee != nil {
@@ -184,10 +226,9 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		misc.ApplyDAOHardFork(statedb)
 	}
 	if chainConfig.IsPrague(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) {
-		// insert all parent hashes in the contract
-		for i := pre.Env.Number - 1; i > 0 && i >= pre.Env.Number-257; i-- {
-			core.ProcessParentBlockHash(statedb, i, pre.Env.BlockHashes[math.HexOrDecimal64(i)])
-		}
+		// insert the parent hash in the contract
+		parentNum := pre.Env.Number - 1
+		core.ProcessParentBlockHash(statedb, parentNum, pre.Env.BlockHashes[math.HexOrDecimal64(parentNum)])
 	}
 	var blobGasUsed uint64
 	for i, tx := range txs {
@@ -215,6 +256,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 			snapshot  = statedb.Snapshot()
 			prevGas   = gaspool.Gas()
 		)
+		txContext.Accesses = statedb.NewAccessWitness()
 		evm := vm.NewEVM(vmContext, txContext, statedb, chainConfig, vmConfig)
 
 		// (ret []byte, usedGas uint64, failed bool, err error)
@@ -269,7 +311,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 			receipt.TransactionIndex = uint(txIndex)
 			receipts = append(receipts, receipt)
 		}
-
+		statedb.Witness().Merge(txContext.Accesses)
 		txIndex++
 	}
 	statedb.IntermediateRoot(chainConfig.IsEIP158(vmContext.BlockNumber))
@@ -303,11 +345,39 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		amount := new(big.Int).Mul(new(big.Int).SetUint64(w.Amount), big.NewInt(params.GWei))
 		statedb.AddBalance(w.Address, amount)
 	}
+	if chainConfig.IsPrague(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) {
+		if err := overlay.OverlayVerkleTransition(statedb, common.Hash{}, chainConfig.OverlayStride); err != nil {
+			return nil, nil, fmt.Errorf("error performing the transition, err=%w", err)
+		}
+	}
 	// Commit block
 	root, err := statedb.Commit(vmContext.BlockNumber.Uint64(), chainConfig.IsEIP158(vmContext.BlockNumber))
 	if err != nil {
 		return nil, nil, NewError(ErrorEVM, fmt.Errorf("could not commit state: %v", err))
 	}
+
+	// Add the witness to the execution result
+	var vktProof *verkle.VerkleProof
+	var vktStateDiff verkle.StateDiff
+	if chainConfig.IsPrague(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) {
+		keys := statedb.Witness().Keys()
+		if len(keys) > 0 && vtrpre != nil {
+			var proofTrie *trie.VerkleTrie
+			switch tr := statedb.GetTrie().(type) {
+			case *trie.VerkleTrie:
+				proofTrie = tr
+			case *trie.TransitionTrie:
+				proofTrie = tr.Overlay()
+			default:
+				return nil, nil, fmt.Errorf("invalid tree type in proof generation: %v", tr)
+			}
+			vktProof, vktStateDiff, err = trie.ProveAndSerialize(vtrpre, proofTrie, keys, vtrpre.FlatdbNodeResolver)
+			if err != nil {
+				return nil, nil, fmt.Errorf("error generating verkle proof for block %d: %w", pre.Env.Number, err)
+			}
+		}
+	}
+
 	execRs := &ExecutionResult{
 		StateRoot:   root,
 		TxRoot:      types.DeriveSha(includedTxs, trie.NewStackTrie(nil)),
@@ -319,6 +389,8 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		Difficulty:  (*math.HexOrDecimal256)(vmContext.Difficulty),
 		GasUsed:     (math.HexOrDecimal64)(gasUsed),
 		BaseFee:     (*math.HexOrDecimal256)(vmContext.BaseFee),
+		VerkleProof: vktProof,
+		StateDiff:   vktStateDiff,
 	}
 	if pre.Env.Withdrawals != nil {
 		h := types.DeriveSha(types.Withdrawals(pre.Env.Withdrawals), trie.NewStackTrie(nil))
@@ -327,6 +399,22 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	if vmContext.ExcessBlobGas != nil {
 		execRs.CurrentExcessBlobGas = (*math.HexOrDecimal64)(vmContext.ExcessBlobGas)
 		execRs.CurrentBlobGasUsed = (*math.HexOrDecimal64)(&blobGasUsed)
+	}
+	if chainConfig.IsPrague(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) {
+		sdb := statedb.Database()
+		ended := sdb.Transitioned()
+		if !ended {
+			var (
+				currentSlotHash  = sdb.GetCurrentSlotHash()
+				started          = sdb.InTransition()
+				storageProcessed = sdb.GetStorageProcessed()
+			)
+			execRs.CurrentAccountAddress = sdb.GetCurrentAccountAddress()
+			execRs.CurrentSlotHash = &currentSlotHash
+			execRs.Started = &started
+			execRs.StorageProcessed = &storageProcessed
+		}
+		execRs.Ended = &ended
 	}
 	// Re-create statedb instance with new root upon the updated database
 	// for accessing latest states.
@@ -337,10 +425,13 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	return statedb, execRs, nil
 }
 
-func MakePreState(db ethdb.Database, accounts core.GenesisAlloc) *state.StateDB {
-	sdb := state.NewDatabaseWithConfig(db, &trie.Config{Preimages: true})
+func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prestate, verkle bool) *state.StateDB {
+	// Start with generating the MPT DB, which should be empty if it's post-verkle transition
+	sdb := state.NewDatabaseWithConfig(db, &trie.Config{Preimages: true, Verkle: false})
 	statedb, _ := state.New(types.EmptyRootHash, sdb, nil)
-	for addr, a := range accounts {
+
+	// MPT pre is the same as the pre state for first conversion block
+	for addr, a := range pre.Pre {
 		statedb.SetCode(addr, a.Code)
 		statedb.SetNonce(addr, a.Nonce)
 		statedb.SetBalance(addr, a.Balance)
@@ -348,9 +439,94 @@ func MakePreState(db ethdb.Database, accounts core.GenesisAlloc) *state.StateDB 
 			statedb.SetState(addr, k, v)
 		}
 	}
-	// Commit and re-open to start with a clean state.
-	root, _ := statedb.Commit(0, false)
-	statedb, _ = state.New(root, sdb, nil)
+
+	// If verkle mode started, establish the conversion
+	if verkle {
+		state.NoBanner()
+		// Commit db an create a snapshot from it.
+		mptRoot, err := statedb.Commit(0, false)
+		if err != nil {
+			panic(err)
+		}
+		rawdb.WritePreimages(sdb.DiskDB(), statedb.Preimages())
+		sdb.TrieDB().WritePreimages()
+		snaps, err := snapshot.New(snapshot.Config{AsyncBuild: false, CacheSize: 10}, sdb.DiskDB(), sdb.TrieDB(), mptRoot)
+		if err != nil {
+			panic(err)
+		}
+		if snaps == nil {
+			panic("snapshot is nil")
+		}
+		snaps.Cap(mptRoot, 0)
+
+		// reuse the backend db so that the snapshot can be enumerated
+
+		// Load the conversion status
+		log.Info("loading conversion status", "started", pre.Env.Started)
+		if pre.Env.Started != nil {
+			log.Info("non-nil started", "started", *pre.Env.Started)
+		}
+		sdb.InitTransitionStatus(pre.Env.Started != nil && *pre.Env.Started, pre.Env.Ended != nil && *pre.Env.Ended, mptRoot)
+		log.Info("loading current account address, if available", "available", pre.Env.CurrentAccountAddress != nil)
+		if pre.Env.CurrentAccountAddress != nil {
+			log.Info("loading current account address", "address", *pre.Env.CurrentAccountAddress)
+			sdb.SetCurrentAccountAddress(*pre.Env.CurrentAccountAddress)
+		}
+		if pre.Env.CurrentSlotHash != nil {
+			sdb.SetCurrentSlotHash(*pre.Env.CurrentSlotHash)
+		}
+		if pre.Env.StorageProcessed != nil {
+			sdb.SetStorageProcessed(*pre.Env.StorageProcessed)
+		}
+
+		// start the conversion on the first block
+		log.Info("starting verkle transition?", "in transition", sdb.InTransition(), "transitioned", sdb.Transitioned(), "mpt root", mptRoot)
+		if !sdb.InTransition() && !sdb.Transitioned() {
+			sdb.StartVerkleTransition(mptRoot, mptRoot, chainConfig, chainConfig.PragueTime, mptRoot)
+		}
+
+		// create the state database without the snapshot, so that it's not overwritten
+		// when the vkt values are inserted. This state db is used temporarily in order
+		// to dump the tree that was passed as parameters, but is not suited for block
+		// execution since it's missing the snapshot and therefore it can't go through
+		// the conversion.
+		statedb, err = state.New(types.EmptyRootHash, sdb, nil)
+		if err != nil {
+			panic(err)
+		}
+
+		// Load verkle tree from prestate
+		var vtr *trie.VerkleTrie
+		switch tr := statedb.GetTrie().(type) {
+		case *trie.VerkleTrie:
+			vtr = tr
+		case *trie.TransitionTrie:
+			vtr = tr.Overlay()
+		default:
+			panic("invalid trie type")
+		}
+
+		// create the vkt, should be empty on first insert
+		for k, v := range pre.VKT {
+			values := make([][]byte, 256)
+			values[k[31]] = make([]byte, 32)
+			copy(values[k[31]], v)
+			vtr.UpdateStem(k.Bytes(), values)
+		}
+
+		root, _ := statedb.Commit(0, false)
+
+		// recreate the verkle db with the tree root, but this time with the mpt snapshot,
+		// so that the conversion can proceed.
+		statedb, err = state.New(root, sdb, snaps)
+		if err != nil {
+			panic(err)
+		}
+	}
+
+	if statedb.Database().InTransition() || statedb.Database().Transitioned() {
+		log.Info("at end of makestate", "in transition", statedb.Database().InTransition(), "during", statedb.Database().Transitioned(), "account hash", statedb.Database().GetCurrentAccountHash())
+	}
 	return statedb
 }
 

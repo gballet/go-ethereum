@@ -45,6 +45,12 @@ const (
 	codeCacheSize = 64 * 1024 * 1024
 )
 
+var useBanner bool = true
+
+func NoBanner() {
+	useBanner = false
+}
+
 // Database wraps access to tries and contract code.
 type Database interface {
 	// OpenTrie opens the main account trie.
@@ -68,7 +74,7 @@ type Database interface {
 	// TrieDB retrieves the low level trie database used for data storage.
 	TrieDB() *trie.Database
 
-	StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, cancunTime *uint64, root common.Hash)
+	StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, pragueTime *uint64, root common.Hash)
 
 	ReorgThroughVerkleTransition()
 
@@ -78,7 +84,7 @@ type Database interface {
 
 	Transitioned() bool
 
-	InitTransitionStatus(bool, bool)
+	InitTransitionStatus(bool, bool, common.Hash)
 
 	SetCurrentSlotHash(common.Hash)
 
@@ -227,13 +233,15 @@ func (db *cachingDB) Transitioned() bool {
 
 // Fork implements the fork
 func (db *cachingDB) StartVerkleTransition(originalRoot, translatedRoot common.Hash, chainConfig *params.ChainConfig, pragueTime *uint64, root common.Hash) {
-	fmt.Println(`
+	if useBanner {
+		fmt.Println(`
 	__________.__                       .__                .__                   __       .__                               .__          ____         
 	\__    ___|  |__   ____        ____ |  |   ____ ______ |  |__ _____    _____/  |_     |  |__ _____    ______    __  _  _|__| ____   / ___\ ______
 	  |    |  |  |  \_/ __ \     _/ __ \|  | _/ __ \\____ \|  |  \\__  \  /    \   __\    |  |  \\__  \  /  ___/    \ \/ \/ |  |/    \ / /_/  /  ___/
 	  |    |  |   Y  \  ___/     \  ___/|  |_\  ___/|  |_> |   Y  \/ __ \|   |  |  |      |   Y  \/ __ \_\___ \      \     /|  |   |  \\___  /\___ \
 	  |____|  |___|  /\___        \___  |____/\___  |   __/|___|  (____  |___|  |__|      |___|  (____  /_____/       \/\_/ |__|___|  /_____//_____/
                                                     |__|`)
+	}
 	db.CurrentTransitionState = &TransitionState{
 		Started: true,
 		// initialize so that the first storage-less accounts are processed
@@ -252,12 +260,13 @@ func (db *cachingDB) ReorgThroughVerkleTransition() {
 	log.Warn("trying to reorg through the transition, which makes no sense at this point")
 }
 
-func (db *cachingDB) InitTransitionStatus(started, ended bool) {
+func (db *cachingDB) InitTransitionStatus(started, ended bool, baseRoot common.Hash) {
 	db.CurrentTransitionState = &TransitionState{
 		Ended:   ended,
 		Started: started,
 		// TODO add other fields when we handle mid-transition interrupts
 	}
+	db.baseRoot = baseRoot
 }
 
 func (db *cachingDB) EndVerkleTransition() {
@@ -265,13 +274,15 @@ func (db *cachingDB) EndVerkleTransition() {
 		db.CurrentTransitionState.Started = true
 	}
 
-	fmt.Println(`
+	if useBanner {
+		fmt.Println(`
 	__________.__                       .__                .__                   __       .__                       .__                    .___         .___
 	\__    ___|  |__   ____        ____ |  |   ____ ______ |  |__ _____    _____/  |_     |  |__ _____    ______    |  | _____    ____   __| _/____   __| _/
 	  |    |  |  |  \_/ __ \     _/ __ \|  | _/ __ \\____ \|  |  \\__  \  /    \   __\    |  |  \\__  \  /  ___/    |  | \__  \  /    \ / __ _/ __ \ / __ |
 	  |    |  |   Y  \  ___/     \  ___/|  |_\  ___/|  |_> |   Y  \/ __ \|   |  |  |      |   Y  \/ __ \_\___ \     |  |__/ __ \|   |  / /_/ \  ___// /_/ |
 	  |____|  |___|  /\___        \___  |____/\___  |   __/|___|  (____  |___|  |__|      |___|  (____  /_____/     |____(____  |___|  \____ |\___  \____ |
                                                     |__|`)
+	}
 	db.CurrentTransitionState.Ended = true
 }
 
@@ -344,12 +355,6 @@ func (db *cachingDB) openVKTrie(root common.Hash) (Trie, error) {
 
 // OpenTrie opens the main account trie at a specific root hash.
 func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
-	var (
-		mpt Trie
-		err error
-	)
-	fmt.Printf("opening trie with root %x, %v %v\n", root, db.InTransition(), db.Transitioned())
-
 	// TODO separate both cases when I can be certain that it won't
 	// find a Verkle trie where is expects a Transitoion trie.
 	if db.InTransition() || db.Transitioned() {
@@ -369,21 +374,17 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 
 		// Otherwise, return a transition trie, with a base MPT
 		// trie and an overlay, verkle trie.
-		mpt, err = db.openMPTTrie(db.baseRoot)
+		mpt, err := db.openMPTTrie(db.baseRoot)
 		if err != nil {
 			log.Error("failed to open the mpt", "err", err, "root", db.baseRoot)
 			return nil, err
 		}
 
 		return trie.NewTransitionTree(mpt.(*trie.SecureTrie), vkt.(*trie.VerkleTrie), false), nil
-	} else {
-		mpt, err = db.openMPTTrie(root)
-		if err != nil {
-			return nil, err
-		}
 	}
 
-	return mpt, nil
+	log.Info("not in transition, opening mpt alone", "root", root)
+	return db.openMPTTrie(root)
 }
 
 func (db *cachingDB) openStorageMPTrie(stateRoot common.Hash, address common.Address, root common.Hash, _ Trie) (Trie, error) {
