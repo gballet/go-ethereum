@@ -227,7 +227,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 	// verkle transition: if the conversion process is in progress, move
 	// N values from the MPT into the verkle tree.
 	if migrdb.InTransition() {
-		fmt.Printf("Processing verkle conversion starting at %x %x, building on top of %x\n", migrdb.GetCurrentAccountHash(), migrdb.GetCurrentSlotHash(), root)
+		// fmt.Printf("Processing verkle conversion starting at %x %x, building on top of %x\n", migrdb.GetCurrentAccountHash(), migrdb.GetCurrentSlotHash(), root)
 		var (
 			now             = time.Now()
 			tt              = statedb.GetTrie().(*trie.TransitionTrie)
