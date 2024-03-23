@@ -24,7 +24,7 @@ import (
 
 type verkleNodeIteratorState struct {
 	Node  verkle.VerkleNode
-	Index int
+	Index int // point to the *next* value
 }
 
 type verkleNodeIterator struct {
@@ -112,7 +112,7 @@ func (it *verkleNodeIterator) Next(descend bool) bool {
 		it.stack[len(it.stack)-1].Node = it.current
 		parent := &it.stack[len(it.stack)-2]
 		parent.Node.(*verkle.InternalNode).SetChild(parent.Index, it.current)
-		return true
+		return it.Next(true)
 	default:
 		panic("invalid node type")
 	}
