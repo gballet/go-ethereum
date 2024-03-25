@@ -459,6 +459,9 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	if evm.chainRules.IsEIP2929 {
 		evm.StateDB.AddAddressToAccessList(address)
 	}
+	if evm.chainRules.IsEIP4762 {
+		evm.Accesses.TouchAndChargeContractCreateInit(address.Bytes(), value.Sign() == 0)
+	}
 	// Ensure there's no existing contract already at the designated address
 	contractHash := evm.StateDB.GetCodeHash(address)
 	if evm.StateDB.GetNonce(address) != 0 || (contractHash != (common.Hash{}) && contractHash != types.EmptyCodeHash) {
@@ -513,7 +516,7 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 		} else {
 			// Contract creation completed, touch the missing field in the contract
 			if len(ret) > 0 {
-				if !contract.UseGas(evm.Accesses.TouchCodeChunkRangeAndChargeGas(address.Bytes(), 0, uint64(len(ret)), uint64(len(ret)), true)) {
+				if !contract.UseGas(evm.Accesses.TouchCodeChunksRangeAndChargeGas(address.Bytes(), 0, uint64(len(ret)), uint64(len(ret)), true)) {
 					err = ErrOutOfGas
 				}
 			}

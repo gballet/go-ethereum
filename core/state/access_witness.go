@@ -242,7 +242,7 @@ func newChunkAccessKey(branchKey branchAccessKey, leafKey byte) chunkAccessKey {
 }
 
 // touchCodeChunksRangeOnReadAndChargeGas is a helper function to touch every chunk in a code range and charge witness gas costs
-func (aw *AccessWitness) TouchCodeChunksRangeOnReadAndChargeGas(contractAddr []byte, startPC, size uint64, codeLen uint64) uint64 {
+func (aw *AccessWitness) TouchCodeChunksRangeAndChargeGas(contractAddr []byte, startPC, size uint64, codeLen uint64, isWrite bool) uint64 {
 	// note that in the case where the copied code is outside the range of the
 	// contract code but touches the last leaf with contract code in it,
 	// we don't include the last leaf of code in the AccessWitness.  The
@@ -265,7 +265,7 @@ func (aw *AccessWitness) TouchCodeChunksRangeOnReadAndChargeGas(contractAddr []b
 	for chunkNumber := startPC / 31; chunkNumber <= endPC/31; chunkNumber++ {
 		treeIndex := *uint256.NewInt((chunkNumber + 128) / 256)
 		subIndex := byte((chunkNumber + 128) % 256)
-		gas := aw.touchAddressAndChargeGas(contractAddr, treeIndex, subIndex, false)
+		gas := aw.touchAddressAndChargeGas(contractAddr, treeIndex, subIndex, isWrite)
 		var overflow bool
 		statelessGasCharged, overflow = math.SafeAdd(statelessGasCharged, gas)
 		if overflow {
