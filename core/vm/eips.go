@@ -311,14 +311,22 @@ func enable4762(jt *JumpTable) {
 	jt[SLOAD].constantGas = 0
 	jt[SLOAD].dynamicGas = gasSLoad4762
 	jt[BALANCE].dynamicGas = gasBalance4762
+	jt[BALANCE].constantGas = 0
+	jt[EXTCODESIZE].constantGas = 0
 	jt[EXTCODESIZE].dynamicGas = gasExtCodeSize4762
+	jt[EXTCODEHASH].constantGas = 0
 	jt[EXTCODEHASH].dynamicGas = gasExtCodeHash4762
+	jt[EXTCODECOPY].constantGas = 0
 	jt[EXTCODECOPY].dynamicGas = gasExtCodeCopyEIP4762
 	jt[SELFDESTRUCT].dynamicGas = gasSelfdestructEIP4762
 	jt[CREATE].constantGas = params.CreateNGasEip4762
 	jt[CREATE2].constantGas = params.CreateNGasEip4762
+	jt[CALL].constantGas = 0
 	jt[CALL].dynamicGas = gasCallEIP4762
+	jt[CALLCODE].constantGas = 0
 	jt[CALLCODE].dynamicGas = gasCallCodeEIP4762
+	jt[STATICCALL].constantGas = 0
 	jt[STATICCALL].dynamicGas = gasStaticCallEIP4762
+	jt[DELEGATECALL].constantGas = 0
 	jt[DELEGATECALL].dynamicGas = gasDelegateCallEIP4762
 }

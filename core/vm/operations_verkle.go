@@ -40,18 +40,31 @@ func gasSLoad4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memor
 
 func gasBalance4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	address := stack.peek().Bytes20()
-	return evm.Accesses.TouchBalance(address[:], false), nil
+	gas := evm.Accesses.TouchBalance(address[:], false)
+	if gas == 0 {
+		gas = params.WarmStorageReadCostEIP2929
+	}
+	return gas, nil
 }
 
 func gasExtCodeSize4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	address := stack.peek().Bytes20()
-	versiongas := evm.Accesses.TouchVersion(address[:], false)
-	return versiongas + evm.Accesses.TouchCodeSize(address[:], false), nil
+	wgas := evm.Accesses.TouchVersion(address[:], false)
+	wgas += evm.Accesses.TouchCodeSize(address[:], false)
+	if wgas == 0 {
+		wgas = params.WarmStorageReadCostEIP2929
+	}
+
+	return wgas, nil
 }
 
 func gasExtCodeHash4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	address := stack.peek().Bytes20()
-	return evm.Accesses.TouchCodeHash(address[:], false), nil
+	codehashgas := evm.Accesses.TouchCodeHash(address[:], false)
+	if codehashgas == 0 {
+		codehashgas = params.WarmStorageReadCostEIP2929
+	}
+	return codehashgas, nil
 }
 
 func makeCallVariantGasEIP4762(oldCalculator gasFunc) gasFunc {
@@ -61,8 +74,10 @@ func makeCallVariantGasEIP4762(oldCalculator gasFunc) gasFunc {
 			return 0, err
 		}
 		wgas := evm.Accesses.TouchCodeSize(contract.Address().Bytes(), false)
-		gas += wgas
-		wgas = evm.Accesses.TouchCodeHash(contract.Address().Bytes(), false)
+		wgas += evm.Accesses.TouchCodeHash(contract.Address().Bytes(), false)
+		if wgas == 0 {
+			wgas = params.WarmStorageReadCostEIP2929
+		}
 		return wgas + gas, nil
 	}
 }
@@ -102,6 +117,9 @@ func gasExtCodeCopyEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Memo
 	addr := common.Address(stack.peek().Bytes20())
 	wgas := evm.Accesses.TouchVersion(addr[:], false)
 	wgas += evm.Accesses.TouchCodeSize(addr[:], false)
+	if wgas == 0 {
+		wgas = params.WarmStorageReadCostEIP2929
+	}
 	var overflow bool
 	// We charge (cold-warm), since 'warm' is already charged as constantGas
 	if gas, overflow = math.SafeAdd(gas, wgas); overflow {

@@ -402,8 +402,6 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 		}
 		paddedCodeCopy, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(code, uint64CodeOffset, length.Uint64())
 		statelessGas := interpreter.evm.Accesses.TouchCodeChunksRangeAndChargeGas(addr[:], copyOffset, nonPaddedCopyLength, uint64(len(contract.Code)), false)
-		statelessGas += interpreter.evm.Accesses.TouchVersion(addr[:], false)
-		statelessGas += interpreter.evm.Accesses.TouchCodeSize(addr[:], false)
 		if !scope.Contract.UseGas(statelessGas) {
 			scope.Contract.Gas = 0
 			return nil, ErrOutOfGas
