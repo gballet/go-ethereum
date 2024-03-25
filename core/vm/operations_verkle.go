@@ -18,6 +18,7 @@ package vm
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -90,4 +91,21 @@ func gasSelfdestructEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Mem
 		return statelessGas, nil
 	}
 	return 0, nil
+}
+
+func gasExtCodeCopyEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+	// memory expansion first (dynamic part of pre-2929 implementation)
+	gas, err := gasExtCodeCopy(evm, contract, stack, mem, memorySize)
+	if err != nil {
+		return 0, err
+	}
+	addr := common.Address(stack.peek().Bytes20())
+	wgas := evm.Accesses.TouchVersion(addr[:], false)
+	wgas += evm.Accesses.TouchCodeSize(addr[:], false)
+	var overflow bool
+	// We charge (cold-warm), since 'warm' is already charged as constantGas
+	if gas, overflow = math.SafeAdd(gas, wgas); overflow {
+		return 0, ErrGasUintOverflow
+	}
+	return gas, nil
 }

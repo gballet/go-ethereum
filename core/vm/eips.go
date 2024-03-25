@@ -313,6 +313,7 @@ func enable4762(jt *JumpTable) {
 	jt[BALANCE].dynamicGas = gasBalance4762
 	jt[EXTCODESIZE].dynamicGas = gasExtCodeSize4762
 	jt[EXTCODEHASH].dynamicGas = gasExtCodeHash4762
+	jt[EXTCODECOPY].dynamicGas = gasExtCodeCopyEIP4762
 	jt[SELFDESTRUCT].dynamicGas = gasSelfdestructEIP4762
 	jt[CREATE].constantGas = params.CreateNGasEip4762
 	jt[CREATE2].constantGas = params.CreateNGasEip4762
