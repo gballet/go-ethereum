@@ -495,7 +495,9 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	}
 
 	var ret []byte
-	ret, err = evm.interpreter.Run(contract, nil, false)
+	if err == nil {
+		ret, err = evm.interpreter.Run(contract, nil, false)
+	}
 
 	// Check whether the max code size has been exceeded, assign err if the case.
 	if err == nil && evm.chainRules.IsEIP158 && len(ret) > params.MaxCodeSize {
