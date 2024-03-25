@@ -516,17 +516,14 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	if err == nil {
 		if !evm.chainRules.IsEIP4762 {
 			createDataGas := uint64(len(ret)) * params.CreateDataGas
-			if contract.UseGas(createDataGas) {
-			} else {
+			if !contract.UseGas(createDataGas) {
 				err = ErrCodeStoreOutOfGas
 			}
 		} else {
 			// Contract creation completed, touch the missing field in the contract
-			if len(ret) > 0 {
-				if !contract.UseGas(evm.Accesses.TouchCodeChunksRangeAndChargeGas(address.Bytes(), 0, uint64(len(ret)), uint64(len(ret)), true)) {
+			if len(ret) > 0 && !contract.UseGas(evm.Accesses.TouchCodeChunksRangeAndChargeGas(address.Bytes(), 0, uint64(len(ret)), uint64(len(ret)), true)) {
 					err = ErrOutOfGas
 				}
-			}
 			if err == nil && !contract.UseGas(evm.Accesses.TouchFullAccount(address.Bytes()[:], true)) {
 				err = ErrOutOfGas
 			}
