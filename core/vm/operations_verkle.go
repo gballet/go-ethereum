@@ -22,7 +22,7 @@ import (
 )
 
 func gasSStore4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	gas := evm.StateDB.Witness().TouchSlotAndChargeGas(contract.Address().Bytes(), common.Hash(stack.peek().Bytes32()), true)
+	gas := evm.Accesses.TouchSlotAndChargeGas(contract.Address().Bytes(), common.Hash(stack.peek().Bytes32()), true)
 	if gas == 0 {
 		gas = params.WarmStorageReadCostEIP2929
 	}
@@ -30,7 +30,7 @@ func gasSStore4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memo
 }
 
 func gasSLoad4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	gas := evm.StateDB.Witness().TouchSlotAndChargeGas(contract.Address().Bytes(), common.Hash(stack.peek().Bytes32()), false)
+	gas := evm.Accesses.TouchSlotAndChargeGas(contract.Address().Bytes(), common.Hash(stack.peek().Bytes32()), false)
 	if gas == 0 {
 		gas = params.WarmStorageReadCostEIP2929
 	}
@@ -39,18 +39,18 @@ func gasSLoad4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memor
 
 func gasBalance4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	address := stack.peek().Bytes20()
-	return evm.StateDB.Witness().TouchBalance(address[:], false), nil
+	return evm.Accesses.TouchBalance(address[:], false), nil
 }
 
 func gasExtCodeSize4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	address := stack.peek().Bytes20()
-	versiongas := evm.StateDB.Witness().TouchVersion(address[:], false)
-	return versiongas + evm.StateDB.Witness().TouchCodeSize(address[:], false), nil
+	versiongas := evm.Accesses.TouchVersion(address[:], false)
+	return versiongas + evm.Accesses.TouchCodeSize(address[:], false), nil
 }
 
 func gasExtCodeHash4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	address := stack.peek().Bytes20()
-	return evm.StateDB.Witness().TouchCodeHash(address[:], false), nil
+	return evm.Accesses.TouchCodeHash(address[:], false), nil
 }
 
 func makeCallVariantGasEIP4762(oldCalculator gasFunc) gasFunc {
@@ -59,15 +59,9 @@ func makeCallVariantGasEIP4762(oldCalculator gasFunc) gasFunc {
 		if err != nil {
 			return 0, err
 		}
-		wgas, err := evm.StateDB.Witness().TouchCodeSize(contract.Address().Bytes(), false), nil
-		if err != nil {
-			return 0, err
-		}
+		wgas := evm.Accesses.TouchCodeSize(contract.Address().Bytes(), false)
 		gas += wgas
-		wgas, err = evm.StateDB.Witness().TouchCodeHash(contract.Address().Bytes(), false), nil
-		if err != nil {
-			return 0, err
-		}
+		wgas = evm.Accesses.TouchCodeHash(contract.Address().Bytes(), false)
 		return wgas + gas, nil
 	}
 }
