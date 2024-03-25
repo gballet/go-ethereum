@@ -458,9 +458,6 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	if evm.chainRules.IsEIP2929 {
 		evm.StateDB.AddAddressToAccessList(address)
 	}
-	if evm.chainRules.IsEIP4762 {
-		evm.Accesses.TouchAndChargeContractCreateInit(address.Bytes(), value.Sign() == 0)
-	}
 	// Ensure there's no existing contract already at the designated address
 	contractHash := evm.StateDB.GetCodeHash(address)
 	if evm.StateDB.GetNonce(address) != 0 || (contractHash != (common.Hash{}) && contractHash != types.EmptyCodeHash) {
@@ -481,6 +478,14 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	contract.SetCodeOptionalHash(&address, codeAndHash)
 	contract.IsDeployment = true
 
+	// Charge the contract creation init gas in verkle mode
+	var err error
+	if evm.chainRules.IsEIP4762 {
+		if !contract.UseGas(evm.Accesses.TouchAndChargeContractCreateInit(address.Bytes(), value.Sign() != 0)) {
+			err = ErrOutOfGas
+		}
+	}
+
 	if evm.Config.Tracer != nil {
 		if evm.depth == 0 {
 			evm.Config.Tracer.CaptureStart(evm, caller.Address(), address, true, codeAndHash.code, gas, value)
@@ -489,7 +494,8 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 		}
 	}
 
-	ret, err := evm.interpreter.Run(contract, nil, false)
+	var ret []byte
+	ret, err = evm.interpreter.Run(contract, nil, false)
 
 	// Check whether the max code size has been exceeded, assign err if the case.
 	if err == nil && evm.chainRules.IsEIP158 && len(ret) > params.MaxCodeSize {
