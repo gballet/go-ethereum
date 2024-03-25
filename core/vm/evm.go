@@ -208,7 +208,6 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 		}
 
 		if !isPrecompile && evm.chainRules.IsEIP158 && value.Sign() == 0 {
-
 			// Calling a non existing account, don't do anything, but ping the tracer
 			if debug {
 				if evm.depth == 0 {
