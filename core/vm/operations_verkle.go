@@ -92,20 +92,20 @@ var (
 func gasSelfdestructEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	beneficiaryAddr := common.Address(stack.peek().Bytes20())
 	contractAddr := contract.Address()
-	// If the beneficiary isn't the contract, we need to touch the beneficiary's balance.
-	// If the beneficiary is the contract itself, there're two possibilities:
-	// 1. The contract was created in the same transaction: the balance is already touched (no need to touch again)
-	// 2. The contract wasn't created in the same transaction: there's no net change in balance,
-	//    and SELFDESTRUCT will perform no action on the account header. (we touch since we did SubBalance+AddBalance above)
-	if contractAddr != beneficiaryAddr || evm.StateDB.WasCreatedInCurrentTx(contractAddr) {
-		statelessGas := evm.Accesses.TouchBalance(beneficiaryAddr[:], false)
-		if !contract.UseGas(statelessGas) {
-			contract.Gas = 0
-			return 0, ErrOutOfGas
-		}
-		return statelessGas, nil
+	statelessGas := evm.Accesses.TouchVersion(contractAddr[:], false)
+	statelessGas += evm.Accesses.TouchCodeSize(contractAddr[:], false)
+	statelessGas += evm.Accesses.TouchBalance(contractAddr[:], false)
+	if contractAddr != beneficiaryAddr {
+		statelessGas += evm.Accesses.TouchBalance(beneficiaryAddr[:], false)
 	}
-	return 0, nil
+	// Charge write costs if it transfers value
+	if evm.StateDB.GetBalance(contractAddr).Sign() != 0 {
+		statelessGas += evm.Accesses.TouchBalance(contractAddr[:], true)
+		if contractAddr != beneficiaryAddr {
+			statelessGas += evm.Accesses.TouchBalance(beneficiaryAddr[:], true)
+		}
+	}
+	return statelessGas, nil
 }
 
 func gasExtCodeCopyEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
@@ -127,3 +127,4 @@ func gasExtCodeCopyEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Memo
 	}
 	return gas, nil
 }
+
