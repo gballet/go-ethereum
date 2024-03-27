@@ -157,8 +157,11 @@ var stateTransitionCommand = &cli.Command{
 		&cli.Command{
 			Name:    "verkle",
 			Aliases: []string{"v"},
-			Action:  t8ntool.VerkleKeys,
 			Usage:   "compute the verkle tree key given an address and optional slot number",
+			Action:  t8ntool.VerkleKeys,
+			Flags: []cli.Flag{
+				t8ntool.InputAllocFlag,
+			},
 		},
 	},
 }

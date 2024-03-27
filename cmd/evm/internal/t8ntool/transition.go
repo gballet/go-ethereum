@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -39,7 +40,9 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/tests"
+	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
+	"github.com/ethereum/go-verkle"
 	"github.com/urfave/cli/v2"
 )
 
@@ -497,25 +500,60 @@ func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, a
 // VerkleKeys computes the tree key given an address and an optional
 // slot number.
 func VerkleKeys(ctx *cli.Context) error {
-	if ctx.Args().Len() == 0 || ctx.Args().Len() > 2 {
-		return errors.New("invalid number of arguments: expecting an address and an optional slot number")
+	var allocStr = ctx.String(InputAllocFlag.Name)
+	var alloc core.GenesisAlloc
+	// Figure out the prestate alloc
+	if allocStr == stdinSelector {
+		decoder := json.NewDecoder(os.Stdin)
+		if err := decoder.Decode(&alloc); err != nil {
+			return NewError(ErrorJson, fmt.Errorf("failed unmarshaling stdin: %v", err))
+		}
 	}
-	addr, err := hexutil.Decode(ctx.Args().Get(0))
-	if err != nil {
-		return fmt.Errorf("error decoding address: %w", err)
+	if allocStr != stdinSelector {
+		if err := readFile(allocStr, "alloc", &alloc); err != nil {
+			return err
+		}
 	}
 
-	ap := utils.EvaluateAddressPoint(addr)
-	if ctx.Args().Len() == 2 {
-		slot, err := hexutil.Decode(ctx.Args().Get(1))
-		if err != nil {
-			return fmt.Errorf("error decoding slot: %w", err)
+	vkt := trie.NewVerkleTrie(verkle.New(), trie.NewDatabase(rawdb.NewMemoryDatabase()), utils.NewPointCache(), true)
+
+	for addr, acc := range alloc {
+		for slot, value := range acc.Storage {
+			err := vkt.UpdateStorage(addr, slot.Bytes(), value.Big().Bytes())
+			if err != nil {
+				return fmt.Errorf("error inserting storage: %w", err)
+			}
 		}
 
-		fmt.Printf("%#x\n", utils.GetTreeKeyStorageSlotWithEvaluatedAddress(ap, slot))
-	} else {
-		fmt.Printf("%#x\n", utils.GetTreeKeyVersionWithEvaluatedAddress(ap))
+		account := &types.StateAccount{
+			Balance:  acc.Balance,
+			Nonce:    acc.Nonce,
+			CodeHash: crypto.Keccak256Hash(acc.Code).Bytes(),
+			Root:     common.Hash{},
+		}
+		err := vkt.UpdateAccount(addr, account)
+		if err != nil {
+			return fmt.Errorf("error inserting account: %w", err)
+		}
 	}
+
+	collector := make(map[common.Hash]hexutil.Bytes)
+	it, err := vkt.NodeIterator(nil)
+	if err != nil {
+		panic(err)
+	}
+	for it.Next(true) {
+		if it.Leaf() {
+			collector[common.BytesToHash(it.LeafKey())] = it.LeafBlob()
+		}
+	}
+
+	output, err := json.MarshalIndent(collector, "", "")
+	if err != nil {
+		return fmt.Errorf("error outputting tree: %w", err)
+	}
+
+	fmt.Println(string(output))
 
 	return nil
 }
