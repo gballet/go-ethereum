@@ -1,8 +1,6 @@
 package vm
 
 import (
-	"fmt"
-
 	edatabase "github.com/jsign/verkle-explorer/database"
 )
 
@@ -34,13 +32,13 @@ func recordExecutedInstruction(bytes uint64) {
 }
 
 func init() {
-	explDB = ExplorerDatabase{data: make(map[string]edatabase.TxExec)}
+	ExplDB = ExplorerDatabase{data: make(map[string]edatabase.TxExec)}
 }
 
-var explDB ExplorerDatabase
+var ExplDB ExplorerDatabase
 
 func SaveRecord() {
-	explDB.data[txHash] = edatabase.TxExec{
+	ExplDB.data[txHash] = edatabase.TxExec{
 		Hash: txHash,
 
 		TotalGas:     totalGasUsed,
@@ -49,7 +47,6 @@ func SaveRecord() {
 		ExecutedInstructions: executedInstructions,
 		ExecutedBytes:        executedBytes,
 	}
-	fmt.Printf("Saved record: %v\n", explDB.data[txHash])
 }
 
 type ExplorerDatabase struct {
