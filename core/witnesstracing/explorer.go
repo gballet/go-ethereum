@@ -3,13 +3,13 @@ package witnesstracing
 import (
 	"encoding/hex"
 	"fmt"
-	"slices"
-	"sort"
 	"strings"
-	"sync"
+
+	"database/sql"
 
 	"github.com/ethereum/go-ethereum/common"
 	edatabase "github.com/jsign/verkle-explorer/database"
+	_ "github.com/mattn/go-sqlite3"
 )
 
 var txHash string
@@ -68,62 +68,89 @@ func RecordExecutedInstruction(bytes uint64) {
 }
 
 func init() {
-	ExplDB = ExplorerDatabase{dmap: make(map[string]*edatabase.TxExec)}
+	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	if err != nil {
+		panic(err)
+	}
+	if _, err := db.Exec(`
+     	CREATE TABLE IF NOT EXISTS tx_exec (
+			hash TEXT PRIMARY KEY, 
+			total_gas INTEGER, 
+			code_chunk_gas INTEGER, 
+			executed_instructions INTEGER, 
+			executed_bytes INTEGER
+		) STRICT`); err != nil {
+		panic(err)
+	}
+	if _, err := db.Exec(`
+		CREATE TABLE IF NOT EXISTS tx_events (
+			hash TEXT, 
+			name TEXT, 
+			gas INTEGER, 
+			params TEXT,
+
+			FOREIGN KEY(hash) REFERENCES tx_exec(hash)
+		) STRICT`); err != nil {
+		panic(err)
+	}
+	ExplDB = ExplorerDatabase{db: db}
 }
 
 var ExplDB ExplorerDatabase
 
 type ExplorerDatabase struct {
-	lock sync.RWMutex
-
-	data []*edatabase.TxExec
-	dmap map[string]*edatabase.TxExec
+	db *sql.DB
 }
 
 func (ed *ExplorerDatabase) SaveRecord() {
-	ed.lock.Lock()
-	defer ed.lock.Unlock()
-
-	record := edatabase.TxExec{
-		Hash: txHash,
-
-		TotalGas:     totalGasUsed,
-		CodeChunkGas: codeChunkGas,
-
-		ExecutedInstructions: executedInstructions,
-		ExecutedBytes:        executedBytes,
-
-		Events: events,
+	if _, err := ed.db.Exec("INSERT INTO tx_exec (hash, total_gas, code_chunk_gas, executed_instructions, executed_bytes) VALUES (?, ?, ?, ?, ?)", txHash, totalGasUsed, codeChunkGas, executedInstructions, executedBytes); err != nil {
+		panic(err)
 	}
-	i := sort.Search(len(ed.data), func(i int) bool {
-		return len(ed.data[i].Events) <= len(record.Events)
-	})
-	ed.data = slices.Insert(ed.data, i, &record)
+	for _, event := range events {
+		if _, err := ed.db.Exec("INSERT INTO tx_events (hash, name, gas, params) VALUES (?, ?, ?, ?)", txHash, event.Name, event.Gas, event.Params); err != nil {
+			panic(err)
+		}
+	}
 
-	ed.dmap[txHash] = &record
 }
 
 func (ed *ExplorerDatabase) GetTxExec(hash string) (edatabase.TxExec, error) {
-	ed.lock.RLock()
-	defer ed.lock.RUnlock()
-
-	txInfo, ok := ed.dmap[hash]
-	if !ok {
+	row := ed.db.QueryRow("SELECT * FROM tx_exec WHERE hash = ?", hash)
+	var edTxExec edatabase.TxExec
+	err := row.Scan(&edTxExec.Hash, &edTxExec.TotalGas, &edTxExec.CodeChunkGas, &edTxExec.ExecutedInstructions, &edTxExec.ExecutedBytes)
+	if err == sql.ErrNoRows {
 		return edatabase.TxExec{}, edatabase.ErrTxNotFound
 	}
-	return *txInfo, nil
+	rows, err := ed.db.Query("SELECT * FROM tx_events WHERE hash = ?", hash)
+	if err != nil {
+		return edatabase.TxExec{}, fmt.Errorf("failed to get tx events: %w", err)
+	}
+	for rows.Next() {
+		var dummy string
+		var event edatabase.WitnessEvent
+		if err := rows.Scan(&dummy, &event.Name, &event.Gas, &event.Params); err != nil {
+			return edatabase.TxExec{}, fmt.Errorf("failed to scan tx event: %w", err)
+		}
+		edTxExec.Events = append(edTxExec.Events, event)
+	}
+	return edTxExec, nil
 }
 
-func (ed *ExplorerDatabase) GetTopTxs(count int) ([]*edatabase.TxExec, error) {
-	ed.lock.RLock()
-	defer ed.lock.RUnlock()
-
-	var txs []*edatabase.TxExec
-	for i := range ed.data {
-		if i >= count {
-			break
-		}
-		txs = append(txs, ed.data[i])
+func (ed *ExplorerDatabase) GetTopTxs(count int) ([]edatabase.TxExec, error) {
+	rows, err := ed.db.Query("SELECT * FROM tx_exec ORDER BY total_gas DESC LIMIT ?", count)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get top txs: %w", err)
 	}
+	defer rows.Close()
+
+	var txs []edatabase.TxExec
+	for rows.Next() {
+		var edTxExec edatabase.TxExec
+		if err := rows.Scan(&edTxExec.Hash, &edTxExec.TotalGas, &edTxExec.CodeChunkGas, &edTxExec.ExecutedInstructions, &edTxExec.ExecutedBytes); err != nil {
+			return nil, fmt.Errorf("failed to scan tx: %w", err)
+		}
+		txs = append(txs, edTxExec)
+	}
+
 	return txs, nil
 }

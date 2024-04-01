@@ -78,6 +78,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
+require github.com/mattn/go-sqlite3 v1.14.22
+
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v0.21.1 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v0.8.3 // indirect
