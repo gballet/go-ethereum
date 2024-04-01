@@ -102,7 +102,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 
 		aa, _ := witnesstracing.ExplDB.GetTopTxs(10)
 		for i := range aa {
-			fmt.Printf("%d: %s (%d)\n", i, aa[i].Hash, len(aa[i].Events))
+			fmt.Printf("%d: %s (%d) %v\n", i, aa[i].Hash, len(aa[i].Events), aa[i])
 		}
 	}
 	// Fail if Shanghai not enabled and len(withdrawals) is non-zero.
