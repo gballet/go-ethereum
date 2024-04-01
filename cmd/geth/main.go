@@ -30,7 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/cmd/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/console/prompt"
-	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/core/witnesstracing"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -262,7 +262,7 @@ func init() {
 }
 
 func main() {
-	exp := explorer.New(":8181", &vm.ExplDB)
+	exp := explorer.New(":8181", &witnesstracing.ExplDB)
 	go func() {
 		exp.Run()
 	}()
