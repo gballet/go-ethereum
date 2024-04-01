@@ -19,6 +19,7 @@ package vm
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core/witnesstracing"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 )
@@ -186,7 +187,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			witnessCost := in.evm.TxContext.Accesses.TouchCodeChunksRangeAndChargeGas(contractAddr[:], pc, 1, uint64(len(contract.Code)), false)
 			contract.Gas -= witnessCost
 
-			recordCodeChunkCost(witnessCost)
+			witnesstracing.RecordCodeChunkCost(witnessCost)
 		}
 
 		// Get the operation from the jump table and validate the stack to ensure there are
@@ -248,7 +249,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			break
 		}
 		pc++
-		recordExecutedInstruction(pc - prevpc)
+		witnesstracing.RecordExecutedInstruction(pc - prevpc)
 	}
 
 	if err == errStopToken {

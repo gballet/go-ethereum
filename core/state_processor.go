@@ -31,6 +31,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/core/witnesstracing"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -95,7 +96,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	}
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
-		vm.ResetWitnessTracer(tx.Hash().Hex())
+		witnesstracing.ResetWitnessTracer(tx.Hash().Hex())
 
 		msg, err := TransactionToMessage(tx, signer, header.BaseFee)
 		if err != nil {
@@ -108,8 +109,13 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		}
 		receipts = append(receipts, receipt)
 		allLogs = append(allLogs, receipt.Logs...)
-		vm.SetTotalGasUsed(receipt.GasUsed)
-		vm.SaveRecord()
+		witnesstracing.SetTotalGasUsed(receipt.GasUsed)
+		witnesstracing.ExplDB.SaveRecord()
+
+		aa, _ := witnesstracing.ExplDB.GetTopTxs(10)
+		for i := range aa {
+			fmt.Printf("%d: %s (%d)\n", i, aa[i].Hash, len(aa[i].Events))
+		}
 	}
 	// Fail if Shanghai not enabled and len(withdrawals) is non-zero.
 	withdrawals := block.Withdrawals()
