@@ -109,10 +109,18 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		}
 		receipts = append(receipts, receipt)
 		allLogs = append(allLogs, receipt.Logs...)
-		witnesstracing.SetTotalGasUsed(receipt.GasUsed)
+		from, err := signer.Sender(tx)
+		if err != nil {
+			panic(err)
+		}
+		to := "0x0"
+		if tx.To() != nil {
+			to = tx.To().Hex()
+		}
+		witnesstracing.SetGeneralInfo(block.NumberU64(), from.Hex(), to, tx.Value(), receipt.GasUsed)
 		witnesstracing.ExplDB.SaveRecord()
 
-		aa, _ := witnesstracing.ExplDB.GetTopTxs(10)
+		aa, _ := witnesstracing.ExplDB.GetTopTxs(3)
 		for i := range aa {
 			fmt.Printf("%d: %s (%d) %v\n", i, aa[i].Hash, len(aa[i].Events), aa[i])
 		}
@@ -174,6 +182,16 @@ func applyTransaction(msg *Message, config *params.ChainConfig, gp *GasPool, sta
 	// If the transaction created a contract, store the creation address in the receipt.
 	if msg.To == nil {
 		receipt.ContractAddress = crypto.CreateAddress(evm.TxContext.Origin, tx.Nonce())
+	}
+
+	txWitnessKeys := txContext.Accesses.Keys()
+	tree := statedb.GetTrie().(*trie.VerkleTrie)
+	for _, k := range txWitnessKeys {
+		v, err := tree.GetWithHashedKey(k)
+		if err != nil {
+			panic(err)
+		}
+		witnesstracing.RecordWitnessTreeKeyValue(k, v)
 	}
 
 	statedb.Witness().Merge(txContext.Accesses)
