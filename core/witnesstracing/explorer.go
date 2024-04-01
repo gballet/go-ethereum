@@ -68,7 +68,7 @@ func RecordExecutedInstruction(bytes uint64) {
 }
 
 func init() {
-	db, err := sql.Open("sqlite3", "file::memory:?cache=shared")
+	db, err := sql.Open("sqlite3", "kaustinen5.db?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=10000")
 	if err != nil {
 		panic(err)
 	}
@@ -103,11 +103,11 @@ type ExplorerDatabase struct {
 }
 
 func (ed *ExplorerDatabase) SaveRecord() {
-	if _, err := ed.db.Exec("INSERT INTO tx_exec (hash, total_gas, code_chunk_gas, executed_instructions, executed_bytes) VALUES (?, ?, ?, ?, ?)", txHash, totalGasUsed, codeChunkGas, executedInstructions, executedBytes); err != nil {
+	if _, err := ed.db.Exec("INSERT OR IGNORE INTO tx_exec (hash, total_gas, code_chunk_gas, executed_instructions, executed_bytes) VALUES (?, ?, ?, ?, ?)", txHash, totalGasUsed, codeChunkGas, executedInstructions, executedBytes); err != nil {
 		panic(err)
 	}
 	for _, event := range events {
-		if _, err := ed.db.Exec("INSERT INTO tx_events (hash, name, gas, params) VALUES (?, ?, ?, ?)", txHash, event.Name, event.Gas, event.Params); err != nil {
+		if _, err := ed.db.Exec("INSERT OR IGNORE INTO tx_events (hash, name, gas, params) VALUES (?, ?, ?, ?)", txHash, event.Name, event.Gas, event.Params); err != nil {
 			panic(err)
 		}
 	}
