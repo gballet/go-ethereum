@@ -20,6 +20,7 @@ var txFrom string
 var txTo string
 var txValue *big.Int
 var codeChunkGas uint64
+var chargedCodeChunks int
 var executedBytes uint64
 var executedInstructions int
 var totalGasUsed uint64
@@ -33,6 +34,7 @@ func ResetWitnessTracer(hash string) {
 	txTo = ""
 	txValue = nil
 	codeChunkGas = 0
+	chargedCodeChunks = 0
 	executedBytes = 0
 	executedInstructions = 0
 	totalGasUsed = 0
@@ -82,6 +84,7 @@ func RecordWitnessTreeKeyValue(key []byte, value []byte) {
 }
 
 func RecordCodeChunkCost(cost uint64) {
+	chargedCodeChunks++
 	codeChunkGas += cost
 }
 
@@ -104,6 +107,7 @@ func init() {
 			value TEXT,
 			total_gas INTEGER, 
 			code_chunk_gas INTEGER, 
+			charged_code_chunks INTEGER,
 			executed_instructions INTEGER, 
 			executed_bytes INTEGER
 		) STRICT`); err != nil {
@@ -140,8 +144,8 @@ type ExplorerDatabase struct {
 }
 
 func (ed *ExplorerDatabase) SaveRecord() {
-	if _, err := ed.db.Exec("INSERT OR IGNORE INTO tx_exec (hash, block_number, addr_from, addr_to, value, total_gas, code_chunk_gas, executed_instructions, executed_bytes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		txHash, txBlockNumber, txFrom, txTo, txValue.String(), totalGasUsed, codeChunkGas, executedInstructions, executedBytes); err != nil {
+	if _, err := ed.db.Exec("INSERT OR IGNORE INTO tx_exec (hash, block_number, addr_from, addr_to, value, total_gas, code_chunk_gas, charged_code_chunks, executed_instructions, executed_bytes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		txHash, txBlockNumber, txFrom, txTo, txValue.String(), totalGasUsed, codeChunkGas, chargedCodeChunks, executedInstructions, executedBytes); err != nil {
 		panic(err)
 	}
 	for _, event := range events {
@@ -162,7 +166,7 @@ func (ed *ExplorerDatabase) SaveRecord() {
 func (ed *ExplorerDatabase) GetTxExec(hash string) (edatabase.TxExec, error) {
 	row := ed.db.QueryRow("SELECT * FROM tx_exec WHERE hash = ?", hash)
 	var edTxExec edatabase.TxExec
-	err := row.Scan(&edTxExec.Hash, &edTxExec.BlockNumber, &edTxExec.From, &edTxExec.To, &edTxExec.Value, &edTxExec.TotalGas, &edTxExec.CodeChunkGas, &edTxExec.ExecutedInstructions, &edTxExec.ExecutedBytes)
+	err := row.Scan(&edTxExec.Hash, &edTxExec.BlockNumber, &edTxExec.From, &edTxExec.To, &edTxExec.Value, &edTxExec.TotalGas, &edTxExec.CodeChunkGas, &edTxExec.ChargedCodeChunks, &edTxExec.ExecutedInstructions, &edTxExec.ExecutedBytes)
 	if err == sql.ErrNoRows {
 		return edatabase.TxExec{}, edatabase.ErrTxNotFound
 	}
@@ -195,21 +199,34 @@ func (ed *ExplorerDatabase) GetTxExec(hash string) (edatabase.TxExec, error) {
 	return edTxExec, nil
 }
 
-func (ed *ExplorerDatabase) GetTopTxs(count int) ([]edatabase.TxExec, error) {
+func (ed *ExplorerDatabase) GetHighestGasTxs(count int) ([]edatabase.TxInfo, error) {
 	rows, err := ed.db.Query("SELECT * FROM tx_exec ORDER BY total_gas DESC LIMIT ?", count)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get top txs: %w", err)
+		return nil, fmt.Errorf("failed to get high gas txs: %w", err)
 	}
 	defer rows.Close()
 
-	var txs []edatabase.TxExec
+	return getTxInfos(rows)
+}
+
+func (ed *ExplorerDatabase) GetInefficientCodeAccessTxs(count int) ([]edatabase.TxInfo, error) {
+	rows, err := ed.db.Query("SELECT * FROM tx_exec WHERE charged_code_chunks > 0 ORDER BY cast(executed_bytes as real)/cast(charged_code_chunks*31 as real) ASC LIMIT ?", count)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get inefficient code access txs: %w", err)
+	}
+	defer rows.Close()
+
+	return getTxInfos(rows)
+}
+
+func getTxInfos(rows *sql.Rows) ([]edatabase.TxInfo, error) {
+	var txs []edatabase.TxInfo
 	for rows.Next() {
-		var edTxExec edatabase.TxExec
-		if err := rows.Scan(&edTxExec.Hash, &edTxExec.BlockNumber, &edTxExec.From, &edTxExec.To, &edTxExec.Value, &edTxExec.TotalGas, &edTxExec.CodeChunkGas, &edTxExec.ExecutedInstructions, &edTxExec.ExecutedBytes); err != nil {
+		var edTxExec edatabase.TxInfo
+		if err := rows.Scan(&edTxExec.Hash, &edTxExec.BlockNumber, &edTxExec.From, &edTxExec.To, &edTxExec.Value, &edTxExec.TotalGas, &edTxExec.CodeChunkGas, &edTxExec.ChargedCodeChunks, &edTxExec.ExecutedInstructions, &edTxExec.ExecutedBytes); err != nil {
 			return nil, fmt.Errorf("failed to scan tx: %w", err)
 		}
 		txs = append(txs, edTxExec)
 	}
-
 	return txs, nil
 }
