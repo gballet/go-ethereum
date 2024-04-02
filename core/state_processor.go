@@ -119,11 +119,6 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		}
 		witnesstracing.SetGeneralInfo(block.NumberU64(), from.Hex(), to, tx.Value(), receipt.GasUsed)
 		witnesstracing.ExplDB.SaveRecord()
-
-		aa, _ := witnesstracing.ExplDB.GetTopTxs(3)
-		for i := range aa {
-			fmt.Printf("%d: %s (%d) %v\n", i, aa[i].Hash, len(aa[i].Events), aa[i])
-		}
 	}
 	// Fail if Shanghai not enabled and len(withdrawals) is non-zero.
 	withdrawals := block.Withdrawals()
