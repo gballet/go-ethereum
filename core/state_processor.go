@@ -154,9 +154,20 @@ func applyTransaction(msg *Message, config *params.ChainConfig, gp *GasPool, sta
 		return nil, err
 	}
 
+	txWitnessKeys := txContext.Accesses.Keys()
+	currentValues := make([][]byte, len(txWitnessKeys))
+	tree := statedb.GetTrie().(*trie.VerkleTrie)
+	for i, k := range txWitnessKeys {
+		v, err := tree.GetWithHashedKey(k)
+		if err != nil {
+			panic(err)
+		}
+		currentValues[i] = v
+	}
+
 	// Update the state with pending changes.
 	var root []byte
-	if config.IsByzantium(blockNumber) {
+	if config.IsByzantium(blockNumber) && false {
 		statedb.Finalise(true)
 	} else {
 		root = statedb.IntermediateRoot(config.IsEIP158(blockNumber)).Bytes()
@@ -179,14 +190,13 @@ func applyTransaction(msg *Message, config *params.ChainConfig, gp *GasPool, sta
 		receipt.ContractAddress = crypto.CreateAddress(evm.TxContext.Origin, tx.Nonce())
 	}
 
-	txWitnessKeys := txContext.Accesses.Keys()
-	tree := statedb.GetTrie().(*trie.VerkleTrie)
-	for _, k := range txWitnessKeys {
+	tree = statedb.GetTrie().(*trie.VerkleTrie)
+	for i, k := range txWitnessKeys {
 		v, err := tree.GetWithHashedKey(k)
 		if err != nil {
 			panic(err)
 		}
-		witnesstracing.RecordWitnessTreeKeyValue(k, v)
+		witnesstracing.RecordWitnessTreeKeyValue(k, currentValues[i], v)
 	}
 
 	statedb.Witness().Merge(txContext.Accesses)

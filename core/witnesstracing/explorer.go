@@ -1,6 +1,8 @@
 package witnesstracing
 
 import (
+	"bytes"
+	"encoding/gob"
 	"encoding/hex"
 	"fmt"
 	"math/big"
@@ -24,7 +26,7 @@ var chargedCodeChunks int
 var executedBytes uint64
 var executedInstructions int
 var totalGasUsed uint64
-var events []edatabase.WitnessEvent
+var witnessEvents []edatabase.WitnessEvent
 var witnessKeyValues []edatabase.WitnessTreeKeyValue
 
 func ResetWitnessTracer(hash string) {
@@ -38,7 +40,8 @@ func ResetWitnessTracer(hash string) {
 	executedBytes = 0
 	executedInstructions = 0
 	totalGasUsed = 0
-	events = nil
+	witnessEvents = nil
+	witnessKeyValues = nil
 }
 
 func SetGeneralInfo(blockNumber uint64, from string, to string, value *big.Int, gas uint64) {
@@ -68,19 +71,24 @@ func RecordWitnessEvent(gas uint64, eventName string, params ...interface{}) {
 	}
 	strParams.WriteString("]")
 
-	events = append(events, edatabase.WitnessEvent{
+	witnessEvents = append(witnessEvents, edatabase.WitnessEvent{
 		Name:   eventName,
 		Gas:    gas,
 		Params: strParams.String(),
 	})
 }
 
-func RecordWitnessTreeKeyValue(key []byte, value []byte) {
-	postValue := "absent"
-	if len(value) > 0 {
-		postValue = "0x" + hex.EncodeToString(value)
+func RecordWitnessTreeKeyValue(key []byte, current []byte, newValue []byte) {
+	currValue := ""
+	if len(current) > 0 {
+		currValue = "0x" + hex.EncodeToString(current)
 	}
-	witnessKeyValues = append(witnessKeyValues, edatabase.WitnessTreeKeyValue{Key: "0x" + hex.EncodeToString(key), PostValue: postValue})
+
+	postValue := ""
+	if !bytes.Equal(current, newValue) {
+		postValue = "0x" + hex.EncodeToString(newValue)
+	}
+	witnessKeyValues = append(witnessKeyValues, edatabase.WitnessTreeKeyValue{Key: "0x" + hex.EncodeToString(key), CurrentValue: currValue, PostValue: postValue})
 }
 
 func RecordCodeChunkCost(cost uint64) {
@@ -94,6 +102,8 @@ func RecordExecutedInstruction(bytes uint64) {
 }
 
 func init() {
+	// Open in memory sqlitedb
+	// db, err := sql.Open("sqlite3", ":memory:")
 	db, err := sql.Open("sqlite3", "kaustinen5.db?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=10000")
 	if err != nil {
 		panic(err)
@@ -109,28 +119,9 @@ func init() {
 			code_chunk_gas INTEGER, 
 			charged_code_chunks INTEGER,
 			executed_instructions INTEGER, 
-			executed_bytes INTEGER
-		) STRICT`); err != nil {
-		panic(err)
-	}
-	if _, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS tx_events (
-			hash TEXT, 
-			name TEXT, 
-			gas INTEGER, 
-			params TEXT,
-
-			FOREIGN KEY(hash) REFERENCES tx_exec(hash)
-		) STRICT`); err != nil {
-		panic(err)
-	}
-	if _, err := db.Exec(`
-		CREATE TABLE IF NOT EXISTS tx_witness_keyvalues (
-			hash TEXT, 
-			key TEXT, 
-			post_value TEXT, 
-
-			FOREIGN KEY(hash) REFERENCES tx_exec(hash)
+			executed_bytes INTEGER,
+			jsonWitnessEvents BLOB,
+			jsonTreeKeyValues BLOB
 		) STRICT`); err != nil {
 		panic(err)
 	}
@@ -144,57 +135,42 @@ type ExplorerDatabase struct {
 }
 
 func (ed *ExplorerDatabase) SaveRecord() {
-	if _, err := ed.db.Exec("INSERT OR IGNORE INTO tx_exec (hash, block_number, addr_from, addr_to, value, total_gas, code_chunk_gas, charged_code_chunks, executed_instructions, executed_bytes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		txHash, txBlockNumber, txFrom, txTo, txValue.String(), totalGasUsed, codeChunkGas, chargedCodeChunks, executedInstructions, executedBytes); err != nil {
-		panic(err)
-	}
-	for _, event := range events {
-		if _, err := ed.db.Exec("INSERT OR IGNORE INTO tx_events (hash, name, gas, params) VALUES (?, ?, ?, ?)", txHash, event.Name, event.Gas, event.Params); err != nil {
-			panic(err)
-		}
-	}
 	sort.Slice(witnessKeyValues, func(i, j int) bool {
 		return witnessKeyValues[i].Key < witnessKeyValues[j].Key
 	})
-	for _, kv := range witnessKeyValues {
-		if _, err := ed.db.Exec("INSERT OR IGNORE INTO tx_witness_keyvalues (hash, key, post_value) VALUES (?, ?, ?)", txHash, kv.Key, kv.PostValue); err != nil {
-			panic(err)
-		}
+
+	buf := bytes.NewBuffer(nil)
+	if err := gob.NewEncoder(buf).Encode(witnessKeyValues); err != nil {
+		panic(err)
+	}
+	jsonWitnessKeyValues := buf.Bytes()
+
+	buf = bytes.NewBuffer(nil)
+	if err := gob.NewEncoder(buf).Encode(witnessEvents); err != nil {
+		panic(err)
+	}
+	jsonWitnessEvents := buf.Bytes()
+
+	if _, err := ed.db.Exec("INSERT OR IGNORE INTO tx_exec (hash, block_number, addr_from, addr_to, value, total_gas, code_chunk_gas, charged_code_chunks, executed_instructions, executed_bytes, jsonWitnessEvents, jsonTreeKeyValues) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		txHash, txBlockNumber, txFrom, txTo, txValue.String(), totalGasUsed, codeChunkGas, chargedCodeChunks, executedInstructions, executedBytes, jsonWitnessEvents, jsonWitnessKeyValues); err != nil {
+		panic(err)
 	}
 }
 
 func (ed *ExplorerDatabase) GetTxExec(hash string) (edatabase.TxExec, error) {
 	row := ed.db.QueryRow("SELECT * FROM tx_exec WHERE hash = ?", hash)
 	var edTxExec edatabase.TxExec
-	err := row.Scan(&edTxExec.Hash, &edTxExec.BlockNumber, &edTxExec.From, &edTxExec.To, &edTxExec.Value, &edTxExec.TotalGas, &edTxExec.CodeChunkGas, &edTxExec.ChargedCodeChunks, &edTxExec.ExecutedInstructions, &edTxExec.ExecutedBytes)
+	var jsonTreeKeyValues []byte
+	var jsonWitnessEvents []byte
+	err := row.Scan(&edTxExec.Hash, &edTxExec.BlockNumber, &edTxExec.From, &edTxExec.To, &edTxExec.Value, &edTxExec.TotalGas, &edTxExec.CodeChunkGas, &edTxExec.ChargedCodeChunks, &edTxExec.ExecutedInstructions, &edTxExec.ExecutedBytes, &jsonWitnessEvents, &jsonTreeKeyValues)
 	if err == sql.ErrNoRows {
 		return edatabase.TxExec{}, edatabase.ErrTxNotFound
 	}
-	rows, err := ed.db.Query("SELECT * FROM tx_events WHERE hash = ?", hash)
-	if err != nil {
-		return edatabase.TxExec{}, fmt.Errorf("failed to get tx events: %w", err)
+	if err := gob.NewDecoder(bytes.NewReader(jsonWitnessEvents)).Decode(&edTxExec.WitnessEvents); err != nil {
+		panic(err)
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var dummy string
-		var event edatabase.WitnessEvent
-		if err := rows.Scan(&dummy, &event.Name, &event.Gas, &event.Params); err != nil {
-			return edatabase.TxExec{}, fmt.Errorf("failed to scan tx event: %w", err)
-		}
-		edTxExec.Events = append(edTxExec.Events, event)
-	}
-	rows, err = ed.db.Query("SELECT * FROM tx_witness_keyvalues WHERE hash = ?", hash)
-	if err != nil {
-		return edatabase.TxExec{}, fmt.Errorf("failed to get tx events: %w", err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var dummy string
-		var treeKeyValue edatabase.WitnessTreeKeyValue
-		if err := rows.Scan(&dummy, &treeKeyValue.Key, &treeKeyValue.PostValue); err != nil {
-			return edatabase.TxExec{}, fmt.Errorf("failed to scan tx tree key-value: %w", err)
-		}
-		edTxExec.WitnessTreeKeyValues = append(edTxExec.WitnessTreeKeyValues, treeKeyValue)
+	if err := gob.NewDecoder(bytes.NewReader(jsonTreeKeyValues)).Decode(&edTxExec.WitnessTreeKeyValues); err != nil {
+		panic(err)
 	}
 	return edTxExec, nil
 }
@@ -223,7 +199,8 @@ func getTxInfos(rows *sql.Rows) ([]edatabase.TxInfo, error) {
 	var txs []edatabase.TxInfo
 	for rows.Next() {
 		var edTxExec edatabase.TxInfo
-		if err := rows.Scan(&edTxExec.Hash, &edTxExec.BlockNumber, &edTxExec.From, &edTxExec.To, &edTxExec.Value, &edTxExec.TotalGas, &edTxExec.CodeChunkGas, &edTxExec.ChargedCodeChunks, &edTxExec.ExecutedInstructions, &edTxExec.ExecutedBytes); err != nil {
+		var dummy string
+		if err := rows.Scan(&edTxExec.Hash, &edTxExec.BlockNumber, &edTxExec.From, &edTxExec.To, &edTxExec.Value, &edTxExec.TotalGas, &edTxExec.CodeChunkGas, &edTxExec.ChargedCodeChunks, &edTxExec.ExecutedInstructions, &edTxExec.ExecutedBytes, &dummy, &dummy); err != nil {
 			return nil, fmt.Errorf("failed to scan tx: %w", err)
 		}
 		txs = append(txs, edTxExec)
