@@ -522,11 +522,11 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 		} else {
 			// Contract creation completed, touch the missing fields in the contract
 			if !contract.UseGas(evm.Accesses.TouchFullAccount(address.Bytes()[:], true)) {
-				err = ErrOutOfGas
+				err = ErrCodeStoreOutOfGas
 			}
 
 			if err != nil && len(ret) > 0 && !contract.UseGas(evm.Accesses.TouchCodeChunksRangeAndChargeGas(address.Bytes(), 0, uint64(len(ret)), uint64(len(ret)), true)) {
-				err = ErrOutOfGas
+				err = ErrCodeStoreOutOfGas
 			}
 		}
 
