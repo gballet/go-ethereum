@@ -102,8 +102,6 @@ func RecordExecutedInstruction(bytes uint64) {
 }
 
 func init() {
-	// Open in memory sqlitedb
-	// db, err := sql.Open("sqlite3", ":memory:")
 	db, err := sql.Open("sqlite3", "kaustinen5.db?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=10000")
 	if err != nil {
 		panic(err)
@@ -123,6 +121,12 @@ func init() {
 			jsonWitnessEvents BLOB,
 			jsonTreeKeyValues BLOB
 		) STRICT`); err != nil {
+		panic(err)
+	}
+	if _, err := db.Exec("CREATE INDEX IF NOT EXISTS tx_exec_total_gas ON tx_exec(total_gas DESC)"); err != nil {
+		panic(err)
+	}
+	if _, err := db.Exec("CREATE INDEX IF NOT EXISTS tx_exec_charged_code_chunks ON tx_exec(charged_code_chunks DESC)"); err != nil {
 		panic(err)
 	}
 	ExplDB = ExplorerDatabase{db: db}
