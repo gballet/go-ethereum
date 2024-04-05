@@ -487,7 +487,7 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 		// if Prague is active, read it from the history contract (EIP 2935).
 		if evm.chainRules.IsPrague {
 			blockHash, statelessGas := getBlockHashFromContract(num64, evm.StateDB, evm.Accesses)
-			if num64 != upper-1 && interpreter.evm.chainRules.IsEIP4762 {
+			if interpreter.evm.chainRules.IsEIP4762 {
 				if !scope.Contract.UseGas(statelessGas) {
 					return nil, ErrExecutionReverted
 				}
