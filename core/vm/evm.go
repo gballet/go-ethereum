@@ -23,6 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/witnesstracing"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
@@ -205,6 +206,7 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 				return nil, 0, ErrOutOfGas
 			}
 			gas -= wgas
+			witnesstracing.RecordWitnessCharge("CALL (address proof of absence)", wgas, addr.Bytes())
 		}
 
 		if !isPrecompile && evm.chainRules.IsEIP158 && value.Sign() == 0 {
@@ -481,9 +483,11 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	// Charge the contract creation init gas in verkle mode
 	var err error
 	if evm.chainRules.IsEIP4762 {
-		if !contract.UseGas(evm.Accesses.TouchAndChargeContractCreateInit(address.Bytes(), value.Sign() != 0)) {
+		statelessGas := evm.Accesses.TouchAndChargeContractCreateInit(address.Bytes(), value.Sign() != 0)
+		if !contract.UseGas(statelessGas) {
 			err = ErrOutOfGas
 		}
+		witnesstracing.RecordWitnessCharge("Contract creation (init)", statelessGas, address.Bytes())
 	}
 
 	if evm.Config.Tracer != nil {
@@ -521,12 +525,20 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 			}
 		} else {
 			// Contract creation completed, touch the missing fields in the contract
-			if !contract.UseGas(evm.Accesses.TouchFullAccount(address.Bytes()[:], true)) {
+			statelessGas := evm.Accesses.TouchFullAccount(address.Bytes()[:], true)
+			if !contract.UseGas(statelessGas) {
 				err = ErrCodeStoreOutOfGas
+			} else {
+				witnesstracing.RecordWitnessCharge("Contract creation (completion)", statelessGas, address.Bytes())
 			}
 
-			if err == nil && len(ret) > 0 && !contract.UseGas(evm.Accesses.TouchCodeChunksRangeAndChargeGas(address.Bytes(), 0, uint64(len(ret)), uint64(len(ret)), true)) {
-				err = ErrCodeStoreOutOfGas
+			if err == nil && len(ret) > 0 {
+				statelessGas := evm.Accesses.TouchCodeChunksRangeAndChargeGas(address.Bytes(), 0, uint64(len(ret)), uint64(len(ret)), true)
+				if !contract.UseGas(statelessGas) {
+					err = ErrCodeStoreOutOfGas
+				} else {
+					witnesstracing.RecordWitnessCharge("Contract creation (touch returned code)", statelessGas, address.Bytes(), len(ret))
+				}
 			}
 		}
 

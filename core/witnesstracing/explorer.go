@@ -28,6 +28,7 @@ var executedInstructions int
 var totalGasUsed uint64
 var witnessEvents []edatabase.WitnessEvent
 var witnessKeyValues []edatabase.WitnessTreeKeyValue
+var witnessCharges []edatabase.WitnessCharges
 
 func ResetWitnessTracer(hash string) {
 	txHash = hash
@@ -42,6 +43,7 @@ func ResetWitnessTracer(hash string) {
 	totalGasUsed = 0
 	witnessEvents = nil
 	witnessKeyValues = nil
+	witnessCharges = nil
 }
 
 func SetGeneralInfo(blockNumber uint64, from string, to string, value *big.Int, gas uint64) {
@@ -76,6 +78,31 @@ func RecordWitnessEvent(gas uint64, eventName string, params ...interface{}) {
 		Gas:    gas,
 		Params: strParams.String(),
 	})
+}
+
+func RecordWitnessCharge(reason string, gas uint64, params ...interface{}) {
+	if gas == 0 {
+		return
+	}
+	var strParams strings.Builder
+	strParams.WriteString("[")
+	for i, p := range params {
+		switch v := p.(type) {
+		case []byte:
+			strParams.WriteString("0x")
+			strParams.WriteString(hex.EncodeToString(v))
+		case common.Hash:
+			strParams.WriteString(v.Hex())
+		default:
+			strParams.WriteString(fmt.Sprintf("%v", v))
+		}
+		if i < len(params)-1 {
+			strParams.WriteString(", ")
+		}
+	}
+	strParams.WriteString("]")
+
+	witnessCharges = append(witnessCharges, edatabase.WitnessCharges{Reason: reason, Gas: gas, Params: strParams.String()})
 }
 
 func RecordWitnessTreeKeyValue(key []byte, current []byte, newValue []byte) {
@@ -119,7 +146,8 @@ func init() {
 			executed_instructions INTEGER, 
 			executed_bytes INTEGER,
 			jsonWitnessEvents BLOB,
-			jsonTreeKeyValues BLOB
+			jsonTreeKeyValues BLOB,
+			jsonWitnessCharges BLOB
 		) STRICT`); err != nil {
 		panic(err)
 	}
@@ -155,8 +183,14 @@ func (ed *ExplorerDatabase) SaveRecord() {
 	}
 	jsonWitnessEvents := buf.Bytes()
 
-	if _, err := ed.db.Exec("INSERT OR IGNORE INTO tx_exec (hash, block_number, addr_from, addr_to, value, total_gas, code_chunk_gas, charged_code_chunks, executed_instructions, executed_bytes, jsonWitnessEvents, jsonTreeKeyValues) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		txHash, txBlockNumber, txFrom, txTo, txValue.String(), totalGasUsed, codeChunkGas, chargedCodeChunks, executedInstructions, executedBytes, jsonWitnessEvents, jsonWitnessKeyValues); err != nil {
+	buf = bytes.NewBuffer(nil)
+	if err := gob.NewEncoder(buf).Encode(witnessCharges); err != nil {
+		panic(err)
+	}
+	jsonWitnessCharges := buf.Bytes()
+
+	if _, err := ed.db.Exec("INSERT OR IGNORE INTO tx_exec (hash, block_number, addr_from, addr_to, value, total_gas, code_chunk_gas, charged_code_chunks, executed_instructions, executed_bytes, jsonWitnessEvents, jsonTreeKeyValues, jsonWitnessCharges) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		txHash, txBlockNumber, txFrom, txTo, txValue.String(), totalGasUsed, codeChunkGas, chargedCodeChunks, executedInstructions, executedBytes, jsonWitnessEvents, jsonWitnessKeyValues, jsonWitnessCharges); err != nil {
 		panic(err)
 	}
 }
@@ -166,7 +200,8 @@ func (ed *ExplorerDatabase) GetTxExec(hash string) (edatabase.TxExec, error) {
 	var edTxExec edatabase.TxExec
 	var jsonTreeKeyValues []byte
 	var jsonWitnessEvents []byte
-	err := row.Scan(&edTxExec.Hash, &edTxExec.BlockNumber, &edTxExec.From, &edTxExec.To, &edTxExec.Value, &edTxExec.TotalGas, &edTxExec.CodeChunkGas, &edTxExec.ChargedCodeChunks, &edTxExec.ExecutedInstructions, &edTxExec.ExecutedBytes, &jsonWitnessEvents, &jsonTreeKeyValues)
+	var jsonWitnessCharges []byte
+	err := row.Scan(&edTxExec.Hash, &edTxExec.BlockNumber, &edTxExec.From, &edTxExec.To, &edTxExec.Value, &edTxExec.TotalGas, &edTxExec.CodeChunkGas, &edTxExec.ChargedCodeChunks, &edTxExec.ExecutedInstructions, &edTxExec.ExecutedBytes, &jsonWitnessEvents, &jsonTreeKeyValues, &jsonWitnessCharges)
 	if err == sql.ErrNoRows {
 		return edatabase.TxExec{}, edatabase.ErrTxNotFound
 	}
@@ -174,6 +209,9 @@ func (ed *ExplorerDatabase) GetTxExec(hash string) (edatabase.TxExec, error) {
 		panic(err)
 	}
 	if err := gob.NewDecoder(bytes.NewReader(jsonTreeKeyValues)).Decode(&edTxExec.WitnessTreeKeyValues); err != nil {
+		panic(err)
+	}
+	if err := gob.NewDecoder(bytes.NewReader(jsonWitnessCharges)).Decode(&edTxExec.WitnessCharges); err != nil {
 		panic(err)
 	}
 	return edTxExec, nil
@@ -204,7 +242,7 @@ func getTxInfos(rows *sql.Rows) ([]edatabase.TxInfo, error) {
 	for rows.Next() {
 		var edTxExec edatabase.TxInfo
 		var dummy string
-		if err := rows.Scan(&edTxExec.Hash, &edTxExec.BlockNumber, &edTxExec.From, &edTxExec.To, &edTxExec.Value, &edTxExec.TotalGas, &edTxExec.CodeChunkGas, &edTxExec.ChargedCodeChunks, &edTxExec.ExecutedInstructions, &edTxExec.ExecutedBytes, &dummy, &dummy); err != nil {
+		if err := rows.Scan(&edTxExec.Hash, &edTxExec.BlockNumber, &edTxExec.From, &edTxExec.To, &edTxExec.Value, &edTxExec.TotalGas, &edTxExec.CodeChunkGas, &edTxExec.ChargedCodeChunks, &edTxExec.ExecutedInstructions, &edTxExec.ExecutedBytes, &dummy, &dummy, &dummy); err != nil {
 			return nil, fmt.Errorf("failed to scan tx: %w", err)
 		}
 		txs = append(txs, edTxExec)
