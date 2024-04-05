@@ -458,12 +458,12 @@ func opGasprice(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	return nil, nil
 }
 
-func getBlockHashFromContract(number uint64, statedb StateDB, witness *state.AccessWitness) common.Hash {
+func getBlockHashFromContract(number uint64, statedb StateDB, witness *state.AccessWitness) (common.Hash, uint64) {
 	ringIndex := number % 256
 	var pnum common.Hash
 	binary.BigEndian.PutUint64(pnum[24:], ringIndex)
-	witness.TouchSlotAndChargeGas(params.HistoryStorageAddress[:], pnum, false)
-	return statedb.GetState(params.HistoryStorageAddress, pnum)
+	statelessGas := witness.TouchSlotAndChargeGas(params.HistoryStorageAddress[:], pnum, false)
+	return statedb.GetState(params.HistoryStorageAddress, pnum), statelessGas
 }
 
 func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
@@ -486,7 +486,13 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 	if num64 >= lower && num64 < upper {
 		// if Prague is active, read it from the history contract (EIP 2935).
 		if evm.chainRules.IsPrague {
-			num.SetBytes(getBlockHashFromContract(num64, evm.StateDB, evm.Accesses).Bytes())
+			blockHash, statelessGas := getBlockHashFromContract(num64, evm.StateDB, evm.Accesses)
+			if interpreter.evm.chainRules.IsEIP4762 {
+				if !scope.Contract.UseGas(statelessGas) {
+					return nil, ErrExecutionReverted
+				}
+			}
+			num.SetBytes(blockHash.Bytes())
 		} else {
 			num.SetBytes(interpreter.evm.Context.GetHash(num64).Bytes())
 		}
