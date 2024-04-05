@@ -769,7 +769,7 @@ func TestProcessVerkleContractWithEmptyCode(t *testing.T) {
 	})
 
 	for _, stemStateDiff := range statediff[0] {
-		if bytes.Equal(stemStateDiff.Stem[:], common.Hex2Bytes("97f2911f5efe08b74c28727d004e36d260225e73525fe2a300c8f58c7ffd76")) {
+		if bytes.Equal(stemStateDiff.Stem[:], common.Hex2Bytes("5b5fdfedd6a0e932da408ac7d772a36513d1eee9b9926e52620c43a433aad7")) {
 			// BLOCKHASH contract stem
 			if len(stemStateDiff.SuffixDiffs) > 1 {
 				t.Fatalf("invalid suffix diff count found for BLOCKHASH contract: %d != 1", len(stemStateDiff.SuffixDiffs))
