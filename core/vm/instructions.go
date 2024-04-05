@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/witnesstracing"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
@@ -376,6 +377,7 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 			scope.Contract.Gas = 0
 			return nil, ErrOutOfGas
 		}
+		witnesstracing.RecordWitnessCharge("CODECOPY", statelessGas, contractAddr)
 	}
 	scope.Memory.Set(memOffset.Uint64(), uint64(len(paddedCodeCopy)), paddedCodeCopy)
 	return nil, nil
@@ -406,6 +408,7 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 			scope.Contract.Gas = 0
 			return nil, ErrOutOfGas
 		}
+		witnesstracing.RecordWitnessCharge("EXTCODECOPY", statelessGas, addr)
 		scope.Memory.Set(memOffset.Uint64(), length.Uint64(), paddedCodeCopy)
 	} else {
 		codeCopy := getData(interpreter.evm.StateDB.GetCode(addr), uint64CodeOffset, length.Uint64())
@@ -636,6 +639,7 @@ func opCreate(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 		if !scope.Contract.UseGas(statelessGas) {
 			return nil, ErrExecutionReverted
 		}
+		witnesstracing.RecordWitnessCharge("CREATE", statelessGas, contractAddress.Bytes())
 	}
 
 	var (
@@ -697,6 +701,7 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 		if !scope.Contract.UseGas(statelessGas) {
 			return nil, ErrExecutionReverted
 		}
+		witnesstracing.RecordWitnessCharge("CREATE2", statelessGas, contractAddress.Bytes())
 	}
 
 	var gas = scope.Contract.Gas
@@ -964,6 +969,7 @@ func opPush1(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 				scope.Contract.Gas = 0
 				return nil, ErrOutOfGas
 			}
+			witnesstracing.RecordCodeChunkCost(statelessGas)
 		}
 	} else {
 		scope.Stack.push(integer.Clear())
@@ -993,6 +999,7 @@ func makePush(size uint64, pushByteSize int) executionFunc {
 				scope.Contract.Gas = 0
 				return nil, ErrOutOfGas
 			}
+			witnesstracing.RecordCodeChunkCost(statelessGas)
 		}
 
 		integer := new(uint256.Int)

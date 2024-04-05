@@ -19,6 +19,7 @@ package vm
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core/witnesstracing"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -26,6 +27,8 @@ func gasSStore4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memo
 	gas := evm.Accesses.TouchSlotAndChargeGas(contract.Address().Bytes(), common.Hash(stack.peek().Bytes32()), true)
 	if gas == 0 {
 		gas = params.WarmStorageReadCostEIP2929
+	} else {
+		witnesstracing.RecordWitnessCharge("SSTORE", gas, contract.Address().Bytes(), common.Hash(stack.peek().Bytes32()))
 	}
 	return gas, nil
 }
@@ -34,6 +37,8 @@ func gasSLoad4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memor
 	gas := evm.Accesses.TouchSlotAndChargeGas(contract.Address().Bytes(), common.Hash(stack.peek().Bytes32()), false)
 	if gas == 0 {
 		gas = params.WarmStorageReadCostEIP2929
+	} else {
+		witnesstracing.RecordWitnessCharge("SLOAD", gas, contract.Address().Bytes(), common.Hash(stack.peek().Bytes32()))
 	}
 	return gas, nil
 }
@@ -43,6 +48,8 @@ func gasBalance4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, mem
 	gas := evm.Accesses.TouchBasicData(address[:], false)
 	if gas == 0 {
 		gas = params.WarmStorageReadCostEIP2929
+	} else {
+		witnesstracing.RecordWitnessCharge("BALANCE", gas, address)
 	}
 	return gas, nil
 }
@@ -55,6 +62,8 @@ func gasExtCodeSize4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory,
 	wgas := evm.Accesses.TouchBasicData(address[:], false)
 	if wgas == 0 {
 		wgas = params.WarmStorageReadCostEIP2929
+	} else {
+		witnesstracing.RecordWitnessCharge("EXTCODESIZE", wgas, address)
 	}
 	return wgas, nil
 }
@@ -67,6 +76,8 @@ func gasExtCodeHash4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory,
 	codehashgas := evm.Accesses.TouchCodeHash(address[:], false)
 	if codehashgas == 0 {
 		codehashgas = params.WarmStorageReadCostEIP2929
+	} else {
+		witnesstracing.RecordWitnessCharge("EXTCODEHASH", codehashgas, address)
 	}
 	return codehashgas, nil
 }
@@ -83,6 +94,8 @@ func makeCallVariantGasEIP4762(oldCalculator gasFunc) gasFunc {
 		wgas := evm.Accesses.TouchAndChargeMessageCall(contract.Address().Bytes())
 		if wgas == 0 {
 			wgas = params.WarmStorageReadCostEIP2929
+		} else {
+			witnesstracing.RecordWitnessCharge("CALL*", wgas, contract.Address().Bytes())
 		}
 		return wgas + gas, nil
 	}
@@ -113,6 +126,9 @@ func gasSelfdestructEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Mem
 			statelessGas += evm.Accesses.TouchBasicData(beneficiaryAddr[:], true)
 		}
 	}
+	if statelessGas != 0 {
+		witnesstracing.RecordWitnessCharge("SELFDESTRUCT", statelessGas, contractAddr, beneficiaryAddr)
+	}
 	return statelessGas, nil
 }
 
@@ -126,6 +142,8 @@ func gasExtCodeCopyEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Memo
 	wgas := evm.Accesses.TouchBasicData(addr[:], false)
 	if wgas == 0 {
 		wgas = params.WarmStorageReadCostEIP2929
+	} else {
+		witnesstracing.RecordWitnessCharge("EXTCODECOPY", wgas, addr)
 	}
 	var overflow bool
 	// We charge (cold-warm), since 'warm' is already charged as constantGas

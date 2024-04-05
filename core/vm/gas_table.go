@@ -21,6 +21,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core/witnesstracing"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 )
@@ -416,6 +417,7 @@ func gasCall(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize
 			if overflow {
 				return 0, ErrGasUintOverflow
 			}
+			witnesstracing.RecordWitnessCharge("CALL (value transfer)", gas, address.Bytes())
 		}
 	}
 
@@ -452,6 +454,7 @@ func gasCallCode(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memory
 			if overflow {
 				return 0, ErrGasUintOverflow
 			}
+			witnesstracing.RecordWitnessCharge("CALLCODE", gas, address)
 		}
 	}
 	return gas, nil
