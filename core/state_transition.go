@@ -27,7 +27,6 @@ import (
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -411,7 +410,6 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		if !tryConsumeGas(&st.gasRemaining, statelessGasOrigin) {
 			return nil, fmt.Errorf("%w: Insufficient funds to cover witness access costs for transaction: have %d, want %d", ErrInsufficientBalanceWitness, st.gasRemaining, gas)
 		}
-		originNonce := st.evm.StateDB.GetNonce(originAddr)
 
 		if msg.To != nil {
 			statelessGasDest := st.evm.Accesses.TouchTxExistingAndComputeGas(targetAddr.Bytes(), msg.Value.Sign() != 0)
@@ -421,11 +419,6 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 
 			// ensure the code size ends up in the access witness
 			st.evm.StateDB.GetCodeSize(*targetAddr)
-		} else {
-			contractAddr := crypto.CreateAddress(originAddr, originNonce)
-			if !tryConsumeGas(&st.gasRemaining, st.evm.Accesses.TouchAndChargeContractCreateInit(contractAddr.Bytes(), msg.Value.Sign() != 0)) {
-				return nil, fmt.Errorf("%w: Insufficient funds to cover witness access costs for transaction: have %d, want %d", ErrInsufficientBalanceWitness, st.gasRemaining, gas)
-			}
 		}
 	}
 
