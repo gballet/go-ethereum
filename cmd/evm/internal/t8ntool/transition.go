@@ -321,7 +321,7 @@ func Transition(ctx *cli.Context) error {
 		vktleaves = make(map[common.Hash]hexutil.Bytes)
 		s.DumpVKTLeaves(vktleaves)
 	}
-	return dispatchOutput(ctx, baseDir, result, collector, vktleaves, body)
+	return dispatchOutput(ctx, baseDir, result, collector, vktleaves, body, result.VerkleProof, result.StateDiff)
 }
 
 // txWithKey is a helper-struct, to allow us to use the types.Transaction along with
@@ -446,7 +446,7 @@ func saveFile(baseDir, filename string, data interface{}) error {
 
 // dispatchOutput writes the output data to either stderr or stdout, or to the specified
 // files
-func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, alloc Alloc, vkt map[common.Hash]hexutil.Bytes, body hexutil.Bytes) error {
+func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, alloc Alloc, vkt map[common.Hash]hexutil.Bytes, body hexutil.Bytes, p *verkle.VerkleProof, k verkle.StateDiff) error {
 	stdOutObject := make(map[string]interface{})
 	stdErrObject := make(map[string]interface{})
 	dispatch := func(baseDir, fName, name string, obj interface{}) error {
@@ -475,6 +475,14 @@ func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, a
 	}
 	if vkt != nil {
 		if err := dispatch(baseDir, ctx.String(OutputVKTFlag.Name), "vkt", vkt); err != nil {
+			return err
+		}
+	}
+	if p != nil {
+		if err := dispatch(baseDir, ctx.String(OutputWitnessFlag.Name), "witness", struct {
+			Proof *verkle.VerkleProof
+			Diff  verkle.StateDiff
+		}{p, k}); err != nil {
 			return err
 		}
 	}

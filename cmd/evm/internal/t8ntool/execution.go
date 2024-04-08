@@ -39,6 +39,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-verkle"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -64,6 +65,10 @@ type ExecutionResult struct {
 	WithdrawalsRoot      *common.Hash          `json:"withdrawalsRoot,omitempty"`
 	CurrentExcessBlobGas *math.HexOrDecimal64  `json:"currentExcessBlobGas,omitempty"`
 	CurrentBlobGasUsed   *math.HexOrDecimal64  `json:"currentBlobGasUsed,omitempty"`
+
+	// Verkle witness
+	VerkleProof *verkle.VerkleProof `json:"verkleProof,omitempty"`
+	StateDiff   verkle.StateDiff    `json:"stateDiff,omitempty"`
 
 	// Values to test the verkle conversion
 	CurrentAccountAddress *common.Address `json:"currentConversionAddress,omitempty" gencodec:"optional"`
@@ -159,6 +164,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	}
 	var (
 		statedb     = MakePreState(rawdb.NewMemoryDatabase(), chainConfig, pre, chainConfig.IsPrague(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp))
+		vtrpre      *trie.VerkleTrie
 		signer      = types.MakeSigner(chainConfig, new(big.Int).SetUint64(pre.Env.Number), pre.Env.Timestamp)
 		gaspool     = new(core.GasPool)
 		blockHash   = common.Hash{0x13, 0x37}
@@ -178,6 +184,10 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		Difficulty:  pre.Env.Difficulty,
 		GasLimit:    pre.Env.GasLimit,
 		GetHash:     getHash,
+	}
+	// Save pre verkle tree to build the proof at the end
+	if len(pre.VKT) > 0 {
+		vtrpre = statedb.GetTrie().(*trie.VerkleTrie).Copy()
 	}
 	// If currentBaseFee is defined, add it to the vmContext.
 	if pre.Env.BaseFee != nil {
@@ -338,6 +348,21 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	if err != nil {
 		return nil, nil, NewError(ErrorEVM, fmt.Errorf("could not commit state: %v", err))
 	}
+
+	// Add the witness to the execution result
+	var p *verkle.VerkleProof
+	var k verkle.StateDiff
+	if chainConfig.IsPrague(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) {
+		keys := statedb.Witness().Keys()
+
+		if len(keys) > 0 {
+			p, k, err = trie.ProveAndSerialize(vtrpre, statedb.GetTrie().(*trie.VerkleTrie), keys, vtrpre.FlatdbNodeResolver)
+			if err != nil {
+				return nil, nil, fmt.Errorf("error generating verkle proof for block %d: %w", pre.Env.Number, err)
+			}
+		}
+	}
+
 	sdb := statedb.Database()
 	execRs := &ExecutionResult{
 		StateRoot:   root,
@@ -350,6 +375,8 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		Difficulty:  (*math.HexOrDecimal256)(vmContext.Difficulty),
 		GasUsed:     (math.HexOrDecimal64)(gasUsed),
 		BaseFee:     (*math.HexOrDecimal256)(vmContext.BaseFee),
+		VerkleProof: p,
+		StateDiff:   k,
 	}
 	if pre.Env.Withdrawals != nil {
 		h := types.DeriveSha(types.Withdrawals(pre.Env.Withdrawals), trie.NewStackTrie(nil))
