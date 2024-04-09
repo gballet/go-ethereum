@@ -499,6 +499,31 @@ func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, a
 
 // VerkleKeys computes the tree key given an address and an optional
 // slot number.
+func VerkleKey(ctx *cli.Context) error {
+	if ctx.Args().Len() == 0 || ctx.Args().Len() > 2 {
+		return errors.New("invalid number of arguments: expecting an address and an optional slot number")
+	}
+
+	addr, err := hexutil.Decode(ctx.Args().Get(0))
+	if err != nil {
+		return fmt.Errorf("error decoding address: %w", err)
+	}
+
+	ap := utils.EvaluateAddressPoint(addr)
+	if ctx.Args().Len() == 2 {
+		slot, err := hexutil.Decode(ctx.Args().Get(1))
+		if err != nil {
+			return fmt.Errorf("error decoding slot: %w", err)
+		}
+		fmt.Printf("%#x\n", utils.GetTreeKeyStorageSlotWithEvaluatedAddress(ap, slot))
+	} else {
+		fmt.Printf("%#x\n", utils.GetTreeKeyVersionWithEvaluatedAddress(ap))
+	}
+	return nil
+}
+
+// VerkleKeys computes a set of tree keys given a set of addresses
+// and their optional slot numbers.
 func VerkleKeys(ctx *cli.Context) error {
 	var allocStr = ctx.String(InputAllocFlag.Name)
 	var alloc core.GenesisAlloc
