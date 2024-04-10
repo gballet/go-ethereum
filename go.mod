@@ -47,7 +47,6 @@ require (
 	github.com/influxdata/influxdb1-client v0.0.0-20220302092344-a9ab5670611c
 	github.com/jackpal/go-nat-pmp v1.0.2
 	github.com/jedisct1/go-minisign v0.0.0-20190909160543-45766022959e
-	github.com/jsign/verkle-explorer v0.0.1
 	github.com/julienschmidt/httprouter v1.3.0
 	github.com/karalabe/usb v0.0.3-0.20230711191512-61db3e06439c
 	github.com/kylelemons/godebug v1.1.0
@@ -78,7 +77,10 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require github.com/mattn/go-sqlite3 v1.14.22
+require (
+	github.com/jsign/verkle-explorer v0.1.0
+	github.com/mattn/go-sqlite3 v1.14.22
+)
 
 require github.com/shopspring/decimal v1.3.1 // indirect
 
@@ -140,4 +142,4 @@ require (
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
 
-replace github.com/jsign/verkle-explorer => /home/ignacio/code/verkle-explorer
+// replace github.com/jsign/verkle-explorer => /home/ignacio/code/verkle-explorer
