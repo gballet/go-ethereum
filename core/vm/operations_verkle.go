@@ -115,6 +115,13 @@ func gasSelfdestructEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Mem
 		if contractAddr != beneficiaryAddr {
 			statelessGas += evm.Accesses.TouchBalance(beneficiaryAddr[:], true)
 		}
+
+		// Case when the beneficiary does not exist: touch the account
+		// but leave code hash and size alone.
+		if evm.StateDB.Empty(beneficiaryAddr) {
+			statelessGas += evm.Accesses.TouchVersion(beneficiaryAddr[:], true)
+			statelessGas += evm.Accesses.TouchNonce(beneficiaryAddr[:], true)
+		}
 	}
 	return statelessGas, nil
 }
