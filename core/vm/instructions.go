@@ -494,6 +494,7 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 				if !scope.Contract.UseGas(statelessGas) {
 					return nil, ErrExecutionReverted
 				}
+				witnesstracing.RecordWitnessCharge("BLOCKHASH", statelessGas, num64)
 			}
 			num.SetBytes(blockHash.Bytes())
 		} else {

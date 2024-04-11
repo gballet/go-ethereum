@@ -486,8 +486,9 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 		statelessGas := evm.Accesses.TouchAndChargeContractCreateInit(address.Bytes(), value.Sign() != 0)
 		if !contract.UseGas(statelessGas) {
 			err = ErrOutOfGas
+		} else {
+			witnesstracing.RecordWitnessCharge("Contract creation (init)", statelessGas, address.Bytes())
 		}
-		witnesstracing.RecordWitnessCharge("Contract creation (init)", statelessGas, address.Bytes())
 	}
 
 	if evm.Config.Tracer != nil {
