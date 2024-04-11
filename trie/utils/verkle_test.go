@@ -109,7 +109,7 @@ func TestCompareGetTreeKeyWithEvaluated(t *testing.T) {
 		tk2 := GetTreeKeyWithEvaluatedAddess(addrpoint, n, subindex)
 
 		if !bytes.Equal(tk1, tk2) {
-			t.Fatalf("error at iteration=%d, slot=%x, addr=%x", i, val, addr)
+			t.Fatalf("differing key: slot=%x, addr=%x", val, addr)
 		}
 	}
 }
