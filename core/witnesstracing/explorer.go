@@ -26,7 +26,6 @@ var chargedCodeChunks int
 var executedBytes uint64
 var executedInstructions int
 var totalGasUsed uint64
-var witnessEvents []edatabase.WitnessEvent
 var witnessKeyValues []edatabase.WitnessTreeKeyValue
 var witnessCharges []edatabase.WitnessCharges
 
@@ -41,7 +40,6 @@ func ResetWitnessTracer(hash string) {
 	executedBytes = 0
 	executedInstructions = 0
 	totalGasUsed = 0
-	witnessEvents = nil
 	witnessKeyValues = nil
 	witnessCharges = nil
 }
@@ -52,32 +50,6 @@ func SetGeneralInfo(blockNumber uint64, from string, to string, value *big.Int, 
 	txTo = to
 	txValue = value
 	totalGasUsed = gas
-}
-
-func RecordWitnessEvent(gas uint64, eventName string, params ...interface{}) {
-	var strParams strings.Builder
-	strParams.WriteString("[")
-	for i, p := range params {
-		switch v := p.(type) {
-		case []byte:
-			strParams.WriteString("0x")
-			strParams.WriteString(hex.EncodeToString(v))
-		case common.Hash:
-			strParams.WriteString(v.Hex())
-		default:
-			strParams.WriteString(fmt.Sprintf("%v", v))
-		}
-		if i < len(params)-1 {
-			strParams.WriteString(", ")
-		}
-	}
-	strParams.WriteString("]")
-
-	witnessEvents = append(witnessEvents, edatabase.WitnessEvent{
-		Name:   eventName,
-		Gas:    gas,
-		Params: strParams.String(),
-	})
 }
 
 func RecordWitnessCharge(reason string, gas uint64, params ...interface{}) {
@@ -145,7 +117,6 @@ func init() {
 			charged_code_chunks INTEGER,
 			executed_instructions INTEGER, 
 			executed_bytes INTEGER,
-			jsonWitnessEvents BLOB,
 			jsonTreeKeyValues BLOB,
 			jsonWitnessCharges BLOB
 		) STRICT`); err != nil {
@@ -178,19 +149,13 @@ func (ed *ExplorerDatabase) SaveRecord() {
 	jsonWitnessKeyValues := buf.Bytes()
 
 	buf = bytes.NewBuffer(nil)
-	if err := gob.NewEncoder(buf).Encode(witnessEvents); err != nil {
-		panic(err)
-	}
-	jsonWitnessEvents := buf.Bytes()
-
-	buf = bytes.NewBuffer(nil)
 	if err := gob.NewEncoder(buf).Encode(witnessCharges); err != nil {
 		panic(err)
 	}
 	jsonWitnessCharges := buf.Bytes()
 
-	if _, err := ed.db.Exec("INSERT OR IGNORE INTO tx_exec (hash, block_number, addr_from, addr_to, value, total_gas, code_chunk_gas, charged_code_chunks, executed_instructions, executed_bytes, jsonWitnessEvents, jsonTreeKeyValues, jsonWitnessCharges) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-		txHash, txBlockNumber, txFrom, txTo, txValue.String(), totalGasUsed, codeChunkGas, chargedCodeChunks, executedInstructions, executedBytes, jsonWitnessEvents, jsonWitnessKeyValues, jsonWitnessCharges); err != nil {
+	if _, err := ed.db.Exec("INSERT OR IGNORE INTO tx_exec (hash, block_number, addr_from, addr_to, value, total_gas, code_chunk_gas, charged_code_chunks, executed_instructions, executed_bytes, jsonWitnessEvents, jsonTreeKeyValues, jsonWitnessCharges) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+		txHash, txBlockNumber, txFrom, txTo, txValue.String(), totalGasUsed, codeChunkGas, chargedCodeChunks, executedInstructions, executedBytes, jsonWitnessKeyValues, jsonWitnessCharges); err != nil {
 		panic(err)
 	}
 }
