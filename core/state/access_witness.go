@@ -19,7 +19,6 @@ package state
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
-	"github.com/ethereum/go-ethereum/core/witnesstracing"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/holiman/uint256"
@@ -95,7 +94,6 @@ func (aw *AccessWitness) TouchFullAccount(addr []byte, isWrite bool) uint64 {
 	for i := utils.BasicDataLeafKey; i <= utils.CodeHashLeafKey; i++ {
 		gas += aw.touchAddressAndChargeGas(addr, zeroTreeIndex, byte(i), isWrite)
 	}
-	witnesstracing.RecordWitnessEvent(gas, "TouchFullAccount", addr, isWrite)
 	return gas
 }
 
@@ -127,7 +125,6 @@ func (aw *AccessWitness) TouchTxOriginAndComputeGas(originAddr []byte) uint64 {
 	for i := utils.BasicDataLeafKey; i <= utils.CodeHashLeafKey; i++ {
 		aw.touchAddressAndChargeGas(originAddr, zeroTreeIndex, byte(i), i == utils.BasicDataLeafKey)
 	}
-	witnesstracing.RecordWitnessEvent(0, "TouchTxOriginAndComputeGas", originAddr)
 	// Kaustinen note: we're currently experimenting with stop chargin gas for the origin address
 	// so simple transfer still take 21000 gas. This is to potentially avoid breaking existing tooling.
 	// This is the reason why we return 0 instead of `gas`.
@@ -149,7 +146,6 @@ func (aw *AccessWitness) TouchTxExistingAndComputeGas(targetAddr []byte, sendsVa
 func (aw *AccessWitness) TouchSlotAndChargeGas(addr []byte, slot common.Hash, isWrite bool) uint64 {
 	treeIndex, subIndex := utils.GetTreeKeyStorageSlotTreeIndexes(slot.Bytes())
 	gas := aw.touchAddressAndChargeGas(addr, *treeIndex, subIndex, isWrite)
-	witnesstracing.RecordWitnessEvent(gas, "TouchSlotAndChargeGas", addr, slot, isWrite)
 	return gas
 }
 
@@ -268,7 +264,6 @@ func (aw *AccessWitness) TouchCodeChunksRangeAndChargeGas(contractAddr []byte, s
 		}
 	}
 
-	witnesstracing.RecordWitnessEvent(statelessGasCharged, "TouchCodeChunksRangeAndChargeGas", contractAddr, startPC, size, codeLen, isWrite)
 	return statelessGasCharged
 }
 
@@ -280,6 +275,5 @@ func (aw *AccessWitness) TouchBasicData(addr []byte, isWrite bool) uint64 {
 
 func (aw *AccessWitness) TouchCodeHash(addr []byte, isWrite bool) uint64 {
 	gas := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeHashLeafKey, isWrite)
-	witnesstracing.RecordWitnessEvent(gas, "TouchCodeHash", addr, isWrite)
 	return gas
 }
