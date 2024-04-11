@@ -454,7 +454,7 @@ func gasCallCode(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memory
 			if overflow {
 				return 0, ErrGasUintOverflow
 			}
-			witnesstracing.RecordWitnessCharge("CALLCODE", gas, address)
+			witnesstracing.RecordWitnessCharge("CALLCODE (value transfer)", gas, address)
 		}
 	}
 	return gas, nil
