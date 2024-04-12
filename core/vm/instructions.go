@@ -628,22 +628,23 @@ func opCreate(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 	if interpreter.readOnly {
 		return nil, ErrWriteProtection
 	}
-	var (
-		value        = scope.Stack.pop()
-		offset, size = scope.Stack.pop(), scope.Stack.pop()
-		input        = scope.Memory.GetCopy(int64(offset.Uint64()), int64(size.Uint64()))
-		gas          = scope.Contract.Gas
-	)
-	if interpreter.evm.chainRules.IsEIP150 {
-		gas -= gas / 64
-	}
 
+	value := scope.Stack.pop()
 	if interpreter.evm.chainRules.IsEIP4762 {
 		contractAddress := crypto.CreateAddress(scope.Contract.Address(), interpreter.evm.StateDB.GetNonce(scope.Contract.Address()))
 		statelessGas := interpreter.evm.Accesses.TouchAndChargeContractCreateInit(contractAddress.Bytes()[:], value.Sign() != 0)
 		if !scope.Contract.UseGas(statelessGas) {
 			return nil, ErrExecutionReverted
 		}
+	}
+
+	var (
+		offset, size = scope.Stack.pop(), scope.Stack.pop()
+		input        = scope.Memory.GetCopy(int64(offset.Uint64()), int64(size.Uint64()))
+		gas          = scope.Contract.Gas
+	)
+	if interpreter.evm.chainRules.IsEIP150 {
+		gas -= gas / 64
 	}
 
 	// reuse size int for stackvalue
@@ -688,7 +689,6 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 		offset, size = scope.Stack.pop(), scope.Stack.pop()
 		salt         = scope.Stack.pop()
 		input        = scope.Memory.GetCopy(int64(offset.Uint64()), int64(size.Uint64()))
-		gas          = scope.Contract.Gas
 	)
 	if interpreter.evm.chainRules.IsEIP4762 {
 		codeAndHash := &codeAndHash{code: input}
@@ -699,6 +699,7 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 		}
 	}
 
+	var gas = scope.Contract.Gas
 	// Apply EIP150
 	gas -= gas / 64
 	scope.Contract.UseGas(gas)
