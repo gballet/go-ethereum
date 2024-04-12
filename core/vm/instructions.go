@@ -689,7 +689,6 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 		offset, size = scope.Stack.pop(), scope.Stack.pop()
 		salt         = scope.Stack.pop()
 		input        = scope.Memory.GetCopy(int64(offset.Uint64()), int64(size.Uint64()))
-		gas          = scope.Contract.Gas
 	)
 	if interpreter.evm.chainRules.IsEIP4762 {
 		codeAndHash := &codeAndHash{code: input}
@@ -700,6 +699,7 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 		}
 	}
 
+	var gas = scope.Contract.Gas
 	// Apply EIP150
 	gas -= gas / 64
 	scope.Contract.UseGas(gas)
