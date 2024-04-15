@@ -65,7 +65,10 @@ func gasExtCodeHash4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory,
 	if _, isPrecompile := evm.precompile(address); isPrecompile {
 		return 0, nil
 	}
-	codehashgas := evm.Accesses.TouchCodeHash(address[:], false)
+	codehashgas := evm.Accesses.TouchVersion(address[:], false)
+	codehashgas += evm.Accesses.TouchBalance(address[:], false)
+	codehashgas += evm.Accesses.TouchNonce(address[:], false)
+	codehashgas += evm.Accesses.TouchCodeHash(address[:], false)
 	if codehashgas == 0 {
 		codehashgas = params.WarmStorageReadCostEIP2929
 	}
