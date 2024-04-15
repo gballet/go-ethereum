@@ -108,7 +108,7 @@ func (kvm *keyValueMigrator) addAccount(addr []byte, acc *types.StateAccount) {
 	binary.LittleEndian.PutUint64(nonce[:8], acc.Nonce)
 	leafNodeData.Values[utils.NonceLeafKey] = nonce[:]
 
-	leafNodeData.Values[utils.CodeKeccakLeafKey] = acc.CodeHash[:]
+	leafNodeData.Values[utils.CodeHashLeafKey] = acc.CodeHash[:]
 }
 
 func (kvm *keyValueMigrator) addAccountCode(addr []byte, codeSize uint64, chunks []byte) {
