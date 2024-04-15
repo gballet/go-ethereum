@@ -104,7 +104,7 @@ func TestCompareGetTreeKeyWithEvaluated(t *testing.T) {
 		rand.Read(val[:])
 		n := uint256.NewInt(0).SetBytes(val[:])
 		n.Lsh(n, 8)
-		subindex := byte(val[0])
+		subindex := val[0]
 		tk1 := GetTreeKey(addr[:], n, subindex)
 		tk2 := GetTreeKeyWithEvaluatedAddess(addrpoint, n, subindex)
 
