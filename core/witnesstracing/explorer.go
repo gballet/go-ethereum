@@ -101,7 +101,7 @@ func RecordExecutedInstruction(bytes uint64) {
 }
 
 func init() {
-	db, err := sql.Open("sqlite3", "kaustinen.db?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=10000")
+	db, err := sql.Open("sqlite3", "explorerdb/kaustinen.db?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=10000")
 	if err != nil {
 		panic(err)
 	}
