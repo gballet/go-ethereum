@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"path"
 	"sort"
 	"strings"
 
@@ -101,11 +102,12 @@ func RecordExecutedInstruction(bytes uint64) {
 	executedBytes += bytes
 }
 
-func init() {
-	if err := os.MkdirAll("explorerdb", os.ModePerm); err != nil {
+func Init(dataDir string) {
+	folderPath := path.Join(dataDir, "explorerdb")
+	if err := os.MkdirAll(folderPath, os.ModePerm); err != nil {
 		panic(err)
 	}
-	db, err := sql.Open("sqlite3", "explorerdb/kaustinen.db?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=10000")
+	db, err := sql.Open("sqlite3", folderPath+"/kaustinen.db?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=10000")
 	if err != nil {
 		panic(err)
 	}
