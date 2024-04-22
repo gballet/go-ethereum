@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"os"
 	"sort"
 	"strings"
 
@@ -101,6 +102,9 @@ func RecordExecutedInstruction(bytes uint64) {
 }
 
 func init() {
+	if err := os.MkdirAll("explorerdb", os.ModePerm); err != nil {
+		panic(err)
+	}
 	db, err := sql.Open("sqlite3", "explorerdb/kaustinen.db?_foreign_keys=on&_journal_mode=WAL&_busy_timeout=10000")
 	if err != nil {
 		panic(err)
