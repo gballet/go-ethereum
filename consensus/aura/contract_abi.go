@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
-func callBlockRewardAbi(contractAddr common.Address, syscall Syscall, beneficiaries []common.Address, rewardKind []consensus.RewardKind) ([]common.Address, []*big.Int) {
+func callBlockRewardAbi(contractAddr common.Address, syscall Syscall, beneficiaries []common.Address, rewardKind []consensus.RewardKind) ([]common.Address, []*uint256.Int) {
 	castedKind := make([]uint16, len(rewardKind))
 	for i := range rewardKind {
 		castedKind[i] = uint16(rewardKind[i])
@@ -34,7 +34,7 @@ func callBlockRewardAbi(contractAddr common.Address, syscall Syscall, beneficiar
 		panic(err)
 	}
 	beneficiariesRes := res[0].([]common.Address)
-	rewardsBig := res[1].([]*big.Int)
+	rewardsBig := res[1].([]*uint256.Int)
 	// rewardsU256 := make([]*big.Int, len(rewardsBig))
 	// for i := 0; i < len(rewardsBig); i++ {
 	// 	var overflow bool

@@ -19,11 +19,11 @@ package aura
 
 import (
 	"errors"
-	"math/big"
 	"sort"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/holiman/uint256"
 )
 
 func newValidatorSetFromJson(j *params.ValidatorSetJson, posdaoTransition *uint64) ValidatorSet {
@@ -69,7 +69,7 @@ func (r BlockRewardContractList) Swap(i, j int)      { r[i], r[j] = r[j], r[i] }
 
 type BlockReward struct {
 	blockNum uint64
-	amount   *big.Int
+	amount   *uint256.Int
 }
 
 type BlockRewardList []BlockReward
@@ -176,10 +176,10 @@ func FromJson(jsonParams *params.AuRaConfig) (AuthorityRoundParams, error) {
 	}
 
 	if jsonParams.BlockReward == nil {
-		params.BlockReward = append(params.BlockReward, BlockReward{blockNum: 0, amount: big.NewInt(0)})
+		params.BlockReward = append(params.BlockReward, BlockReward{blockNum: 0, amount: uint256.NewInt(0)})
 	} else {
 		if jsonParams.BlockReward != nil {
-			params.BlockReward = append(params.BlockReward, BlockReward{blockNum: 0, amount: big.NewInt(int64(*jsonParams.BlockReward))})
+			params.BlockReward = append(params.BlockReward, BlockReward{blockNum: 0, amount: uint256.NewInt(*jsonParams.BlockReward)})
 		}
 	}
 	sort.Sort(params.BlockReward)

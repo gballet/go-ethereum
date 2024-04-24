@@ -25,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/holiman/uint256"
 )
 
 // ChainHeaderReader defines a small collection of methods needed to access the local
@@ -147,5 +148,5 @@ const (
 type Reward struct {
 	Beneficiary common.Address
 	Kind        RewardKind
-	Amount      big.Int
+	Amount      uint256.Int
 }

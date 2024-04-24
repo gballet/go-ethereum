@@ -1062,7 +1062,7 @@ func (c *AuRa) CalculateRewards(_ *params.ChainConfig, header *types.Header, _ [
 	if foundContract {
 		beneficiaries := []common.Address{header.Coinbase}
 		rewardKind := []consensus.RewardKind{consensus.RewardAuthor}
-		var amounts []*big.Int
+		var amounts []*uint256.Int
 		beneficiaries, amounts = callBlockRewardAbi(rewardContractAddress.address, c.Syscall, beneficiaries, rewardKind)
 		rewards := make([]consensus.Reward, len(amounts))
 		for i, amount := range amounts {
