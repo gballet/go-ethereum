@@ -131,7 +131,7 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 	if root := statedb.IntermediateRoot(v.config.IsEIP158(header.Number)); header.Root != root {
 		return fmt.Errorf("invalid merkle root (remote: %x local: %x) dberr: %w", header.Root, root, statedb.Error())
 	}
-	// Verify that the advertised root is correct before 
+	// Verify that the advertised root is correct before
 	// it can be used as an identifier for the conversion
 	// status.
 	statedb.Database().SaveTransitionState(header.Root)

@@ -21,7 +21,6 @@ import (
 	"encoding/gob"
 	"errors"
 	"fmt"
-	"runtime/debug"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -622,7 +621,6 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 	db.CurrentTransitionState = ts.Copy()
 
 	log.Debug("loaded transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.Ended, "started", db.CurrentTransitionState.Started)
-	debug.PrintStack()
 }
 
 func (db *cachingDB) LockCurrentTransitionState() {
