@@ -132,7 +132,7 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 		return fmt.Errorf("invalid merkle root (remote: %x local: %x) dberr: %w", header.Root, root, statedb.Error())
 	}
 	// Verify that the advertised root is correct before 
-	// it can be usedas an identifier for the conversion
+	// it can be used as an identifier for the conversion
 	// status.
 	statedb.Database().SaveTransitionState(header.Root)
 	return nil
