@@ -495,9 +495,6 @@ func (st *StateTransition) refundGas(refundQuotient uint64) {
 	remaining := new(big.Int).Mul(new(big.Int).SetUint64(st.gasRemaining), st.msg.GasPrice)
 	st.state.AddBalance(st.msg.From, remaining)
 
-	if st.gp.Gas() > math.MaxUint64-st.gasRemaining {
-		fmt.Println(st.gp.Gas(), refund, refundQuotient, st.gasUsed(), st.initialGas, st.gasUsed(), st.evm.Accesses, st.msg)
-	}
 
 	// Also return remaining gas to the block gas counter so it is
 	// available for the next transaction.

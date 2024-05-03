@@ -282,6 +282,7 @@ var (
 	OverrideProofInBlock = &cli.BoolFlag{
 		Name:     "override.blockproof",
 		Usage:    "Manually specify the proof-in-block setting",
+		Value:    true,
 		Category: flags.EthCategory,
 	}
 	ClearVerkleCosts = &cli.BoolFlag{
