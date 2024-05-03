@@ -227,7 +227,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 	// verkle transition: if the conversion process is in progress, move
 	// N values from the MPT into the verkle tree.
 	if migrdb.InTransition() {
-		fmt.Printf("Processing verkle conversion starting at %x %x, building on top of %x\n", migrdb.GetCurrentAccountHash(), migrdb.GetCurrentSlotHash(), root)
+		log.Debug("Processing verkle conversion starting", "account hash", migrdb.GetCurrentAccountHash(), "slot hash", migrdb.GetCurrentSlotHash(), "state root", root)
 		var (
 			now             = time.Now()
 			tt              = statedb.GetTrie().(*trie.TransitionTrie)
@@ -291,7 +291,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 		for count < maxMovedCount {
 			acc, err := types.FullAccount(accIt.Account())
 			if err != nil {
-				fmt.Println("Invalid account encountered during traversal", "error", err)
+				log.Error("Invalid account encountered during traversal", "error", err)
 				return err
 			}
 			vkt.SetStorageRootConversion(*migrdb.GetCurrentAccountAddress(), acc.Root)
