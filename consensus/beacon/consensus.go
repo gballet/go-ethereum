@@ -362,7 +362,8 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 	}
 
 	if chain.Config().IsPrague(header.Number, header.Time) {
-		fmt.Println("at block", header.Number, "performing transition?", state.Database().InTransition())
+		// uncomment when debugging
+		// fmt.Println("at block", header.Number, "performing transition?", state.Database().InTransition())
 		parent := chain.GetHeaderByHash(header.ParentHash)
 		if err := overlay.OverlayVerkleTransition(state, parent.Root, chain.Config().OverlayStride); err != nil {
 			log.Error("error performing the transition", "err", err)
@@ -392,6 +393,8 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 
 	// Assign the final state root to header.
 	header.Root = state.IntermediateRoot(true)
+	// Associate current conversion state to computed state
+	// root and store it in the database for later recovery.
 	state.Database().SaveTransitionState(header.Root)
 
 	var (
