@@ -29,7 +29,7 @@ jobs:
         run: go run ./cmd/geth --dev --cache.preimages init genesis.json
 
       - name: Run geth in devmode
-        run: go run ./cmd/geth --dev --dev.period=5 --cache.preimages --http --datadir=.shadowfork --override.overlay-stride=10 --override.prague=$(($(date +%s) + 45)) --vmodule=overlay=6 &
+        run: go run ./cmd/geth --dev --dev.period=5 --cache.preimages --http --datadir=.shadowfork --override.overlay-stride=10 --override.prague=$(($(date +%s) + 45)) --rpcapi=debug &
 
       - name: Wait for the transition to start
         run: |
@@ -48,7 +48,6 @@ jobs:
             started=`curl -X POST -H "Content-Type: application/json"  -d '{ "id": 7, "jsonrpc": "2.0", "method": "debug_conversionStatus", "params": ["latest"]}' http://localhost:8545 -s | jq '.result.started'`
             echo $?
             echo $started
-            curl -X POST -H "Content-Type: application/json"  -d '{ "id": 7, "jsonrpc": "2.0", "method": "debug_conversionStatus", "params": ["latest"]}' http://localhost:8545
             if [ "$started" == "true" ]; then
               break
             fi
