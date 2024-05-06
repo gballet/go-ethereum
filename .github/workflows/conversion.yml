@@ -43,11 +43,16 @@ jobs:
               kill -9 $(pgrep -f geth)
               exit 1
             fi
+            pgrep -l geth
             # Check for signs that the conversion has started
             started=`curl -X POST -H "Content-Type: application/json"  -d '{ "id": 7, "jsonrpc": "2.0", "method": "debug_conversionStatus", "params": ["latest"]}' http://localhost:8545 -s | jq '.result.started'`
+            echo $?
+            echo $started
+            curl -X POST -H "Content-Type: application/json"  -d '{ "id": 7, "jsonrpc": "2.0", "method": "debug_conversionStatus", "params": ["latest"]}' http://localhost:8545
             if [ "$started" == "true" ]; then
               break
             fi
+            echo "looping"
           done
       - name: Wait for the transition to end
         run: |
