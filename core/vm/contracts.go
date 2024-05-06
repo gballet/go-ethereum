@@ -151,6 +151,7 @@ func init() {
 func ActivePrecompiles(rules params.Rules) []common.Address {
 	switch {
 	case rules.IsPrague:
+		// Note: this config should be correctly set depending on replay starting point.
 		return PrecompiledAddressesBerlin
 	case rules.IsCancun:
 		return PrecompiledAddressesCancun
