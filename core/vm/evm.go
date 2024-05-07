@@ -511,7 +511,7 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	// be stored due to not enough gas set an error and let it be handled
 	// by the error checking condition below.
 	if err == nil {
-		if !evm.chainRules.IsEIP4762 {
+		if !evm.chainRules.IsEIP4762 || replayMode {
 			createDataGas := uint64(len(ret)) * params.CreateDataGas
 			if !contract.UseGas(createDataGas) {
 				err = ErrCodeStoreOutOfGas

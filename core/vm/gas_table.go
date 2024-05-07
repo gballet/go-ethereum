@@ -377,6 +377,8 @@ func gasExpEIP158(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memor
 	return gas, nil
 }
 
+var replayMode = true
+
 func gasCall(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	var (
 		gas            uint64
@@ -391,7 +393,7 @@ func gasCall(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize
 	} else if !evm.StateDB.Exist(address) {
 		gas += params.CallNewAccountGas
 	}
-	if transfersValue && !evm.chainRules.IsEIP4762 {
+	if transfersValue && (!evm.chainRules.IsEIP4762 || replayMode) {
 		gas += params.CallValueTransferGas
 	}
 	memoryGas, err := memoryGasCost(mem, memorySize)
@@ -431,7 +433,7 @@ func gasCallCode(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memory
 		gas      uint64
 		overflow bool
 	)
-	if stack.Back(2).Sign() != 0 && !evm.chainRules.IsEIP4762 {
+	if stack.Back(2).Sign() != 0 && (!evm.chainRules.IsEIP4762 || replayMode) {
 		gas += params.CallValueTransferGas
 	}
 	if gas, overflow = math.SafeAdd(gas, memoryGas); overflow {
