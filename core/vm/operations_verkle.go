@@ -61,7 +61,7 @@ func gasExtCodeSize4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory,
 }
 
 func gasExtCodeHash4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	address := stack.Back(1).Bytes20()
+	address := stack.peek().Bytes20()
 	if _, isPrecompile := evm.precompile(address); isPrecompile {
 		return 0, nil
 	}
@@ -74,7 +74,7 @@ func gasExtCodeHash4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory,
 
 func makeCallVariantGasEIP4762(oldCalculator gasFunc) gasFunc {
 	return func(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-		address := stack.peek().Bytes20()
+		address := stack.Back(1).Bytes20()
 		gas, err := oldCalculator(evm, contract, stack, mem, memorySize)
 		if err != nil {
 			return 0, err
