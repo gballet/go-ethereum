@@ -154,7 +154,7 @@ var stateTransitionCommand = &cli.Command{
 		t8ntool.VerbosityFlag,
 	},
 	Subcommands: []*cli.Command{
-		&cli.Command{
+		{
 			Name:    "verkle-keys",
 			Aliases: []string{"v"},
 			Usage:   "compute a set of verkle tree keys, given their source addresses and optional slot numbers",
@@ -163,11 +163,17 @@ var stateTransitionCommand = &cli.Command{
 				t8ntool.InputAllocFlag,
 			},
 		},
-		&cli.Command{
+		{
 			Name:    "verkle-key",
 			Aliases: []string{"V"},
 			Usage:   "compute the verkle tree key given an address and optional slot number",
 			Action:  t8ntool.VerkleKey,
+		},
+		{
+			Name:    "verkle-code-chunk-key",
+			Aliases: []string{"VC"},
+			Usage:   "compute the verkle tree key given an address and chunk number",
+			Action:  t8ntool.VerkleCodeChunkKey,
 		},
 	},
 }
