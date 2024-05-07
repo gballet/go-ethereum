@@ -61,7 +61,7 @@ func gasExtCodeSize4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory,
 }
 
 func gasExtCodeHash4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	address := stack.peek().Bytes20()
+	address := stack.Back(1).Bytes20()
 	if _, isPrecompile := evm.precompile(address); isPrecompile {
 		return 0, nil
 	}
@@ -74,14 +74,15 @@ func gasExtCodeHash4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory,
 
 func makeCallVariantGasEIP4762(oldCalculator gasFunc) gasFunc {
 	return func(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
+		address := stack.peek().Bytes20()
 		gas, err := oldCalculator(evm, contract, stack, mem, memorySize)
 		if err != nil {
 			return 0, err
 		}
-		if _, isPrecompile := evm.precompile(contract.Address()); isPrecompile {
+		if _, isPrecompile := evm.precompile(address); isPrecompile {
 			return gas, nil
 		}
-		wgas := evm.Accesses.TouchAndChargeMessageCall(contract.Address().Bytes())
+		wgas := evm.Accesses.TouchAndChargeMessageCall(address[:])
 		if wgas == 0 {
 			wgas = params.WarmStorageReadCostEIP2929
 		}
