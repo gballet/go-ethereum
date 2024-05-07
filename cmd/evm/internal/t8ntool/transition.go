@@ -612,3 +612,20 @@ func VerkleCodeChunkKey(ctx *cli.Context) error {
 
 	return nil
 }
+
+// VerkleChunkifyCode returns the code chunkification for a given code.
+func VerkleChunkifyCode(ctx *cli.Context) error {
+	if ctx.Args().Len() == 0 || ctx.Args().Len() > 1 {
+		return errors.New("invalid number of arguments: expecting a bytecode")
+	}
+
+	bytecode, err := hexutil.Decode(ctx.Args().Get(0))
+	if err != nil {
+		return fmt.Errorf("error decoding address: %w", err)
+	}
+
+	chunkedCode := trie.ChunkifyCode(bytecode)
+	fmt.Printf("%#x\n", chunkedCode)
+
+	return nil
+}

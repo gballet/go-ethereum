@@ -171,9 +171,15 @@ var stateTransitionCommand = &cli.Command{
 		},
 		{
 			Name:    "verkle-code-chunk-key",
-			Aliases: []string{"VC"},
+			Aliases: []string{"VCK"},
 			Usage:   "compute the verkle tree key given an address and chunk number",
 			Action:  t8ntool.VerkleCodeChunkKey,
+		},
+		{
+			Name:    "verkle-chunkify-code",
+			Aliases: []string{"VCC"},
+			Usage:   "chunkify a given bytecode",
+			Action:  t8ntool.VerkleChunkifyCode,
 		},
 	},
 }
