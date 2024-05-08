@@ -581,43 +581,8 @@ func (s *StateDB) updateStateObject(obj *stateObject) {
 	if err := s.trie.UpdateAccount(addr, &obj.data); err != nil {
 		s.setError(fmt.Errorf("updateStateObject (%x) error: %v", addr[:], err))
 	}
-	if s.trie.IsVerkle() && obj.dirtyCode {
 	if obj.dirtyCode {
 		s.trie.UpdateContractCode(obj.Address(), common.BytesToHash(obj.CodeHash()), obj.code)
-// TODO post-rebase: check if this is available in UpdateContractCode
-//var (
-//			chunks = trie.ChunkifyCode(obj.code)
-//			values [][]byte
-//			key    []byte
-//			err    error
-//		)
-//		for i, chunknr := 0, uint64(0); i < len(chunks); i, chunknr = i+32, chunknr+1 {
-//			groupOffset := (chunknr + 128) % 256
-//			if groupOffset == 0 /* start of new group */ || chunknr == 0 /* first chunk in header group */ {
-//				values = make([][]byte, verkle.NodeWidth)
-//				key = utils.GetTreeKeyCodeChunkWithEvaluatedAddress(obj.db.db.(*cachingDB).GetTreeKeyHeader(obj.address[:]), uint256.NewInt(chunknr))
-//			}
-//			values[groupOffset] = chunks[i : i+32]
-//
-//			// Reuse the calculated key to also update the code size.
-//			if i == 0 {
-//				cs := make([]byte, 32)
-//				binary.LittleEndian.PutUint64(cs, uint64(len(obj.code)))
-//				values[utils.CodeSizeLeafKey] = cs
-//			}
-//
-//			if groupOffset == 255 || len(chunks)-i <= 32 {
-//				switch t := s.trie.(type) {
-//				case *trie.VerkleTrie:
-//					err = t.UpdateStem(key[:31], values)
-//				case *trie.TransitionTrie:
-//					err = t.UpdateStem(key[:31], values)
-//				}
-//				if err != nil {
-//					s.setError(fmt.Errorf("updateStateObject (%x) error: %w", addr[:], err))
-//				}
-//			}
-//		}
 	}
 	// Cache the data until commit. Note, this update mechanism is not symmetric
 	// to the deletion, because whereas it is enough to track account updates
