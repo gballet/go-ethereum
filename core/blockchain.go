@@ -322,8 +322,8 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 		// for it to be able to recover if interrupted during the transition
 		// but that's left out to a later PR since there's not really a need
 		// right now.
-		bc.stateCache.InitTransitionStatus(true, true)
-		bc.stateCache.EndVerkleTransition()
+		bc.stateCache.InitTransitionStatus(false, false)
+		// bc.stateCache.EndVerkleTransition()
 	}
 
 	if !bc.HasState(head.Root) {
