@@ -153,9 +153,15 @@ var stateTransitionCommand = &cli.Command{
 		t8ntool.RewardFlag,
 		t8ntool.VerbosityFlag,
 	},
+}
+
+var verkleCommand = &cli.Command{
+	Name:    "verkle",
+	Aliases: []string{"vkt"},
+	Usage:   "Verkle helpers",
 	Subcommands: []*cli.Command{
-		&cli.Command{
-			Name:    "verkle-keys",
+		{
+			Name:    "tree-keys",
 			Aliases: []string{"v"},
 			Usage:   "compute a set of verkle tree keys, given their source addresses and optional slot numbers",
 			Action:  t8ntool.VerkleKeys,
@@ -163,11 +169,23 @@ var stateTransitionCommand = &cli.Command{
 				t8ntool.InputAllocFlag,
 			},
 		},
-		&cli.Command{
-			Name:    "verkle-key",
+		{
+			Name:    "single-key",
 			Aliases: []string{"V"},
 			Usage:   "compute the verkle tree key given an address and optional slot number",
 			Action:  t8ntool.VerkleKey,
+		},
+		{
+			Name:    "code-chunk-key",
+			Aliases: []string{"VCK"},
+			Usage:   "compute the verkle tree key given an address and chunk number",
+			Action:  t8ntool.VerkleCodeChunkKey,
+		},
+		{
+			Name:    "chunkify-code",
+			Aliases: []string{"VCC"},
+			Usage:   "chunkify a given bytecode",
+			Action:  t8ntool.VerkleChunkifyCode,
 		},
 	},
 }
@@ -239,6 +257,7 @@ func init() {
 		stateTransitionCommand,
 		transactionCommand,
 		blockBuilderCommand,
+		verkleCommand,
 	}
 }
 

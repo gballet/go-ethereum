@@ -43,6 +43,7 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/ethereum/go-verkle"
+	"github.com/holiman/uint256"
 	"github.com/urfave/cli/v2"
 )
 
@@ -505,7 +506,7 @@ func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, a
 	return nil
 }
 
-// VerkleKeys computes the tree key given an address and an optional
+// VerkleKey computes the tree key given an address and an optional
 // slot number.
 func VerkleKey(ctx *cli.Context) error {
 	if ctx.Args().Len() == 0 || ctx.Args().Len() > 2 {
@@ -530,8 +531,7 @@ func VerkleKey(ctx *cli.Context) error {
 	return nil
 }
 
-// VerkleKeys computes a set of tree keys given a set of addresses
-// and their optional slot numbers.
+// VerkleKeys computes a set of tree keys given a genesis alloc.
 func VerkleKeys(ctx *cli.Context) error {
 	var allocStr = ctx.String(InputAllocFlag.Name)
 	var alloc core.GenesisAlloc
@@ -587,6 +587,45 @@ func VerkleKeys(ctx *cli.Context) error {
 	}
 
 	fmt.Println(string(output))
+
+	return nil
+}
+
+// VerkleCodeChunkKey computes the tree key of a code-chunk for a given address.
+func VerkleCodeChunkKey(ctx *cli.Context) error {
+	if ctx.Args().Len() == 0 || ctx.Args().Len() > 2 {
+		return errors.New("invalid number of arguments: expecting an address and an code-chunk number")
+	}
+
+	addr, err := hexutil.Decode(ctx.Args().Get(0))
+	if err != nil {
+		return fmt.Errorf("error decoding address: %w", err)
+	}
+	chunkNumberBytes, err := hexutil.Decode(ctx.Args().Get(1))
+	if err != nil {
+		return fmt.Errorf("error decoding chunk number: %w", err)
+	}
+	var chunkNumber uint256.Int
+	chunkNumber.SetBytes(chunkNumberBytes)
+
+	fmt.Printf("%#x\n", utils.GetTreeKeyCodeChunk(addr, &chunkNumber))
+
+	return nil
+}
+
+// VerkleChunkifyCode returns the code chunkification for a given code.
+func VerkleChunkifyCode(ctx *cli.Context) error {
+	if ctx.Args().Len() == 0 || ctx.Args().Len() > 1 {
+		return errors.New("invalid number of arguments: expecting a bytecode")
+	}
+
+	bytecode, err := hexutil.Decode(ctx.Args().Get(0))
+	if err != nil {
+		return fmt.Errorf("error decoding address: %w", err)
+	}
+
+	chunkedCode := trie.ChunkifyCode(bytecode)
+	fmt.Printf("%#x\n", chunkedCode)
 
 	return nil
 }
