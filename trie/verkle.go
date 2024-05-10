@@ -377,6 +377,8 @@ const (
 	PUSH21 = byte(0x74)
 	PUSH30 = byte(0x7d)
 	PUSH32 = byte(0x7f)
+
+	JUMPDEST = byte(0x5b)
 )
 
 // ChunkifyCode generates the chunked version of an array representing EVM bytecode
@@ -469,4 +471,90 @@ func (t *VerkleTrie) UpdateContractCode(addr common.Address, codeHash common.Has
 		}
 	}
 	return nil
+}
+
+type TableInvalidJumpdestEncoder struct {
+	table         []byte
+	lastCodeChunk int
+
+	// used to do leb128 encoding without allocations
+	buf [3]byte
+}
+
+func NewTableInvalidJumpdestEncoder() TableInvalidJumpdestEncoder {
+	return TableInvalidJumpdestEncoder{
+		table: make([]byte, 0, 32),
+	}
+}
+
+func (enc *TableInvalidJumpdestEncoder) append(codeChunk int, firstValidInstructionOffset int) {
+	delta := codeChunk - enc.lastCodeChunk
+	e := delta*33 + firstValidInstructionOffset
+	size := leb128Encode(enc.buf[:], e)
+	enc.table = append(enc.table, enc.buf[:size]...)
+	enc.lastCodeChunk = codeChunk
+}
+
+func (enc *TableInvalidJumpdestEncoder) encodedTable() []byte {
+	return enc.table
+}
+
+// ChunkifyCodeInvalidJumpdests returns the table of invalid jumpdests in the code.
+// Note that the actual code-chunking is always a 32-byte slicing of the original code.
+func ChunkifyCodeInvalidJumpdests(code []byte) []byte {
+	encoder := NewTableInvalidJumpdestEncoder()
+
+	var addedEntry bool
+	var validOffset int
+	for i := 0; i < len(code); {
+		if i%32 == 0 {
+			validOffset = 0
+			addedEntry = false
+		}
+		if code[i] < PUSH1 || code[i] > PUSH32 {
+			i++
+			continue
+		}
+		pushDataEnd := i + int(code[i]-PUSH1+1)
+		i += 1
+		for i <= pushDataEnd {
+			if i%32 == 0 {
+				validOffset = pushDataEnd%32 + 1
+				addedEntry = false
+			}
+			if code[i] == JUMPDEST && !addedEntry {
+				encoder.append(i/32, validOffset)
+				addedEntry = true
+				i = min(i/32*32+32, pushDataEnd+1)
+			} else {
+				i++
+			}
+		}
+	}
+	return encoder.encodedTable()
+}
+
+func leb128Encode(buf []byte, value int) int {
+	if value == 0 {
+		buf[0] = 0
+		return 1
+	}
+	var i int
+	for value != 0 {
+		part := byte(value & 0x7f)
+		value >>= 7
+		if value != 0 {
+			part |= 0x80
+		}
+		buf[i] = part
+		i++
+	}
+	return i
+}
+
+func min(x, y int) int {
+	if x > y {
+		return y
+	}
+	return x
 }
