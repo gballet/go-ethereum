@@ -142,6 +142,7 @@ var stateTransitionCommand = &cli.Command{
 		t8ntool.OutputBasedir,
 		t8ntool.OutputAllocFlag,
 		t8ntool.OutputVKTFlag,
+		t8ntool.OutputWitnessFlag,
 		t8ntool.OutputResultFlag,
 		t8ntool.OutputBodyFlag,
 		t8ntool.InputAllocFlag,
