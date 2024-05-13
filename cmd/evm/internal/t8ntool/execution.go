@@ -186,8 +186,8 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		GetHash:     getHash,
 	}
 	// Save pre verkle tree to build the proof at the end
-	if len(pre.VKT) > 0 {
-		vtrpre = statedb.GetTrie().(*trie.VerkleTrie).Copy()
+	if pre.VKT != nil && len(pre.VKT) > 0 {
+		vtrpre = statedb.GetTrie().(*trie.TransitionTrie).Overlay().Copy()
 	}
 	// If currentBaseFee is defined, add it to the vmContext.
 	if pre.Env.BaseFee != nil {
