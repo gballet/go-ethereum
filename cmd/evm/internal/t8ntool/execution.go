@@ -185,17 +185,16 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		GasLimit:    pre.Env.GasLimit,
 		GetHash:     getHash,
 	}
-	// Save pre verkle tree to build the proof at the end
-	if pre.VKT != nil && len(pre.VKT) > 0 {
-		switch tr := statedb.GetTrie().(type) {
-		case *trie.VerkleTrie:
-			vtrpre = tr.Copy()
-		case *trie.TransitionTrie:
-			vtrpre = tr.Overlay().Copy()
-		default:
-			panic("invalid trie type")
-		}
+
+	// If the underlying tree is a Verkle variant, save it to build the proof at the end.
+	// If isn't, ignore since it won't be used.
+	switch tr := statedb.GetTrie().(type) {
+	case *trie.VerkleTrie:
+		vtrpre = tr.Copy()
+	case *trie.TransitionTrie:
+		vtrpre = tr.Overlay().Copy()
 	}
+
 	// If currentBaseFee is defined, add it to the vmContext.
 	if pre.Env.BaseFee != nil {
 		vmContext.BaseFee = new(big.Int).Set(pre.Env.BaseFee)
@@ -428,10 +427,16 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 
 func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prestate, verkle bool) *state.StateDB {
 	// Start with generating the MPT DB, which should be empty if it's post-verkle transition
-	mptSdb := state.NewDatabaseWithConfig(db, &trie.Config{Preimages: true, Verkle: false})
-	statedb, _ := state.New(types.EmptyRootHash, mptSdb, nil)
+	sdb := state.NewDatabaseWithConfig(db, &trie.Config{Preimages: true, Verkle: false})
 
-	// MPT pre is the same as the pre state for first conversion block
+	if verkle {
+		sdb.InitTransitionStatus(pre.Env.Started != nil && *pre.Env.Started, pre.Env.Ended != nil && *pre.Env.Ended)
+	}
+
+	statedb, _ := state.New(types.EmptyRootHash, sdb, nil)
+
+	// Populate the underlying tree with the provided alloc. In the case of a Verkle transition setup, this will be
+	// the MPT. For post-transition, it will be a VKT.
 	for addr, a := range pre.Pre {
 		statedb.SetCode(addr, a.Code)
 		statedb.SetNonce(addr, a.Nonce)
@@ -441,33 +446,39 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		}
 	}
 
-	// If verkle mode started, establish the conversion
+	// If verkle mode started
 	if verkle {
 		// Commit db an create a snapshot from it.
-		mptRoot, err := statedb.Commit(0, false)
+		treeRoot, err := statedb.Commit(0, false)
 		if err != nil {
 			panic(err)
 		}
-		rawdb.WritePreimages(mptSdb.DiskDB(), statedb.Preimages())
-		mptSdb.TrieDB().WritePreimages()
-		snaps, err := snapshot.New(snapshot.Config{AsyncBuild: false, CacheSize: 10}, mptSdb.DiskDB(), mptSdb.TrieDB(), mptRoot)
+
+		// If the active tree is a Verkle one, we're done.
+		if _, ok := statedb.GetTrie().(*trie.VerkleTrie); ok {
+			return statedb
+		}
+		// If isn't the case, configurate the conversion.
+
+		rawdb.WritePreimages(sdb.DiskDB(), statedb.Preimages())
+		sdb.TrieDB().WritePreimages()
+		snaps, err := snapshot.New(snapshot.Config{AsyncBuild: false, CacheSize: 10}, sdb.DiskDB(), sdb.TrieDB(), treeRoot)
 		if err != nil {
 			panic(err)
 		}
 		if snaps == nil {
 			panic("snapshot is nil")
 		}
-		snaps.Cap(mptRoot, 0)
+		snaps.Cap(treeRoot, 0)
 
 		// reuse the backend db so that the snapshot can be enumerated
-		sdb := mptSdb // := state.NewDatabaseWithConfig(db, &trie.Config{Verkle: true})
+		sdb := sdb // := state.NewDatabaseWithConfig(db, &trie.Config{Verkle: true})
 
 		// Load the conversion status
 		log.Info("loading conversion status", "started", pre.Env.Started)
 		if pre.Env.Started != nil {
 			log.Info("non-nil started", "started", *pre.Env.Started)
 		}
-		sdb.InitTransitionStatus(pre.Env.Started != nil && *pre.Env.Started, pre.Env.Ended != nil && *pre.Env.Ended, mptRoot)
 		log.Info("loading current account address, if available", "available", pre.Env.CurrentAccountAddress != nil)
 		if pre.Env.CurrentAccountAddress != nil {
 			log.Info("loading current account address", "address", *pre.Env.CurrentAccountAddress)
@@ -483,7 +494,7 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		// start the conversion on the first block
 		log.Info("starting verkle transition?", "in transition", sdb.InTransition(), "transitioned", sdb.Transitioned(), "mpt root", mptRoot)
 		if !sdb.InTransition() && !sdb.Transitioned() {
-			sdb.StartVerkleTransition(mptRoot, mptRoot, chainConfig, chainConfig.PragueTime, mptRoot)
+			sdb.StartVerkleTransition(treeRoot, treeRoot, chainConfig, chainConfig.PragueTime, treeRoot)
 		}
 
 		statedb, err = state.New(types.EmptyRootHash, sdb, nil)
