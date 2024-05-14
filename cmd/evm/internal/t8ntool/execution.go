@@ -452,6 +452,10 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		sdb := mptSdb // := state.NewDatabaseWithConfig(db, &trie.Config{Verkle: true})
 
 		// Load the conversion status
+		fmt.Println("started", pre.Env.Started)
+		if pre.Env.Started != nil {
+			fmt.Println(pre.Env.Started)
+		}
 		sdb.InitTransitionStatus(pre.Env.Started != nil && *pre.Env.Started, pre.Env.Ended != nil && *pre.Env.Ended)
 		if pre.Env.CurrentAccountAddress != nil {
 			sdb.SetCurrentAccountAddress(*pre.Env.CurrentAccountAddress)
