@@ -187,7 +187,14 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	}
 	// Save pre verkle tree to build the proof at the end
 	if pre.VKT != nil && len(pre.VKT) > 0 {
-		vtrpre = statedb.GetTrie().(*trie.TransitionTrie).Overlay().Copy()
+		switch tr := statedb.GetTrie().(type) {
+		case *trie.VerkleTrie:
+			vtrpre = tr.Copy()
+		case *trie.TransitionTrie:
+			vtrpre = tr.Overlay().Copy()
+		default:
+			panic("invalid trie type")
+		}
 	}
 	// If currentBaseFee is defined, add it to the vmContext.
 	if pre.Env.BaseFee != nil {
