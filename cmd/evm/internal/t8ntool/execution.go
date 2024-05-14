@@ -503,7 +503,9 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		}
 	}
 
-	log.Info("at end of makestate", "in transition", statedb.Database().InTransition(), "during", statedb.Database().Transitioned(), "account hash", statedb.Database().GetCurrentAccountHash())
+	if statedb.Database().InTransition() || statedb.Database().Transitioned() {
+		log.Info("at end of makestate", "in transition", statedb.Database().InTransition(), "during", statedb.Database().Transitioned(), "account hash", statedb.Database().GetCurrentAccountHash())
+	}
 	return statedb
 }
 
