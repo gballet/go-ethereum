@@ -398,7 +398,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		if !ended {
 			var (
 				currentSlotHash = sdb.GetCurrentSlotHash()
-				started         = sdb.InTransition() && sdb.Transitioned() // This can't be true
+				started         = sdb.InTransition()
 			)
 			execRs.CurrentAccountAddress = sdb.GetCurrentAccountAddress()
 			execRs.CurrentSlotHash = &currentSlotHash
