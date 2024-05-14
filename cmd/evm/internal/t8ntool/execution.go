@@ -454,7 +454,7 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		// Load the conversion status
 		log.Info("loading conversion status", "started", pre.Env.Started)
 		if pre.Env.Started != nil {
-			log.Info("non-nil started", "started", pre.Env.Started)
+			log.Info("non-nil started", "started", *pre.Env.Started)
 		}
 		sdb.InitTransitionStatus(pre.Env.Started != nil && *pre.Env.Started, pre.Env.Ended != nil && *pre.Env.Ended)
 		if pre.Env.CurrentAccountAddress != nil {
