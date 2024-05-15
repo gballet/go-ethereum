@@ -361,8 +361,17 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	if chainConfig.IsPrague(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) {
 		keys := statedb.Witness().Keys()
 
+		var proofTrie *trie.VerkleTrie
+		switch tr := statedb.GetTrie().(type) {
+		case *trie.VerkleTrie:
+			proofTrie = tr
+		case *trie.TransitionTrie:
+			proofTrie = tr.Overlay()
+		default:
+			panic("shouldn't be here")
+		}
 		if len(keys) > 0 {
-			p, k, err = trie.ProveAndSerialize(vtrpre, statedb.GetTrie().(*trie.VerkleTrie), keys, vtrpre.FlatdbNodeResolver)
+			p, k, err = trie.ProveAndSerialize(vtrpre, proofTrie, keys, vtrpre.FlatdbNodeResolver)
 			if err != nil {
 				return nil, nil, fmt.Errorf("error generating verkle proof for block %d: %w", pre.Env.Number, err)
 			}
