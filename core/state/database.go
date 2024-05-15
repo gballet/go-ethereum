@@ -330,11 +330,7 @@ func (db *cachingDB) openVKTrie(_ common.Hash) (Trie, error) {
 
 // OpenTrie opens the main account trie at a specific root hash.
 func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
-	var (
-		mpt Trie
-		err error
-	)
-
+	log.Info("opening trie", "root", root, "in transition", db.InTransition(), "transitioned", db.Transitioned())
 	// TODO separate both cases when I can be certain that it won't
 	// find a Verkle trie where is expects a Transitoion trie.
 	if db.InTransition() || db.Transitioned() {
@@ -348,27 +344,25 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 		// If the verkle conversion has ended, return a single
 		// verkle trie.
 		if db.CurrentTransitionState.Ended {
+			log.Info("transition ended, returning a simple verkle tree")
 			log.Debug("transition ended, returning a simple verkle tree")
 			return vkt, nil
 		}
 
 		// Otherwise, return a transition trie, with a base MPT
 		// trie and an overlay, verkle trie.
-		mpt, err = db.openMPTTrie(db.baseRoot)
+		log.Info("opening base tree", "base root", db.baseRoot)
+		mpt, err := db.openMPTTrie(db.baseRoot)
 		if err != nil {
 			log.Error("failed to open the mpt", "err", err, "root", db.baseRoot)
 			return nil, err
 		}
 
 		return trie.NewTransitionTree(mpt.(*trie.SecureTrie), vkt.(*trie.VerkleTrie), false), nil
-	} else {
-		mpt, err = db.openMPTTrie(root)
-		if err != nil {
-			return nil, err
-		}
 	}
 
-	return mpt, nil
+	log.Info("not in transition, opening mpt alone", "root", root)
+	return db.openMPTTrie(root)
 }
 
 func (db *cachingDB) openStorageMPTrie(stateRoot common.Hash, address common.Address, root common.Hash, _ Trie) (Trie, error) {
