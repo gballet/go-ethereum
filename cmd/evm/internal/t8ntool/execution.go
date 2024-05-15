@@ -456,7 +456,7 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		if pre.Env.Started != nil {
 			log.Info("non-nil started", "started", *pre.Env.Started)
 		}
-		sdb.InitTransitionStatus(pre.Env.Started != nil && *pre.Env.Started, pre.Env.Ended != nil && *pre.Env.Ended)
+		sdb.InitTransitionStatus(pre.Env.Started != nil && *pre.Env.Started, pre.Env.Ended != nil && *pre.Env.Ended, mptRoot)
 		log.Info("loading current account address, if available", "available", pre.Env.CurrentAccountAddress != nil)
 		if pre.Env.CurrentAccountAddress != nil {
 			log.Info("loading current account address", "address", *pre.Env.CurrentAccountAddress)

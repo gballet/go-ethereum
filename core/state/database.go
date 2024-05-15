@@ -78,7 +78,7 @@ type Database interface {
 
 	Transitioned() bool
 
-	InitTransitionStatus(bool, bool)
+	InitTransitionStatus(bool, bool, common.Hash)
 
 	SetCurrentSlotHash(common.Hash)
 
@@ -245,12 +245,13 @@ func (db *cachingDB) ReorgThroughVerkleTransition() {
 	log.Warn("trying to reorg through the transition, which makes no sense at this point")
 }
 
-func (db *cachingDB) InitTransitionStatus(started, ended bool) {
+func (db *cachingDB) InitTransitionStatus(started, ended bool, baseRoot common.Hash) {
 	db.CurrentTransitionState = &TransitionState{
 		Ended:   ended,
 		Started: started,
 		// TODO add other fields when we handle mid-transition interrupts
 	}
+	db.baseRoot = baseRoot
 }
 
 func (db *cachingDB) EndVerkleTransition() {

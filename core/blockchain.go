@@ -326,7 +326,7 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 		// for it to be able to recover if interrupted during the transition
 		// but that's left out to a later PR since there's not really a need
 		// right now.
-		bc.stateCache.InitTransitionStatus(true, true)
+		bc.stateCache.InitTransitionStatus(true, true, common.Hash{})
 		bc.stateCache.EndVerkleTransition()
 	}
 
@@ -1772,7 +1772,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			// If the verkle activation time hasn't started, declare it as "not started".
 			// This is so that if the miner activates the conversion, the insertion happens
 			// in the correct mode.
-			bc.stateCache.InitTransitionStatus(false, false)
+			bc.stateCache.InitTransitionStatus(false, false, common.Hash{})
 		}
 		if parent.Number.Uint64() == conversionBlock {
 			bc.StartVerkleTransition(parent.Root, emptyVerkleRoot, bc.Config(), &parent.Time, parent.Root)
