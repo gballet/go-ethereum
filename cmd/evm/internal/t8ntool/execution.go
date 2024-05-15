@@ -370,7 +370,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		default:
 			panic("shouldn't be here")
 		}
-		if len(keys) > 0 {
+		if len(keys) > 0 && vtrpre != nil {
 			p, k, err = trie.ProveAndSerialize(vtrpre, proofTrie, keys, vtrpre.FlatdbNodeResolver)
 			if err != nil {
 				return nil, nil, fmt.Errorf("error generating verkle proof for block %d: %w", pre.Env.Number, err)
