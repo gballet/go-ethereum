@@ -471,9 +471,6 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		}
 		snaps.Cap(treeRoot, 0)
 
-		// reuse the backend db so that the snapshot can be enumerated
-		sdb := sdb // := state.NewDatabaseWithConfig(db, &trie.Config{Verkle: true})
-
 		// Load the conversion status
 		log.Info("loading conversion status", "started", pre.Env.Started)
 		if pre.Env.Started != nil {
