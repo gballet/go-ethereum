@@ -409,24 +409,27 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 	}
 
 	// Load any existing snapshot, regenerating it if loading failed
-	if bc.cacheConfig.SnapshotLimit > 0 {
+	if bc.cacheConfig.SnapshotLimit > 0 || true {
 		// If the chain was rewound past the snapshot persistent layer (causing
 		// a recovery block number to be persisted to disk), check if we're still
 		// in recovery mode and in that case, don't invalidate the snapshot on a
 		// head mismatch.
-		var recover bool
+		// var recover bool
 
-		head := bc.CurrentBlock()
-		if layer := rawdb.ReadSnapshotRecoveryNumber(bc.db); layer != nil && *layer >= head.Number.Uint64() {
-			log.Warn("Enabling snapshot recovery", "chainhead", head.Number, "diskbase", *layer)
-			recover = true
-		}
+		// head := bc.CurrentBlock()
+		// if layer := rawdb.ReadSnapshotRecoveryNumber(bc.db); layer != nil && *layer >= head.Number.Uint64() {
+		// 	log.Warn("Enabling snapshot recovery", "chainhead", head.Number, "diskbase", *layer)
+		// 	recover = true
+		// }
+
 		snapconfig := snapshot.Config{
-			CacheSize:  bc.cacheConfig.SnapshotLimit,
-			Recovery:   recover,
-			NoBuild:    bc.cacheConfig.SnapshotNoBuild,
-			AsyncBuild: !bc.cacheConfig.SnapshotWait,
-			Verkle:     chainConfig.IsPrague(head.Number, head.Time),
+			// CacheSize: bc.cacheConfig.SnapshotLimit,
+			CacheSize: 100,
+			// Recovery:  recover,
+			// NoBuild: bc.cacheConfig.SnapshotNoBuild,
+			// AsyncBuild: !bc.cacheConfig.SnapshotWait,
+			AsyncBuild: false,
+			// Verkle:     chainConfig.IsPrague(head.Number, head.Time),
 		}
 		bc.snaps, _ = snapshot.New(snapconfig, bc.db, bc.triedb, head.Root)
 	}
