@@ -369,9 +369,9 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 			log.Error("error performing the transition", "err", err)
 		}
 
-		if state.Database().InTransition() {
-			fmt.Println(state.GetTrie().(*trie.TransitionTrie).Overlay().ToDot())
-		}
+		// if state.Database().InTransition() {
+		// 	fmt.Println(state.GetTrie().(*trie.TransitionTrie).Overlay().ToDot())
+		// }
 	}
 }
 
