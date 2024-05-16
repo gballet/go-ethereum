@@ -83,6 +83,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		// if !p.config.IsPrague(parent.Number(), parent.Time()) {
 		// 	InsertBlockHashHistoryAtEip2935Fork(statedb, block.NumberU64()-1, block.ParentHash(), p.bc)
 		// } else {
+		log.Info("------ inserting history hash")
 		ProcessParentBlockHash(statedb, block.NumberU64()-1, block.ParentHash())
 		// }
 	}
@@ -105,9 +106,11 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	if len(withdrawals) > 0 && !p.config.IsShanghai(block.Number(), block.Time()) {
 		return nil, nil, 0, errors.New("withdrawals before shanghai")
 	}
+	log.Info("===== before finalize")
 
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.engine.Finalize(p.bc, header, statedb, block.Transactions(), block.Uncles(), withdrawals)
+	log.Info("--------- finalize")
 
 	if block.NumberU64()%100 == 0 {
 		stateRoot := statedb.GetTrie().Hash()
