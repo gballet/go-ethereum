@@ -1053,6 +1053,11 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 	if s.Database().InTransition() {
 		log.Info("dumping tree after hashing")
 		fmt.Println(s.GetTrie().(*trie.TransitionTrie).Overlay().ToDot())
+	} else if s.Database().Transitioned() {
+		log.Info("dumping tree after hashing - post transition")
+		fmt.Println(s.GetTrie().(*trie.VerkleTrie).ToDot())
+	} else {
+		log.Info("transition hasn't started")
 	}
 
 	// Save the root of the MPT so that it can be used during the transition
