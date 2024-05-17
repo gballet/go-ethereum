@@ -430,7 +430,7 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 	sdb := state.NewDatabaseWithConfig(db, &trie.Config{Preimages: true, Verkle: false})
 
 	if verkle {
-		sdb.InitTransitionStatus(pre.Env.Started != nil && *pre.Env.Started, pre.Env.Ended != nil && *pre.Env.Ended)
+		sdb.InitTransitionStatus(pre.Env.Started != nil && *pre.Env.Started, pre.Env.Ended != nil && *pre.Env.Ended, common.Hash{})
 	}
 
 	statedb, _ := state.New(types.EmptyRootHash, sdb, nil)
@@ -471,11 +471,12 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		}
 		snaps.Cap(treeRoot, 0)
 
-		// Load the conversion status
+		// t loggggLoad the conversion status
 		log.Info("loading conversion status", "started", pre.Env.Started)
 		if pre.Env.Started != nil {
 			log.Info("non-nil started", "started", *pre.Env.Started)
 		}
+		sdb.InitTransitionStatus(pre.Env.Started != nil && *pre.Env.Started, pre.Env.Ended != nil && *pre.Env.Ended, treeRoot)
 		log.Info("loading current account address, if available", "available", pre.Env.CurrentAccountAddress != nil)
 		if pre.Env.CurrentAccountAddress != nil {
 			log.Info("loading current account address", "address", *pre.Env.CurrentAccountAddress)
@@ -489,7 +490,7 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		}
 
 		// start the conversion on the first block
-		log.Info("starting verkle transition?", "in transition", sdb.InTransition(), "transitioned", sdb.Transitioned(), "mpt root", mptRoot)
+		log.Info("starting verkle transition?", "in transition", sdb.InTransition(), "transitioned", sdb.Transitioned(), "mpt root", treeRoot)
 		if !sdb.InTransition() && !sdb.Transitioned() {
 			sdb.StartVerkleTransition(treeRoot, treeRoot, chainConfig, chainConfig.PragueTime, treeRoot)
 		}
