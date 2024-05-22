@@ -406,12 +406,14 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		ended := sdb.Transitioned()
 		if !ended {
 			var (
-				currentSlotHash = sdb.GetCurrentSlotHash()
-				started         = sdb.InTransition()
+				currentSlotHash  = sdb.GetCurrentSlotHash()
+				started          = sdb.InTransition()
+				storageProcessed = sdb.GetStorageProcessed()
 			)
 			execRs.CurrentAccountAddress = sdb.GetCurrentAccountAddress()
 			execRs.CurrentSlotHash = &currentSlotHash
 			execRs.Started = &started
+			execRs.StorageProcessed = &storageProcessed
 		}
 		execRs.Ended = &ended
 	}
