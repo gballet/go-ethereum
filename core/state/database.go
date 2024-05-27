@@ -299,7 +299,6 @@ type cachingDB struct {
 
 	// Transition-specific fields
 	// TODO ensure that this info is in the DB
-	LastMerkleRoot         common.Hash // root hash of the read-only base tree
 	CurrentTransitionState *TransitionState
 	TransitionStatePerRoot lru.BasicLRU[common.Hash, *TransitionState]
 	transitionStateLock    sync.Mutex
@@ -396,7 +395,7 @@ func (db *cachingDB) OpenStorageTrie(stateRoot common.Hash, address common.Addre
 	}
 	if db.InTransition() {
 		log.Info("OpenStorageTrie during transition", "state root", stateRoot, "root", root)
-		mpt, err := db.openStorageMPTrie(db.LastMerkleRoot, address, root, nil)
+		mpt, err := db.openStorageMPTrie(db.baseRoot, address, root, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -528,7 +527,7 @@ func (db *cachingDB) AddRootTranslation(originalRoot, translatedRoot common.Hash
 }
 
 func (db *cachingDB) SetLastMerkleRoot(merkleRoot common.Hash) {
-	db.LastMerkleRoot = merkleRoot
+	db.baseRoot = merkleRoot
 }
 
 func (db *cachingDB) SaveTransitionState(root common.Hash) {
