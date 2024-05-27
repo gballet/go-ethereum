@@ -312,7 +312,6 @@ type cachingDB struct {
 
 	// Transition-specific fields
 	// TODO ensure that this info is in the DB
-	LastMerkleRoot         common.Hash // root hash of the read-only base tree
 	CurrentTransitionState *TransitionState
 	TransitionStatePerRoot lru.BasicLRU[common.Hash, *TransitionState]
 	transitionStateLock    sync.Mutex
@@ -364,13 +363,15 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 		// If the verkle conversion has ended, return a single
 		// verkle trie.
 		if db.CurrentTransitionState.Ended {
+			log.Info("transition ended, returning a simple verkle tree")
 			log.Debug("transition ended, returning a simple verkle tree")
 			return vkt, nil
 		}
 
 		// Otherwise, return a transition trie, with a base MPT
 		// trie and an overlay, verkle trie.
-		mpt, err = db.openMPTTrie(db.baseRoot)
+		log.Info("opening base tree", "base root", db.baseRoot)
+		mpt, err := db.openMPTTrie(db.baseRoot)
 		if err != nil {
 			log.Error("failed to open the mpt", "err", err, "root", db.baseRoot)
 			return nil, err
@@ -415,8 +416,8 @@ func (db *cachingDB) OpenStorageTrie(stateRoot common.Hash, address common.Addre
 		}
 	}
 	if db.InTransition() {
-		fmt.Printf("OpenStorageTrie during transition, state root=%x root=%x\n", stateRoot, root)
-		mpt, err := db.openStorageMPTrie(db.LastMerkleRoot, address, root, nil)
+		log.Info("OpenStorageTrie during transition", "state root", stateRoot, "root", root)
+		mpt, err := db.openStorageMPTrie(db.baseRoot, address, root, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -548,7 +549,7 @@ func (db *cachingDB) AddRootTranslation(originalRoot, translatedRoot common.Hash
 }
 
 func (db *cachingDB) SetLastMerkleRoot(merkleRoot common.Hash) {
-	db.LastMerkleRoot = merkleRoot
+	db.baseRoot = merkleRoot
 }
 
 func (db *cachingDB) SaveTransitionState(root common.Hash) {
