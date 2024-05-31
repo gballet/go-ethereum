@@ -115,9 +115,14 @@ func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 		return nil, fmt.Errorf("GetAccount (%x) error: %v", addr, err)
 	}
 
-	if values == nil {
+	emptyAccount := true
+	for i := 0; values != nil && i <= utils.CodeHashLeafKey && emptyAccount; i++ {
+		emptyAccount = emptyAccount && values[i] == nil
+	}
+	if emptyAccount {
 		return nil, nil
 	}
+
 	if len(values[utils.NonceLeafKey]) > 0 {
 		acc.Nonce = binary.LittleEndian.Uint64(values[utils.NonceLeafKey])
 	}
