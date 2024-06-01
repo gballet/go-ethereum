@@ -115,6 +115,11 @@ func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 		return nil, fmt.Errorf("GetAccount (%x) error: %v", addr, err)
 	}
 
+	// The following code is required for the MPT->VKT conversion.
+	// An account can be partially migrated, where storage slots were moved to the VKT
+	// but not yet the account. This means some account information as (header) storage slots
+	// are in the VKT but basic account information must be read in the base tree (MPT).
+	// TODO: we can simplify this logic depending if the conversion is in progress or finished.
 	emptyAccount := true
 	for i := 0; values != nil && i <= utils.CodeHashLeafKey && emptyAccount; i++ {
 		emptyAccount = emptyAccount && values[i] == nil
