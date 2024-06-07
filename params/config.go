@@ -505,7 +505,7 @@ func (c *ChainConfig) IsCancun(num *big.Int, time uint64) bool {
 
 // IsPrague returns whether num is either equal to the Prague fork time or greater.
 func (c *ChainConfig) IsPrague(num *big.Int, time uint64) bool {
-	return c.IsShanghai(num, time) && isTimestampForked(c.PragueTime, time)
+	return c.IsByzantium(num) && isTimestampForked(c.PragueTime, time)
 }
 
 // CheckCompatible checks whether scheduled fork transitions have been imported

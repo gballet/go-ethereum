@@ -28,7 +28,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/overlay"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
@@ -346,6 +345,14 @@ func (beacon *Beacon) Prepare(chain consensus.ChainHeaderReader, header *types.H
 
 // Finalize implements consensus.Engine and processes withdrawals on top.
 func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, withdrawals []*types.Withdrawal) {
+	if chain.Config().IsPrague(header.Number, header.Time) {
+		// uncomment when debugging
+		// fmt.Println("at block", header.Number, "performing transition?", state.Database().InTransition())
+		parent := chain.GetHeaderByHash(header.ParentHash)
+		if err := overlay.OverlayVerkleTransition(state, parent.Root, chain.Config().OverlayStride); err != nil {
+			panic(err)
+		}
+	}
 	if !beacon.IsPoSHeader(header) {
 		beacon.ethone.Finalize(chain, header, state, txs, uncles, nil)
 		return
@@ -361,14 +368,6 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 		state.Witness().TouchFullAccount(w.Address[:], true)
 	}
 
-	if chain.Config().IsPrague(header.Number, header.Time) {
-		// uncomment when debugging
-		// fmt.Println("at block", header.Number, "performing transition?", state.Database().InTransition())
-		parent := chain.GetHeaderByHash(header.ParentHash)
-		if err := overlay.OverlayVerkleTransition(state, parent.Root, chain.Config().OverlayStride); err != nil {
-			log.Error("error performing the transition", "err", err)
-		}
-	}
 }
 
 // FinalizeAndAssemble implements consensus.Engine, setting the final state and
