@@ -357,6 +357,17 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 		amount = amount.Mul(amount, big.NewInt(params.GWei))
 		state.AddBalance(w.Address, amount)
 
+		// fix: during the transition, if the withdrawals account
+		// hasn't been translated yet, then the code will not make
+		// it to the verkle tree when it's being written.
+		if state.Database().InTransition() {
+			codeHash := state.GetCodeHash(w.Address)
+			if codeHash != types.EmptyCodeHash {
+				code := state.GetCode(w.Address)
+				state.GetTrie().UpdateContractCode(w.Address, codeHash, code)
+			}
+		}
+
 		// The returned gas is not charged
 		state.Witness().TouchFullAccount(w.Address[:], true)
 	}
