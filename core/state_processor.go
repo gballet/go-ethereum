@@ -185,7 +185,7 @@ func InsertBlockHashHistoryAtEip2935Fork(statedb *state.StateDB, prevNumber uint
 	statedb.Witness().TouchFullAccount(params.HistoryStorageAddress[:], true)
 
 	ancestor := chain.GetHeader(prevHash, prevNumber)
-	for i := prevNumber; i > 0 && i >= prevNumber-params.Eip2935BlockHashHistorySize; i-- {
+	for i := prevNumber; i > 0 && i > prevNumber-params.Eip2935BlockHashHistorySize; i-- {
 		ProcessParentBlockHash(statedb, i, ancestor.Hash())
 		ancestor = chain.GetHeader(ancestor.ParentHash, ancestor.Number.Uint64()-1)
 	}
