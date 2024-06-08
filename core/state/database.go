@@ -363,14 +363,12 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 		// If the verkle conversion has ended, return a single
 		// verkle trie.
 		if db.CurrentTransitionState.Ended {
-			log.Info("transition ended, returning a simple verkle tree")
 			log.Debug("transition ended, returning a simple verkle tree")
 			return vkt, nil
 		}
 
 		// Otherwise, return a transition trie, with a base MPT
 		// trie and an overlay, verkle trie.
-		log.Info("opening base tree", "base root", db.baseRoot)
 		mpt, err := db.openMPTTrie(db.baseRoot)
 		if err != nil {
 			log.Error("failed to open the mpt", "err", err, "root", db.baseRoot)
