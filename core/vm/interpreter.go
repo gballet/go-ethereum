@@ -17,6 +17,10 @@
 package vm
 
 import (
+	"bytes"
+	"encoding/gob"
+	"os"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -169,6 +173,7 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 		}()
 	}
 
+	pcTrace.addBytecode(contract.Address(), contract.Code)
 	// The Interpreter main run loop (contextual). This loop runs until either an
 	// explicit STOP, RETURN or SELFDESTRUCT is executed, an error occurred during
 	// the execution of one of the operations or until the done flag is set by the
@@ -238,10 +243,18 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			in.evm.Config.Tracer.CaptureState(pc, op, gasCopy, cost, callContext, in.returnData, in.evm.depth, err)
 			logged = true
 		}
+		startPC := pc
 		// execute the operation
 		res, err = operation.execute(&pc, in, callContext)
 		if err != nil {
 			break
+		}
+		endPC := startPC
+		if op >= PUSH1 && op <= PUSH32 {
+			endPC = pc
+		}
+		for i := startPC; i <= endPC; i++ {
+			pcTrace.addTrace(contract.Address(), i)
 		}
 		pc++
 	}
@@ -251,4 +264,58 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 	}
 
 	return res, err
+}
+
+var CurrentTx string
+
+type contractTrace struct {
+	PCs []uint64
+}
+
+type PCTrace struct {
+	Contracts map[common.Address]contractTrace
+}
+
+var pcTrace PCTrace
+
+func init() {
+	if err := os.MkdirAll("pctrace/code", os.ModePerm); err != nil {
+		panic(err)
+	}
+}
+
+func ClearPCTrace() {
+	pcTrace = PCTrace{Contracts: make(map[common.Address]contractTrace)}
+}
+
+func (pct *PCTrace) addBytecode(addr common.Address, code []byte) {
+	// filePath := path.Join("pctrace/code", addr.String())
+	// if _, err := os.Stat(filePath); os.IsNotExist(err) {
+	// 	if err := os.WriteFile(filePath, code, os.ModePerm); err != nil {
+	// 		panic(err)
+	// 	}
+	// }
+}
+
+func (pct *PCTrace) addTrace(addr common.Address, pc uint64) {
+	trace := pct.Contracts[addr]
+	trace.PCs = append(trace.PCs, pc)
+	pct.Contracts[addr] = trace
+}
+
+func SavePCTrace() {
+	if len(pcTrace.Contracts) == 0 {
+		return
+	}
+	if err := os.MkdirAll("pctrace", os.ModePerm); err != nil {
+		panic("Failed to create pctrace directory: " + err.Error())
+	}
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(pcTrace); err != nil {
+		panic(err)
+	}
+	// Write to file
+	if err := os.WriteFile("pctrace/"+CurrentTx, buf.Bytes(), os.ModePerm); err != nil {
+		panic(err)
+	}
 }
