@@ -273,19 +273,23 @@ type contractTrace struct {
 }
 
 type PCTrace struct {
-	Contracts map[common.Address]contractTrace
+	Contract       string
+	ContractTraces map[common.Address]contractTrace
 }
 
 var pcTrace PCTrace
 
 func init() {
-	if err := os.MkdirAll("pctrace/code", os.ModePerm); err != nil {
+	if err := os.MkdirAll("pctrace", os.ModePerm); err != nil {
 		panic(err)
 	}
 }
 
-func ClearPCTrace() {
-	pcTrace = PCTrace{Contracts: make(map[common.Address]contractTrace)}
+func NewPCTrace(contractAddr common.Address) {
+	pcTrace = PCTrace{
+		Contract:       contractAddr.Hex(),
+		ContractTraces: make(map[common.Address]contractTrace),
+	}
 }
 
 func (pct *PCTrace) addBytecode(addr common.Address, code []byte) {
@@ -298,13 +302,13 @@ func (pct *PCTrace) addBytecode(addr common.Address, code []byte) {
 }
 
 func (pct *PCTrace) addTrace(addr common.Address, pc uint64) {
-	trace := pct.Contracts[addr]
+	trace := pct.ContractTraces[addr]
 	trace.PCs = append(trace.PCs, pc)
-	pct.Contracts[addr] = trace
+	pct.ContractTraces[addr] = trace
 }
 
 func SavePCTrace() {
-	if len(pcTrace.Contracts) == 0 {
+	if len(pcTrace.ContractTraces) == 0 {
 		return
 	}
 	if err := os.MkdirAll("pctrace", os.ModePerm); err != nil {
