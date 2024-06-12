@@ -158,6 +158,11 @@ func (aw *AccessWitness) TouchSlotAndChargeGas(addr []byte, slot common.Hash, is
 	return aw.touchAddressAndChargeGas(addr, *treeIndex, subIndex, isWrite)
 }
 
+// FORK: added to support other chunking strategies
+func (aw *AccessWitness) TouchAddressAndChargeGas(addr []byte, treeIndex uint256.Int, subIndex byte, isWrite bool) uint64 {
+	return aw.touchAddressAndChargeGas(addr, treeIndex, subIndex, isWrite)
+}
+
 func (aw *AccessWitness) touchAddressAndChargeGas(addr []byte, treeIndex uint256.Int, subIndex byte, isWrite bool) uint64 {
 	stemRead, selectorRead, stemWrite, selectorWrite, selectorFill := aw.touchAddress(addr, treeIndex, subIndex, isWrite)
 
