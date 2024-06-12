@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"encoding/gob"
 	"os"
+	"path"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -280,7 +281,7 @@ type PCTrace struct {
 var pcTrace PCTrace
 
 func init() {
-	if err := os.MkdirAll("pctrace", os.ModePerm); err != nil {
+	if err := os.MkdirAll("pctrace/code", os.ModePerm); err != nil {
 		panic(err)
 	}
 }
@@ -293,12 +294,12 @@ func NewPCTrace(contractAddr common.Address) {
 }
 
 func (pct *PCTrace) addBytecode(addr common.Address, code []byte) {
-	// filePath := path.Join("pctrace/code", addr.String())
-	// if _, err := os.Stat(filePath); os.IsNotExist(err) {
-	// 	if err := os.WriteFile(filePath, code, os.ModePerm); err != nil {
-	// 		panic(err)
-	// 	}
-	// }
+	filePath := path.Join("pctrace/code", addr.String())
+	if _, err := os.Stat(filePath); os.IsNotExist(err) {
+		if err := os.WriteFile(filePath, code, os.ModePerm); err != nil {
+			panic(err)
+		}
+	}
 }
 
 func (pct *PCTrace) addTrace(addr common.Address, pc uint64) {
