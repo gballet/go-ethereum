@@ -1871,6 +1871,37 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 		dirty, _ := bc.triedb.Size()
 		stats.report(chain, it.index, dirty, setHead)
 
+		if block.NumberU64() < 1_000 {
+			statedb, err = bc.State()
+			if err != nil {
+				panic(err)
+			}
+			t := statedb.GetTrie()
+			vkt := t.(*trie.VerkleTrie)
+			vit, err := vkt.NodeIterator(nil)
+			if err != nil {
+				panic(err)
+			}
+			f, err := os.Create(fmt.Sprintf("vkt_dump_block_%d.txt", block.NumberU64()))
+			if err != nil {
+				panic(err)
+			}
+			w := bufio.NewWriter(f)
+			fmt.Printf("Block %d\n", block.NumberU64())
+			for vit.Next(true) {
+				if !vit.Leaf() {
+					continue
+				}
+				key := vit.LeafKey()
+				value := vit.LeafBlob()
+				fmt.Fprintf(w, "%x: %x\n", key, value)
+			}
+			if err := w.Flush(); err != nil {
+				panic(err)
+			}
+			f.Close()
+		}
+
 		if !setHead {
 			// After merge we expect few side chains. Simply count
 			// all blocks the CL gives us for GC processing time
