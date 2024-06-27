@@ -340,7 +340,7 @@ func (db *cachingDB) openMPTTrie(root common.Hash) (Trie, error) {
 	return tr, nil
 }
 
-func (db *cachingDB) openVKTrie(root common.Hash) (Trie, error) {
+func (db *cachingDB) openVKTrie(_ common.Hash) (Trie, error) {
 	payload, err := db.DiskDB().Get(trie.FlatDBVerkleNodeKeyPrefix)
 	if err != nil {
 		return trie.NewVerkleTrie(verkle.New(), db.triedb, db.addrToPoint, db.CurrentTransitionState.Ended), nil

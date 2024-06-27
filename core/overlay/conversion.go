@@ -95,29 +95,29 @@ func (kvm *keyValueMigrator) addStorageSlot(addr []byte, slotNumber []byte, slot
 func (kvm *keyValueMigrator) addAccount(addr []byte, acc *types.StateAccount) {
 	leafNodeData := kvm.getOrInitLeafNodeData(newBranchKey(addr, &zeroTreeIndex))
 
-	var version [verkle.LeafValueSize]byte
-	leafNodeData.Values[utils.VersionLeafKey] = version[:]
+	var basicData [verkle.LeafValueSize]byte
+	basicData[utils.BasicDataVersionOffset] = 0 // version
 
-	var balance [verkle.LeafValueSize]byte
-	for i, b := range acc.Balance.Bytes() {
-		balance[len(acc.Balance.Bytes())-1-i] = b
+	// get the lower 16 bytes of water and change its endianness
+	balanceBytes := acc.Balance.Bytes()
+	for i := 0; i < 16 && i < len(balanceBytes); i++ {
+		basicData[utils.BasicDataBalanceOffset+i] = balanceBytes[len(balanceBytes)-1-i]
 	}
-	leafNodeData.Values[utils.BalanceLeafKey] = balance[:]
+	binary.LittleEndian.PutUint64(basicData[utils.BasicDataNonceOffset:], acc.Nonce)
 
-	var nonce [verkle.LeafValueSize]byte
-	binary.LittleEndian.PutUint64(nonce[:8], acc.Nonce)
-	leafNodeData.Values[utils.NonceLeafKey] = nonce[:]
-
+	leafNodeData.Values[utils.BasicDataLeafKey] = basicData[:]
 	leafNodeData.Values[utils.CodeHashLeafKey] = acc.CodeHash[:]
 }
 
+// addAccountCode needs to be called AFTER addAccount, as it will reuse the leaf
+// that was created in there.
 func (kvm *keyValueMigrator) addAccountCode(addr []byte, codeSize uint64, chunks []byte) {
 	leafNodeData := kvm.getOrInitLeafNodeData(newBranchKey(addr, &zeroTreeIndex))
 
 	// Save the code size.
-	var codeSizeBytes [verkle.LeafValueSize]byte
-	binary.LittleEndian.PutUint64(codeSizeBytes[:8], codeSize)
-	leafNodeData.Values[utils.CodeSizeLeafKey] = codeSizeBytes[:]
+	var cs [8]byte
+	binary.LittleEndian.PutUint64(cs[:], codeSize)
+	copy(leafNodeData.Values[utils.BasicDataLeafKey][utils.BasicDataCodeSizeOffset:utils.BasicDataNonceOffset], cs[:3])
 
 	// The first 128 chunks are stored in the account header leaf.
 	for i := 0; i < 128 && i < len(chunks)/32; i++ {

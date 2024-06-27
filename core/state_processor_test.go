@@ -498,8 +498,49 @@ func TestProcessVerkle(t *testing.T) {
 
 	txCost1 := params.TxGas
 	txCost2 := params.TxGas
-	contractCreationCost := intrinsicContractCreationGas + uint64(5600+700+700+700 /* creation with value */ +1439 /* execution costs */)
-	codeWithExtCodeCopyGas := intrinsicCodeWithExtCodeCopyGas + uint64(5600+700 /* creation */ +44044 /* execution costs */)
+	contractCreationCost := intrinsicContractCreationGas + uint64(
+		params.WitnessChunkReadCost+params.WitnessChunkWriteCost+params.WitnessBranchReadCost+params.WitnessBranchWriteCost+ /* creation */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* creation with value */
+			739 /* execution costs */)
+	codeWithExtCodeCopyGas := intrinsicCodeWithExtCodeCopyGas + uint64(
+		params.WitnessChunkReadCost+params.WitnessChunkWriteCost+params.WitnessBranchReadCost+params.WitnessBranchWriteCost+ /* creation (tx) */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+params.WitnessBranchReadCost+params.WitnessBranchWriteCost+ /* creation (CREATE at pc=0x20) */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* write code hash */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #0 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #1 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #2 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #3 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #4 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #5 */
+			params.WitnessChunkReadCost+ /* SLOAD in constructor */
+			params.WitnessChunkWriteCost+ /* SSTORE in constructor */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+params.WitnessBranchReadCost+params.WitnessBranchWriteCost+ /* creation (CREATE at PC=0x121) */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* write code hash */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #0 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #1 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #2 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #3 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #4 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #5 */
+			params.WitnessChunkReadCost+ /* SLOAD in constructor */
+			params.WitnessChunkWriteCost+ /* SSTORE in constructor */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* write code hash for tx creation */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #0 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #1 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #2 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #3 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #4 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #5 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #6 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #7 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #8 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #9 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #10 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #11 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #12 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #13 */
+			params.WitnessChunkReadCost+params.WitnessChunkWriteCost+ /* code chunk #14 */
+			4844 /* execution costs */)
 	blockGasUsagesExpected := []uint64{
 		txCost1*2 + txCost2,
 		txCost1*2 + txCost2 + contractCreationCost + codeWithExtCodeCopyGas,
@@ -939,7 +980,7 @@ func TestProcessVerklExtCodeHashOpcode(t *testing.T) {
 		}
 	})
 
-	contractKeccakTreeKey := utils.GetTreeKeyCodeKeccak(dummyContractAddr[:])
+	contractKeccakTreeKey := utils.GetTreeKeyCodeHash(dummyContractAddr[:])
 
 	var stateDiffIdx = -1
 	for i, stemStateDiff := range statediff[1] {
@@ -1034,7 +1075,7 @@ func TestProcessVerkleBalanceOpcode(t *testing.T) {
 		gen.AddTx(tx)
 	})
 
-	account2BalanceTreeKey := utils.GetTreeKeyBalance(account2[:])
+	account2BalanceTreeKey := utils.GetTreeKeyBasicData(account2[:])
 
 	var stateDiffIdx = -1
 	for i, stemStateDiff := range statediff[0] {
@@ -1049,7 +1090,7 @@ func TestProcessVerkleBalanceOpcode(t *testing.T) {
 
 	var zero [32]byte
 	balanceStateDiff := statediff[0][stateDiffIdx].SuffixDiffs[0]
-	if balanceStateDiff.Suffix != utils.BalanceLeafKey {
+	if balanceStateDiff.Suffix != utils.BasicDataLeafKey {
 		t.Fatalf("invalid suffix diff")
 	}
 	if balanceStateDiff.CurrentValue == nil {
@@ -1148,7 +1189,7 @@ func TestProcessVerkleSelfDestructInSeparateTx(t *testing.T) {
 
 	var zero [32]byte
 	{ // Check self-destructed contract in the witness
-		selfDestructContractTreeKey := utils.GetTreeKeyCodeKeccak(selfDestructContractAddr[:])
+		selfDestructContractTreeKey := utils.GetTreeKeyCodeHash(selfDestructContractAddr[:])
 
 		var stateDiffIdx = -1
 		for i, stemStateDiff := range statediff[1] {
@@ -1162,7 +1203,7 @@ func TestProcessVerkleSelfDestructInSeparateTx(t *testing.T) {
 		}
 
 		balanceStateDiff := statediff[1][stateDiffIdx].SuffixDiffs[1]
-		if balanceStateDiff.Suffix != utils.BalanceLeafKey {
+		if balanceStateDiff.Suffix != utils.BasicDataLeafKey {
 			t.Fatalf("balance invalid suffix")
 		}
 
@@ -1179,7 +1220,7 @@ func TestProcessVerkleSelfDestructInSeparateTx(t *testing.T) {
 		}
 	}
 	{ // Check self-destructed target in the witness.
-		selfDestructTargetTreeKey := utils.GetTreeKeyCodeKeccak(account2[:])
+		selfDestructTargetTreeKey := utils.GetTreeKeyCodeHash(account2[:])
 
 		var stateDiffIdx = -1
 		for i, stemStateDiff := range statediff[1] {
@@ -1193,7 +1234,7 @@ func TestProcessVerkleSelfDestructInSeparateTx(t *testing.T) {
 		}
 
 		balanceStateDiff := statediff[1][stateDiffIdx].SuffixDiffs[0]
-		if balanceStateDiff.Suffix != utils.BalanceLeafKey {
+		if balanceStateDiff.Suffix != utils.BasicDataLeafKey {
 			t.Fatalf("balance invalid suffix")
 		}
 		if balanceStateDiff.CurrentValue == nil {
@@ -1276,7 +1317,7 @@ func TestProcessVerkleSelfDestructInSameTx(t *testing.T) {
 	})
 
 	{ // Check self-destructed contract in the witness
-		selfDestructContractTreeKey := utils.GetTreeKeyCodeKeccak(selfDestructContractAddr[:])
+		selfDestructContractTreeKey := utils.GetTreeKeyCodeHash(selfDestructContractAddr[:])
 
 		var stateDiffIdx = -1
 		for i, stemStateDiff := range statediff[0] {
@@ -1290,7 +1331,7 @@ func TestProcessVerkleSelfDestructInSameTx(t *testing.T) {
 		}
 
 		balanceStateDiff := statediff[0][stateDiffIdx].SuffixDiffs[1]
-		if balanceStateDiff.Suffix != utils.BalanceLeafKey {
+		if balanceStateDiff.Suffix != utils.BasicDataLeafKey {
 			t.Fatalf("balance invalid suffix")
 		}
 
@@ -1303,7 +1344,7 @@ func TestProcessVerkleSelfDestructInSameTx(t *testing.T) {
 		}
 	}
 	{ // Check self-destructed target in the witness.
-		selfDestructTargetTreeKey := utils.GetTreeKeyCodeKeccak(account2[:])
+		selfDestructTargetTreeKey := utils.GetTreeKeyCodeHash(account2[:])
 
 		var stateDiffIdx = -1
 		for i, stemStateDiff := range statediff[0] {
@@ -1317,7 +1358,7 @@ func TestProcessVerkleSelfDestructInSameTx(t *testing.T) {
 		}
 
 		balanceStateDiff := statediff[0][stateDiffIdx].SuffixDiffs[0]
-		if balanceStateDiff.Suffix != utils.BalanceLeafKey {
+		if balanceStateDiff.Suffix != utils.BasicDataLeafKey {
 			t.Fatalf("balance invalid suffix")
 		}
 		if balanceStateDiff.CurrentValue == nil {
@@ -1422,7 +1463,7 @@ func TestProcessVerkleSelfDestructInSeparateTxWithSelfBeneficiary(t *testing.T) 
 		// to the beneficiary. In this case both addresses are the same, thus this might be optimizable from a gas
 		// perspective. But until that happens, we need to honor this "balance reading" adding it to the witness.
 
-		selfDestructContractTreeKey := utils.GetTreeKeyCodeKeccak(selfDestructContractAddr[:])
+		selfDestructContractTreeKey := utils.GetTreeKeyCodeHash(selfDestructContractAddr[:])
 
 		var stateDiffIdx = -1
 		for i, stemStateDiff := range statediff[1] {
@@ -1436,7 +1477,7 @@ func TestProcessVerkleSelfDestructInSeparateTxWithSelfBeneficiary(t *testing.T) 
 		}
 
 		balanceStateDiff := statediff[1][stateDiffIdx].SuffixDiffs[1]
-		if balanceStateDiff.Suffix != utils.BalanceLeafKey {
+		if balanceStateDiff.Suffix != utils.BasicDataLeafKey {
 			t.Fatalf("balance invalid suffix")
 		}
 
@@ -1521,7 +1562,7 @@ func TestProcessVerkleSelfDestructInSameTxWithSelfBeneficiary(t *testing.T) {
 	})
 
 	{ // Check self-destructed contract in the witness
-		selfDestructContractTreeKey := utils.GetTreeKeyCodeKeccak(selfDestructContractAddr[:])
+		selfDestructContractTreeKey := utils.GetTreeKeyCodeHash(selfDestructContractAddr[:])
 
 		var stateDiffIdx = -1
 		for i, stemStateDiff := range statediff[0] {
@@ -1535,7 +1576,7 @@ func TestProcessVerkleSelfDestructInSameTxWithSelfBeneficiary(t *testing.T) {
 		}
 
 		balanceStateDiff := statediff[0][stateDiffIdx].SuffixDiffs[1]
-		if balanceStateDiff.Suffix != utils.BalanceLeafKey {
+		if balanceStateDiff.Suffix != utils.BasicDataLeafKey {
 			t.Fatalf("balance invalid suffix")
 		}
 

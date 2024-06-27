@@ -35,7 +35,7 @@ type verkleNodeIterator struct {
 	stack []verkleNodeIteratorState
 }
 
-func newVerkleNodeIterator(trie *VerkleTrie, start []byte) (NodeIterator, error) {
+func newVerkleNodeIterator(trie *VerkleTrie, _ []byte) (NodeIterator, error) {
 	if trie.Hash() == zero {
 		return new(nodeIterator), nil
 	}
