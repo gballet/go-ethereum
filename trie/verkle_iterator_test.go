@@ -62,7 +62,7 @@ func TestVerkleIterator(t *testing.T) {
 			t.Logf("\tLeaf: %x", it.LeafKey())
 		}
 	}
-	if leafcount != 6 {
+	if leafcount != 2 {
 		t.Fatalf("invalid leaf count: %d != 6", leafcount)
 	}
 }

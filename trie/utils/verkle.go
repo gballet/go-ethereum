@@ -24,11 +24,13 @@ import (
 )
 
 const (
-	VersionLeafKey  = 0
-	BalanceLeafKey  = 1
-	NonceLeafKey    = 2
-	CodeHashLeafKey = 3
-	CodeSizeLeafKey = 4
+	BasicDataLeafKey = 0
+	CodeHashLeafKey  = 1
+
+	BasicDataVersionOffset  = 0
+	BasicDataCodeSizeOffset = 5
+	BasicDataNonceOffset    = 8
+	BasicDataBalanceOffset  = 16
 
 	maxPointCacheByteSize = 100 << 20
 )
@@ -70,9 +72,9 @@ func (pc *PointCache) GetTreeKeyHeader(addr []byte) *verkle.Point {
 	return point
 }
 
-func (pc *PointCache) GetTreeKeyVersionCached(addr []byte) []byte {
+func (pc *PointCache) GetTreeKeyBasicDataCached(addr []byte) []byte {
 	p := pc.GetTreeKeyHeader(addr)
-	v := PointToHash(p, VersionLeafKey)
+	v := PointToHash(p, BasicDataLeafKey)
 	return v[:]
 }
 
@@ -133,28 +135,16 @@ func GetTreeKeyAccountLeaf(address []byte, leaf byte) []byte {
 	return GetTreeKey(address, zero, leaf)
 }
 
-func GetTreeKeyVersion(address []byte) []byte {
-	return GetTreeKey(address, zero, VersionLeafKey)
+func GetTreeKeyBasicData(address []byte) []byte {
+	return GetTreeKey(address, zero, BasicDataLeafKey)
 }
 
-func GetTreeKeyVersionWithEvaluatedAddress(addrp *verkle.Point) []byte {
-	return GetTreeKeyWithEvaluatedAddess(addrp, zero, VersionLeafKey)
+func GetTreeKeyBasicDataEvaluatedAddress(addrp *verkle.Point) []byte {
+	return GetTreeKeyWithEvaluatedAddess(addrp, zero, BasicDataLeafKey)
 }
 
-func GetTreeKeyBalance(address []byte) []byte {
-	return GetTreeKey(address, zero, BalanceLeafKey)
-}
-
-func GetTreeKeyNonce(address []byte) []byte {
-	return GetTreeKey(address, zero, NonceLeafKey)
-}
-
-func GetTreeKeyCodeKeccak(address []byte) []byte {
+func GetTreeKeyCodeHash(address []byte) []byte {
 	return GetTreeKey(address, zero, CodeHashLeafKey)
-}
-
-func GetTreeKeyCodeSize(address []byte) []byte {
-	return GetTreeKey(address, zero, CodeSizeLeafKey)
 }
 
 func GetTreeKeyCodeChunk(address []byte, chunk *uint256.Int) []byte {

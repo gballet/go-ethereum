@@ -180,7 +180,7 @@ func convertToVerkle(ctx *cli.Context) error {
 			return fmt.Errorf("could not find preimage for address %x %v %v", accIt.Hash(), acc, accIt.Error())
 		}
 		addrPoint := tutils.EvaluateAddressPoint(addr)
-		stem := tutils.GetTreeKeyVersionWithEvaluatedAddress(addrPoint)
+		stem := tutils.GetTreeKeyBasicDataEvaluatedAddress(addrPoint)
 
 		// Store the account code if present
 		if !bytes.Equal(acc.CodeHash, types.EmptyRootHash[:]) {

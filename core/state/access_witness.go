@@ -91,7 +91,7 @@ func (aw *AccessWitness) Copy() *AccessWitness {
 
 func (aw *AccessWitness) TouchFullAccount(addr []byte, isWrite bool) uint64 {
 	var gas uint64
-	for i := utils.VersionLeafKey; i <= utils.CodeSizeLeafKey; i++ {
+	for i := utils.BasicDataLeafKey; i <= utils.CodeHashLeafKey; i++ {
 		gas += aw.touchAddressAndChargeGas(addr, zeroTreeIndex, byte(i), isWrite)
 	}
 	return gas
@@ -99,15 +99,14 @@ func (aw *AccessWitness) TouchFullAccount(addr []byte, isWrite bool) uint64 {
 
 func (aw *AccessWitness) TouchAndChargeMessageCall(addr []byte) uint64 {
 	var gas uint64
-	gas += aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.VersionLeafKey, false)
-	gas += aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeSizeLeafKey, false)
+	gas += aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, false)
 	return gas
 }
 
 func (aw *AccessWitness) TouchAndChargeValueTransfer(callerAddr, targetAddr []byte) uint64 {
 	var gas uint64
-	gas += aw.touchAddressAndChargeGas(callerAddr, zeroTreeIndex, utils.BalanceLeafKey, true)
-	gas += aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BalanceLeafKey, true)
+	gas += aw.touchAddressAndChargeGas(callerAddr, zeroTreeIndex, utils.BasicDataLeafKey, true)
+	gas += aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, true)
 	return gas
 }
 
@@ -115,17 +114,13 @@ func (aw *AccessWitness) TouchAndChargeValueTransfer(callerAddr, targetAddr []by
 // a contract creation
 func (aw *AccessWitness) TouchAndChargeContractCreateInit(addr []byte, createSendsValue bool) uint64 {
 	var gas uint64
-	gas += aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.VersionLeafKey, true)
-	gas += aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.NonceLeafKey, true)
-	if createSendsValue {
-		gas += aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BalanceLeafKey, true)
-	}
+	gas += aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, true)
 	return gas
 }
 
 func (aw *AccessWitness) TouchTxOriginAndComputeGas(originAddr []byte) uint64 {
-	for i := utils.VersionLeafKey; i <= utils.CodeSizeLeafKey; i++ {
-		aw.touchAddressAndChargeGas(originAddr, zeroTreeIndex, byte(i), i == utils.BalanceLeafKey || i == utils.NonceLeafKey)
+	for i := utils.BasicDataLeafKey; i <= utils.CodeHashLeafKey; i++ {
+		aw.touchAddressAndChargeGas(originAddr, zeroTreeIndex, byte(i), i == utils.BasicDataLeafKey)
 	}
 
 	// Kaustinen note: we're currently experimenting with stop chargin gas for the origin address
@@ -136,14 +131,10 @@ func (aw *AccessWitness) TouchTxOriginAndComputeGas(originAddr []byte) uint64 {
 }
 
 func (aw *AccessWitness) TouchTxExistingAndComputeGas(targetAddr []byte, sendsValue bool) uint64 {
-	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.VersionLeafKey, false)
-	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.CodeSizeLeafKey, false)
+	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, false)
 	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.CodeHashLeafKey, false)
-	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.NonceLeafKey, false)
 	if sendsValue {
-		aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BalanceLeafKey, true)
-	} else {
-		aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BalanceLeafKey, false)
+		aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, true)
 	}
 
 	// Kaustinen note: we're currently experimenting with stop chargin gas for the origin address
@@ -276,20 +267,8 @@ func (aw *AccessWitness) TouchCodeChunksRangeAndChargeGas(contractAddr []byte, s
 	return statelessGasCharged
 }
 
-func (aw *AccessWitness) TouchVersion(addr []byte, isWrite bool) uint64 {
-	return aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.VersionLeafKey, isWrite)
-}
-
-func (aw *AccessWitness) TouchBalance(addr []byte, isWrite bool) uint64 {
-	return aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BalanceLeafKey, isWrite)
-}
-
-func (aw *AccessWitness) TouchNonce(addr []byte, isWrite bool) uint64 {
-	return aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.NonceLeafKey, isWrite)
-}
-
-func (aw *AccessWitness) TouchCodeSize(addr []byte, isWrite bool) uint64 {
-	return aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeSizeLeafKey, isWrite)
+func (aw *AccessWitness) TouchBasicData(addr []byte, isWrite bool) uint64 {
+	return aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, isWrite)
 }
 
 func (aw *AccessWitness) TouchCodeHash(addr []byte, isWrite bool) uint64 {
