@@ -368,10 +368,6 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 		if err := overlay.OverlayVerkleTransition(state, parent.Root, chain.Config().OverlayStride); err != nil {
 			log.Error("error performing the transition", "err", err)
 		}
-
-		// if state.Database().InTransition() {
-		// 	fmt.Println(state.GetTrie().(*trie.TransitionTrie).Overlay().ToDot())
-		// }
 	}
 }
 
