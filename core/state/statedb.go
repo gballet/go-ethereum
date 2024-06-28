@@ -1045,20 +1045,7 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 	if metrics.EnabledExpensive {
 		defer func(start time.Time) { s.AccountHashes += time.Since(start) }(time.Now())
 	}
-	// if s.Database().InTransition() {
-	// 	log.Info("dumping tree before hashing")
-	// 	fmt.Println(s.GetTrie().(*trie.TransitionTrie).Overlay().ToDot())
-	// }
 	root := s.trie.Hash()
-	// if s.Database().InTransition() {
-	// 	log.Info("dumping tree after hashing")
-	// 	fmt.Println(s.GetTrie().(*trie.TransitionTrie).Overlay().ToDot())
-	// } else if s.Database().Transitioned() {
-	// 	log.Info("dumping tree after hashing - post transition")
-	// 	fmt.Println(s.GetTrie().(*trie.VerkleTrie).ToDot())
-	// } else {
-	// 	log.Info("transition hasn't started")
-	// }
 
 	// Save the root of the MPT so that it can be used during the transition
 	if !s.Database().InTransition() && !s.Database().Transitioned() {
