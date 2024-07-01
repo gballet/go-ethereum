@@ -775,8 +775,8 @@ func TestProcessVerkleInvalidContractCreation(t *testing.T) {
 				if stemStateDiff.SuffixDiffs[0].NewValue == nil {
 					t.Fatalf("missing post state value for BLOCKHASH contract at block #2")
 				}
-				if *stemStateDiff.SuffixDiffs[0].NewValue != common.HexToHash("0a130e6478e47593861d8c3feb65045497327d89619dd12ae12d70e73a0191dd") {
-					t.Fatalf("invalid post state value for BLOCKHASH contract at block #2: 0a130e6478e47593861d8c3feb65045497327d89619dd12ae12d70e73a0191dd != %x", (*stemStateDiff.SuffixDiffs[0].NewValue)[:])
+				if *stemStateDiff.SuffixDiffs[0].NewValue != common.HexToHash("9707126aaa05384bff8a3b9218e00ba75a6bb8ed0a2110661649ff34546a8380") {
+					t.Fatalf("invalid post state value for BLOCKHASH contract at block #2: 9707126aaa05384bff8a3b9218e00ba75a6bb8ed0a2110661649ff34546a8380 != %x", (*stemStateDiff.SuffixDiffs[0].NewValue)[:])
 				}
 			} else if suffixDiff.Suffix > 4 {
 				t.Fatalf("invalid suffix diff found for %x in block #2: %d\n", stemStateDiff.Stem, suffixDiff.Suffix)
@@ -1202,20 +1202,20 @@ func TestProcessVerkleSelfDestructInSeparateTx(t *testing.T) {
 			t.Fatalf("no state diff found for stem")
 		}
 
-		balanceStateDiff := statediff[1][stateDiffIdx].SuffixDiffs[1]
+		balanceStateDiff := statediff[1][stateDiffIdx].SuffixDiffs[0]
 		if balanceStateDiff.Suffix != utils.BasicDataLeafKey {
 			t.Fatalf("balance invalid suffix")
 		}
 
 		// The original balance was 42.
-		var fourtyTwo [32]byte
+		var fourtyTwo [16]byte
 		fourtyTwo[0] = 42
-		if *balanceStateDiff.CurrentValue != fourtyTwo {
-			t.Fatalf("the pre-state balance before self-destruct must be 42")
+		if !bytes.Equal((*balanceStateDiff.CurrentValue)[utils.BasicDataBalanceOffset:], fourtyTwo[:]) {
+			t.Fatalf("the pre-state balance before self-destruct must be %x, got %x", fourtyTwo, *balanceStateDiff.CurrentValue)
 		}
 
 		// The new balance must be 0.
-		if *balanceStateDiff.NewValue != zero {
+		if !bytes.Equal((*balanceStateDiff.NewValue)[utils.BasicDataBalanceOffset:], zero[utils.BasicDataBalanceOffset:]) {
 			t.Fatalf("the post-state balance after self-destruct must be 0")
 		}
 	}
@@ -1243,8 +1243,8 @@ func TestProcessVerkleSelfDestructInSeparateTx(t *testing.T) {
 		if balanceStateDiff.NewValue == nil {
 			t.Fatalf("codeHash.NewValue must not be empty")
 		}
-		preStateBalance := binary.LittleEndian.Uint64(balanceStateDiff.CurrentValue[:])
-		postStateBalance := binary.LittleEndian.Uint64(balanceStateDiff.NewValue[:])
+		preStateBalance := binary.LittleEndian.Uint64(balanceStateDiff.CurrentValue[utils.BasicDataBalanceOffset:])
+		postStateBalance := binary.LittleEndian.Uint64(balanceStateDiff.NewValue[utils.BasicDataBalanceOffset:])
 		if postStateBalance-preStateBalance != 42 {
 			t.Fatalf("the post-state balance after self-destruct must be 42")
 		}
@@ -1330,7 +1330,7 @@ func TestProcessVerkleSelfDestructInSameTx(t *testing.T) {
 			t.Fatalf("no state diff found for stem")
 		}
 
-		balanceStateDiff := statediff[0][stateDiffIdx].SuffixDiffs[1]
+		balanceStateDiff := statediff[0][stateDiffIdx].SuffixDiffs[0]
 		if balanceStateDiff.Suffix != utils.BasicDataLeafKey {
 			t.Fatalf("balance invalid suffix")
 		}
@@ -1367,8 +1367,8 @@ func TestProcessVerkleSelfDestructInSameTx(t *testing.T) {
 		if balanceStateDiff.NewValue == nil {
 			t.Fatalf("codeHash.NewValue must not be empty")
 		}
-		preStateBalance := binary.LittleEndian.Uint64(balanceStateDiff.CurrentValue[:])
-		postStateBalance := binary.LittleEndian.Uint64(balanceStateDiff.NewValue[:])
+		preStateBalance := binary.LittleEndian.Uint64(balanceStateDiff.CurrentValue[utils.BasicDataBalanceOffset:])
+		postStateBalance := binary.LittleEndian.Uint64(balanceStateDiff.NewValue[utils.BasicDataBalanceOffset:])
 		if postStateBalance-preStateBalance != 42 {
 			t.Fatalf("the post-state balance after self-destruct must be 42")
 		}
@@ -1476,15 +1476,15 @@ func TestProcessVerkleSelfDestructInSeparateTxWithSelfBeneficiary(t *testing.T) 
 			t.Fatalf("no state diff found for stem")
 		}
 
-		balanceStateDiff := statediff[1][stateDiffIdx].SuffixDiffs[1]
+		balanceStateDiff := statediff[1][stateDiffIdx].SuffixDiffs[0]
 		if balanceStateDiff.Suffix != utils.BasicDataLeafKey {
 			t.Fatalf("balance invalid suffix")
 		}
 
 		// The original balance was 42.
-		var fourtyTwo [32]byte
+		var fourtyTwo [16]byte
 		fourtyTwo[0] = 42
-		if *balanceStateDiff.CurrentValue != fourtyTwo {
+		if !bytes.Equal((*balanceStateDiff.CurrentValue)[utils.BasicDataBalanceOffset:], fourtyTwo[:]) {
 			t.Fatalf("the pre-state balance before self-destruct must be 42")
 		}
 
@@ -1575,7 +1575,7 @@ func TestProcessVerkleSelfDestructInSameTxWithSelfBeneficiary(t *testing.T) {
 			t.Fatalf("no state diff found for stem")
 		}
 
-		balanceStateDiff := statediff[0][stateDiffIdx].SuffixDiffs[1]
+		balanceStateDiff := statediff[0][stateDiffIdx].SuffixDiffs[0]
 		if balanceStateDiff.Suffix != utils.BasicDataLeafKey {
 			t.Fatalf("balance invalid suffix")
 		}
