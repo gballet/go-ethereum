@@ -145,7 +145,7 @@ func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 	var balance [32]byte
 	copy(balance[16:], values[utils.BasicDataLeafKey][utils.BasicDataBalanceOffset:])
 	for i := 0; i < 8; i++ {
-		balance[16-i-1], balance[i] = balance[i], balance[16-i-1]
+		balance[31-i], balance[utils.BasicDataBalanceOffset+i] = balance[utils.BasicDataBalanceOffset+i], balance[31-i]
 	}
 	acc.Balance = new(big.Int).SetBytes(balance[:])
 	acc.CodeHash = values[utils.CodeHashLeafKey]
@@ -155,7 +155,7 @@ func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 
 var zero [32]byte
 
-func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount) error {
+func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount, codeLen int) error {
 	var (
 		err       error
 		basicData [32]byte
@@ -169,6 +169,9 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount)
 	for i := 0; i < 16 && i < len(balanceBytes); i++ {
 		basicData[utils.BasicDataBalanceOffset+i] = balanceBytes[len(balanceBytes)-1-i]
 	}
+	var cs [8]byte
+	binary.LittleEndian.PutUint64(cs[:], uint64(codeLen))
+	copy(basicData[utils.BasicDataCodeSizeOffset:], cs[:3])
 
 	values[utils.BasicDataLeafKey] = basicData[:]
 	values[utils.CodeHashLeafKey] = acc.CodeHash[:]
@@ -182,7 +185,6 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount)
 	if err != nil {
 		return fmt.Errorf("UpdateAccount (%x) error: %v", addr, err)
 	}
-	// TODO figure out if the code size needs to be updated, too
 
 	return nil
 }
@@ -453,17 +455,6 @@ func (t *VerkleTrie) UpdateContractCode(addr common.Address, codeHash common.Has
 		}
 		values[groupOffset] = chunks[i : i+32]
 
-		// Reuse the calculated key to also update the code size.
-		if i == 0 {
-			headervals, err := t.root.(*verkle.InternalNode).GetValuesAtStem(key[:31], t.FlatdbNodeResolver)
-			if err != nil {
-				return fmt.Errorf("UpdateContractCode (addr=%x) error while getting account header: %w", addr[:], err)
-			}
-			var cs [8]byte
-			binary.LittleEndian.PutUint64(cs[:], uint64(len(code)))
-			copy(headervals[utils.BasicDataLeafKey][utils.BasicDataCodeSizeOffset:], cs[5:8])
-			values[utils.BasicDataLeafKey] = headervals[utils.BasicDataLeafKey]
-		}
 
 		if groupOffset == 255 || len(chunks)-i <= 32 {
 			err = t.UpdateStem(key[:31], values)
