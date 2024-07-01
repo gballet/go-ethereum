@@ -141,7 +141,7 @@ type Trie interface {
 	// UpdateAccount abstracts an account write to the trie. It encodes the
 	// provided account object with associated algorithm and then updates it
 	// in the trie with provided address.
-	UpdateAccount(address common.Address, account *types.StateAccount) error
+	UpdateAccount(address common.Address, account *types.StateAccount, codeLen int) error
 
 	// UpdateContractCode abstracts code write to the trie. It is expected
 	// to be moved to the stateWriter interface when the latter is ready.
