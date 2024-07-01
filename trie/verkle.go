@@ -455,7 +455,6 @@ func (t *VerkleTrie) UpdateContractCode(addr common.Address, codeHash common.Has
 		}
 		values[groupOffset] = chunks[i : i+32]
 
-
 		if groupOffset == 255 || len(chunks)-i <= 32 {
 			err = t.UpdateStem(key[:31], values)
 
