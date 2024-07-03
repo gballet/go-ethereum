@@ -1398,3 +1398,47 @@ func TestAdjustTimeAfterFork(t *testing.T) {
 		t.Errorf("failed to build block on fork")
 	}
 }
+
+func TestCreateContractWithNonEmptyStorageAndEmptyCode(t *testing.T) {
+	var gasLimit uint64 = 1_000_000
+	key, _ := crypto.GenerateKey() // nolint: gosec
+	auth, _ := bind.NewKeyedTransactorWithChainID(key, big.NewInt(1337))
+	genAlloc := make(core.GenesisAlloc)
+	genAlloc[auth.From] = core.GenesisAccount{Balance: big.NewInt(9223372036854775807)}
+
+	sim := NewSimulatedBackend(genAlloc, gasLimit)
+	defer sim.Close()
+
+	head, _ := sim.HeaderByNumber(context.Background(), nil) // Should be child's, good enough
+	gasPrice := new(big.Int).Add(head.BaseFee, big.NewInt(1))
+
+	// Deploy initcode doing SSTORE(0, 42) and returns no code.
+	// PUSH1 0x42
+	// PUSH1 0x00 (can't use PUSH0 in default simulator config)
+	// SSTORE
+	code := `6042600055`
+	var gas uint64 = 500_000
+	tx := types.NewContractCreation(0, big.NewInt(0), gas, gasPrice, common.FromHex(code))
+	tx, _ = types.SignTx(tx, types.HomesteadSigner{}, key)
+
+	if err := sim.SendTransaction(context.Background(), tx); err != nil {
+		t.Fatal("error sending transaction")
+	}
+	sim.Commit()
+
+	deployedContract := crypto.CreateAddress(auth.From, 0)
+	statedb, err := sim.blockchain.State()
+	if err != nil {
+		t.Errorf("could not get state: %v", err)
+	}
+
+	// Check that code is empty.
+	if code := statedb.GetCode(deployedContract); len(code) > 0 {
+		t.Errorf("expected empty code, got %x", code)
+	}
+
+	// Check that storage slot 0 has value 0x42 as expected.
+	if value := statedb.GetState(deployedContract, common.HexToHash("0x0")); value != common.HexToHash("0x42") {
+		t.Errorf("expected storage slot 0 to be 0x42, got %x", value)
+	}
+}
