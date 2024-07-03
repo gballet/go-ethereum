@@ -34,6 +34,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/clique"
 	"github.com/ethereum/go-ethereum/consensus/misc"
+
 	// "github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -298,6 +299,8 @@ type AuRa struct {
 	certifierLock sync.RWMutex
 
 	Syscall Syscall
+
+	isPos bool
 }
 
 func SortedKeys[K constraints.Ordered, V any](m map[K]V) []K {
@@ -1115,6 +1118,10 @@ func (c *AuRa) ExecuteSystemWithdrawals(withdrawals []*types.Withdrawal) error {
 		log.Warn("ExecuteSystemWithdrawals", "err", err)
 	}
 	return err
+}
+
+func (c *AuRa) SetMerged(merged bool) {
+	c.isPos = merged
 }
 
 // An empty step message that is included in a seal, the only difference is that it doesn't include

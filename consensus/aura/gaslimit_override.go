@@ -1,6 +1,8 @@
 package aura
 
 import (
+	"fmt"
+
 	lru "github.com/hashicorp/golang-lru/v2"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -58,14 +60,14 @@ func (c *AuRa) GetBlockGasLimitFromContract(_ *params.ChainConfig) uint64 {
 func (c *AuRa) verifyGasLimitOverride(config *params.ChainConfig, chain consensus.ChainHeaderReader, header *types.Header, statedb *state.StateDB, syscallCustom Syscall) {
 	// TODO(gballet): take care of that when we reach the merge
 	//IsPoSHeader check is necessary as merge.go calls Initialize on AuRa indiscriminately
-	// gasLimitOverride := c.HasGasLimitContract() && !misc.IsPoSHeader(header)
-	// if gasLimitOverride {
-	blockGasLimit := c.GetBlockGasLimitFromContract(config)
+	gasLimitOverride := c.HasGasLimitContract() && !c.isPos
+	if gasLimitOverride {
+		blockGasLimit := c.GetBlockGasLimitFromContract(config)
 
-	if blockGasLimit > 0 {
-		if header.GasLimit != blockGasLimit {
-			panic("Block gas limit doesn't match BlockGasLimitContract with AuRa")
+		if blockGasLimit > 0 {
+			if header.GasLimit != blockGasLimit {
+				panic(fmt.Sprintf("Block gas limit doesn't match BlockGasLimitContract with AuRa: %d != %d at block %d, merged=%d", header.GasLimit, blockGasLimit, header.Number, c.isPos))
+			}
 		}
 	}
-	// }
 }
