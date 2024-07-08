@@ -158,7 +158,7 @@ func (b *testWorkerBackend) newRandomVerkleUncle() *types.Block {
 	} else {
 		parent = b.chain.GetBlockByHash(b.chain.CurrentBlock().ParentHash)
 	}
-	blocks, _, _, _ := core.GenerateVerkleChain(b.chain.Config(), parent, b.chain.Engine(), b.db, 1, func(i int, gen *core.BlockGen) {
+	blocks, _, _, _, _ := core.GenerateVerkleChain(b.chain.Config(), parent, b.chain.Engine(), b.db, 1, func(i int, gen *core.BlockGen) {
 		var addr = make([]byte, common.AddressLength)
 		rand.Read(addr)
 		gen.SetCoinbase(common.BytesToAddress(addr))

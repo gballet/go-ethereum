@@ -358,19 +358,20 @@ func GenerateChainWithGenesis(genesis *Genesis, engine consensus.Engine, n int, 
 		panic(err)
 	}
 	if genesis.Config != nil && genesis.Config.IsPrague(genesis.ToBlock().Number(), genesis.ToBlock().Time()) {
-		blocks, receipts, _, _ := GenerateVerkleChain(genesis.Config, genesis.ToBlock(), engine, db, n, gen)
+		blocks, receipts, _, _, _ := GenerateVerkleChain(genesis.Config, genesis.ToBlock(), engine, db, n, gen)
 		return db, blocks, receipts
 	}
 	blocks, receipts := GenerateChain(genesis.Config, genesis.ToBlock(), engine, db, n, gen)
 	return db, blocks, receipts
 }
 
-func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine consensus.Engine, diskdb ethdb.Database, n int, gen func(int, *BlockGen)) ([]*types.Block, []types.Receipts, []*verkle.VerkleProof, []verkle.StateDiff) {
+func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine consensus.Engine, diskdb ethdb.Database, n int, gen func(int, *BlockGen)) ([]*types.Block, []types.Receipts, []*verkle.VerkleProof, []verkle.StateDiff, []common.Hash) {
 	if config == nil {
 		config = params.TestChainConfig
 	}
 	proofs := make([]*verkle.VerkleProof, 0, n)
 	keyvals := make([]verkle.StateDiff, 0, n)
+	proots := make([]common.Hash, 0, n)
 	blocks, receipts := make(types.Blocks, n), make([]types.Receipts, n)
 	chainreader := &generatedLinearChainReader{
 		config: config,
@@ -428,6 +429,7 @@ func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine
 
 			proofs = append(proofs, block.ExecutionWitness().VerkleProof)
 			keyvals = append(keyvals, block.ExecutionWitness().StateDiff)
+			proots = append(proots, parent.Root())
 
 			return block, b.receipts
 		}
@@ -450,7 +452,7 @@ func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine
 		parent = block
 		snaps = statedb.Snaps()
 	}
-	return blocks, receipts, proofs, keyvals
+	return blocks, receipts, proofs, keyvals, proots
 }
 
 func makeHeader(chain consensus.ChainReader, parent *types.Block, state *state.StateDB, engine consensus.Engine) *types.Header {

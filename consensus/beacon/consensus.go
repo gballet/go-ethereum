@@ -398,9 +398,10 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	state.Database().SaveTransitionState(header.Root)
 
 	var (
-		p    *verkle.VerkleProof
-		k    verkle.StateDiff
-		keys = state.Witness().Keys()
+		p     *verkle.VerkleProof
+		k     verkle.StateDiff
+		keys  = state.Witness().Keys()
+		proot common.Hash
 	)
 	if chain.Config().IsPrague(header.Number, header.Time) {
 		// Open the pre-tree to prove the pre-state against
@@ -408,6 +409,7 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 		if parent == nil {
 			return nil, fmt.Errorf("nil parent header for block %d", header.Number)
 		}
+		proot = parent.Root
 
 		// Load transition state at beginning of block, because
 		// OpenTrie needs to know what the conversion status is.
@@ -467,7 +469,7 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	// Assemble and return the final block.
 	block := types.NewBlockWithWithdrawals(header, txs, uncles, receipts, withdrawals, trie.NewStackTrie(nil))
 	if chain.Config().IsPrague(header.Number, header.Time) && chain.Config().ProofInBlocks {
-		block.SetVerkleProof(p, k)
+		block.SetVerkleProof(p, k, proot)
 	}
 	return block, nil
 }

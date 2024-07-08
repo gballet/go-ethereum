@@ -505,7 +505,7 @@ func TestProcessVerkle(t *testing.T) {
 		txCost1*2 + txCost2 + contractCreationCost + codeWithExtCodeCopyGas,
 	}
 	// TODO utiliser GenerateChainWithGenesis pour le rendre plus pratique
-	chain, _, proofs, keyvals := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 2, func(i int, gen *BlockGen) {
+	chain, _, proofs, keyvals, _ := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 2, func(i int, gen *BlockGen) {
 		gen.SetPoS()
 
 		// TODO need to check that the tx cost provided is the exact amount used (no remaining left-over)
@@ -642,7 +642,7 @@ func TestProcessVerkleInvalidContractCreation(t *testing.T) {
 	// Create two blocks that reproduce what is happening on kaustinen.
 	// - The first block contains two failing contract creation transactions, that write to storage before they revert.
 	// - The second block contains a single failing contract creation transaction, that fails right off the bat.
-	_, _, _, statediff := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 2, func(i int, gen *BlockGen) {
+	_, _, _, statediff, _ := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 2, func(i int, gen *BlockGen) {
 		gen.SetPoS()
 
 		if i == 0 {
@@ -797,7 +797,7 @@ func TestProcessVerkleContractWithEmptyCode(t *testing.T) {
 	// is now independent of the blockchain database.
 	gspec.MustCommit(gendb)
 
-	_, _, _, statediff := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 1, func(i int, gen *BlockGen) {
+	_, _, _, statediff, _ := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 1, func(i int, gen *BlockGen) {
 		gen.SetPoS()
 		var tx types.Transaction
 		// a transaction that does some PUSH1n but returns a 0-sized contract
@@ -922,7 +922,7 @@ func TestProcessVerklExtCodeHashOpcode(t *testing.T) {
 		0x3F, // EXTCODEHASH
 	}
 	extCodeHashContractAddr := common.HexToAddress("db7d6ab1f17c6b31909ae466702703daef9269cf")
-	_, _, _, statediff := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 2, func(i int, gen *BlockGen) {
+	_, _, _, statediff, _ := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 2, func(i int, gen *BlockGen) {
 		gen.SetPoS()
 
 		if i == 0 {
@@ -1023,7 +1023,7 @@ func TestProcessVerkleBalanceOpcode(t *testing.T) {
 	// is now independent of the blockchain database.
 	gspec.MustCommit(gendb)
 
-	_, _, _, statediff := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 1, func(i int, gen *BlockGen) {
+	_, _, _, statediff, _ := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 1, func(i int, gen *BlockGen) {
 		gen.SetPoS()
 		txData := []byte{
 			0x73,                                                                                                                   // PUSH20
@@ -1132,7 +1132,7 @@ func TestProcessVerkleSelfDestructInSeparateTx(t *testing.T) {
 		0xFF, // SELFDESTRUCT
 	}
 	selfDestructContractAddr := common.HexToAddress("3a220f351252089d385b29beca14e27f204c296a")
-	_, _, _, statediff := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 2, func(i int, gen *BlockGen) {
+	_, _, _, statediff, _ := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 2, func(i int, gen *BlockGen) {
 		gen.SetPoS()
 
 		if i == 0 {
@@ -1269,7 +1269,7 @@ func TestProcessVerkleSelfDestructInSameTx(t *testing.T) {
 		0xFF, // SELFDESTRUCT
 	}
 	selfDestructContractAddr := common.HexToAddress("3a220f351252089d385b29beca14e27f204c296a")
-	_, _, _, statediff := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 1, func(i int, gen *BlockGen) {
+	_, _, _, statediff, _ := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 1, func(i int, gen *BlockGen) {
 		gen.SetPoS()
 		tx, _ := types.SignTx(types.NewContractCreation(0, big.NewInt(42), 100_000, big.NewInt(875000000), selfDestructContract), signer, testKey)
 		gen.AddTx(tx)
@@ -1403,7 +1403,7 @@ func TestProcessVerkleSelfDestructInSeparateTxWithSelfBeneficiary(t *testing.T) 
 		0xFF, // SELFDESTRUCT
 	}
 	selfDestructContractAddr := common.HexToAddress("3a220f351252089d385b29beca14e27f204c296a")
-	_, _, _, statediff := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 2, func(i int, gen *BlockGen) {
+	_, _, _, statediff, _ := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 2, func(i int, gen *BlockGen) {
 		gen.SetPoS()
 		if i == 0 {
 			// Create selfdestruct contract, sending 42 wei.
@@ -1514,7 +1514,7 @@ func TestProcessVerkleSelfDestructInSameTxWithSelfBeneficiary(t *testing.T) {
 		0xFF, // SELFDESTRUCT
 	}
 	selfDestructContractAddr := common.HexToAddress("3a220f351252089d385b29beca14e27f204c296a")
-	_, _, _, statediff := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 1, func(i int, gen *BlockGen) {
+	_, _, _, statediff, _ := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 1, func(i int, gen *BlockGen) {
 		gen.SetPoS()
 		tx, _ := types.SignTx(types.NewContractCreation(0, big.NewInt(42), 100_000, big.NewInt(875000000), selfDestructContract), signer, testKey)
 		gen.AddTx(tx)

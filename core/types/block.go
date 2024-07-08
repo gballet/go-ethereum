@@ -60,14 +60,16 @@ func (n *BlockNonce) UnmarshalText(input []byte) error {
 }
 
 type ExecutionWitness struct {
-	StateDiff   verkle.StateDiff    `json:"stateDiff"`
-	VerkleProof *verkle.VerkleProof `json:"verkleProof"`
+	StateDiff       verkle.StateDiff    `json:"stateDiff"`
+	VerkleProof     *verkle.VerkleProof `json:"verkleProof"`
+	ParentStateRoot common.Hash         `json:"parentStateRoot"`
 }
 
 func (ew *ExecutionWitness) Copy() *ExecutionWitness {
 	return &ExecutionWitness{
-		StateDiff:   ew.StateDiff.Copy(),
-		VerkleProof: ew.VerkleProof.Copy(),
+		StateDiff:       ew.StateDiff.Copy(),
+		VerkleProof:     ew.VerkleProof.Copy(),
+		ParentStateRoot: ew.ParentStateRoot,
 	}
 }
 
@@ -421,8 +423,8 @@ func (b *Block) SanityCheck() error {
 	return b.header.SanityCheck()
 }
 
-func (b *Block) SetVerkleProof(vp *verkle.VerkleProof, statediff verkle.StateDiff) {
-	b.header.ExecutionWitness = &ExecutionWitness{statediff, vp}
+func (b *Block) SetVerkleProof(vp *verkle.VerkleProof, statediff verkle.StateDiff, parentRoot common.Hash) {
+	b.header.ExecutionWitness = &ExecutionWitness{statediff, vp, parentRoot}
 	if statediff == nil {
 		b.header.ExecutionWitness.StateDiff = []verkle.StemStateDiff{}
 	}
