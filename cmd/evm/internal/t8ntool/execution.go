@@ -427,7 +427,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 
 func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prestate, verkle bool) *state.StateDB {
 	// Start with generating the MPT DB, which should be empty if it's post-verkle transition
-	sdb := state.NewDatabaseWithConfig(db, &trie.Config{Preimages: true, Verkle: false})
+	sdb := state.NewDatabaseWithConfig(db, &trie.Config{Preimages: true, Verkle: verkle})
 
 	if verkle {
 		sdb.InitTransitionStatus(pre.Env.Started != nil && *pre.Env.Started, pre.Env.Ended != nil && *pre.Env.Ended, common.Hash{})
@@ -471,12 +471,11 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		}
 		snaps.Cap(treeRoot, 0)
 
-		// t loggggLoad the conversion status
+		// Load the conversion status
 		log.Info("loading conversion status", "started", pre.Env.Started)
 		if pre.Env.Started != nil {
 			log.Info("non-nil started", "started", *pre.Env.Started)
 		}
-		sdb.InitTransitionStatus(pre.Env.Started != nil && *pre.Env.Started, pre.Env.Ended != nil && *pre.Env.Ended, treeRoot)
 		log.Info("loading current account address, if available", "available", pre.Env.CurrentAccountAddress != nil)
 		if pre.Env.CurrentAccountAddress != nil {
 			log.Info("loading current account address", "address", *pre.Env.CurrentAccountAddress)
