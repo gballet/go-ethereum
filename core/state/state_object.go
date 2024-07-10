@@ -75,6 +75,8 @@ type stateObject struct {
 	pendingStorage Storage // Storage entries that need to be flushed to disk, at the end of an entire block
 	dirtyStorage   Storage // Storage entries that have been modified in the current transaction execution, reset for every transaction
 
+	isFilled map[common.Hash]bool // cache whether this slot has already been filled
+
 	// Cache flags.
 	dirtyCode bool // true if the code was updated
 
@@ -112,6 +114,7 @@ func newObject(db *StateDB, address common.Address, acct *types.StateAccount) *s
 		originStorage:  make(Storage),
 		pendingStorage: make(Storage),
 		dirtyStorage:   make(Storage),
+		isFilled:       make(map[common.Hash]bool),
 	}
 }
 
@@ -203,6 +206,8 @@ func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 				s.db.setError(err)
 			}
 			value.SetBytes(content)
+		} else {
+			s.isFilled[key] = true // if we get here, it means that the fill wasn't cached and so it's a fill
 		}
 	}
 	// If the snapshot is unavailable or reading from it fails, load from the database.
@@ -222,10 +227,15 @@ func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 			return common.Hash{}
 		}
 		value.SetBytes(val)
+		s.isFilled[key] = len(val) == 0
 	}
 
 	s.originStorage[key] = value
 	return value
+}
+
+func (s *stateObject) GetFillStatus(key common.Hash) bool {
+	return s.isFilled[key]
 }
 
 // SetState updates a value in account storage.
@@ -242,6 +252,7 @@ func (s *stateObject) SetState(key, value common.Hash) {
 		prevalue: prev,
 	})
 	s.setState(key, value)
+	s.isFilled[key] = false
 }
 
 func (s *stateObject) setState(key, value common.Hash) {

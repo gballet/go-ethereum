@@ -402,6 +402,14 @@ func (s *StateDB) GetCommittedState(addr common.Address, hash common.Hash) commo
 	return common.Hash{}
 }
 
+func (s *StateDB) GetFillStatus(addr common.Address, hash common.Hash) bool {
+	stateObject := s.getStateObject(addr)
+	if stateObject != nil {
+		return stateObject.GetFillStatus(hash)
+	}
+	return false
+}
+
 // Database retrieves the low level database supporting the lower level trie ops.
 func (s *StateDB) Database() Database {
 	return s.db
