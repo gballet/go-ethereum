@@ -34,7 +34,7 @@ func (e ExecutableData) MarshalJSON() ([]byte, error) {
 		Withdrawals      []*types.Withdrawal     `json:"withdrawals"`
 		BlobGasUsed      *hexutil.Uint64         `json:"blobGasUsed"`
 		ExcessBlobGas    *hexutil.Uint64         `json:"excessBlobGas"`
-		ExecutionWitness *types.ExecutionWitness `json:"executionWitness"`
+		ExecutionWitness *types.ExecutionWitness `json:"executionWitness,omitempty"`
 	}
 	var enc ExecutableData
 	enc.ParentHash = e.ParentHash
@@ -83,7 +83,7 @@ func (e *ExecutableData) UnmarshalJSON(input []byte) error {
 		Withdrawals      []*types.Withdrawal     `json:"withdrawals"`
 		BlobGasUsed      *hexutil.Uint64         `json:"blobGasUsed"`
 		ExcessBlobGas    *hexutil.Uint64         `json:"excessBlobGas"`
-		ExecutionWitness *types.ExecutionWitness `json:"executionWitness"`
+		ExecutionWitness *types.ExecutionWitness `json:"executionWitness,omitempty"`
 	}
 	var dec ExecutableData
 	if err := json.Unmarshal(input, &dec); err != nil {
