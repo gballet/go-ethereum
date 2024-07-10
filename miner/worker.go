@@ -918,12 +918,7 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 		return nil, err
 	}
 	if w.chainConfig.IsPrague(header.Number, header.Time) {
-		parent := w.chain.GetHeaderByNumber(header.Number.Uint64() - 1)
-		if !w.chain.Config().IsPrague(parent.Number, parent.Time) {
-			core.InsertBlockHashHistoryAtEip2935Fork(env.state, header.Number.Uint64()-1, header.ParentHash, w.chain)
-		} else {
-			core.ProcessParentBlockHash(env.state, header.Number.Uint64()-1, header.ParentHash)
-		}
+		core.ProcessParentBlockHash(env.state, header.Number.Uint64()-1, header.ParentHash)
 	}
 	return env, nil
 }
