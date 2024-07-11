@@ -37,6 +37,21 @@ func (c Code) String() string {
 	return string(c) //strings.Join(Disassemble(c), " ")
 }
 
+type OptionalStorage map[common.Hash]OptionalSlot
+
+func (s OptionalStorage) Copy() OptionalStorage {
+	cpy := make(OptionalStorage, len(s))
+	for key, value := range s {
+		cpy[key] = value
+	}
+	return cpy
+}
+
+type OptionalSlot struct {
+	Value   common.Hash
+	Present bool
+}
+
 type Storage map[common.Hash]common.Hash
 
 func (s Storage) String() (str string) {
@@ -71,11 +86,9 @@ type stateObject struct {
 	trie Trie // storage trie, which becomes non-nil on first access
 	code Code // contract bytecode, which gets set when code is loaded
 
-	originStorage  Storage // Storage cache of original entries to dedup rewrites
-	pendingStorage Storage // Storage entries that need to be flushed to disk, at the end of an entire block
-	dirtyStorage   Storage // Storage entries that have been modified in the current transaction execution, reset for every transaction
-
-	isFilled map[common.Hash]bool // cache whether this slot has already been filled
+	originStorage  OptionalStorage // Storage cache of original entries to dedup rewrites
+	pendingStorage Storage         // Storage entries that need to be flushed to disk, at the end of an entire block
+	dirtyStorage   Storage         // Storage entries that have been modified in the current transaction execution, reset for every transaction
 
 	// Cache flags.
 	dirtyCode bool // true if the code was updated
@@ -111,10 +124,9 @@ func newObject(db *StateDB, address common.Address, acct *types.StateAccount) *s
 		addrHash:       crypto.Keccak256Hash(address[:]),
 		origin:         origin,
 		data:           *acct,
-		originStorage:  make(Storage),
+		originStorage:  make(OptionalStorage),
 		pendingStorage: make(Storage),
 		dirtyStorage:   make(Storage),
-		isFilled:       make(map[common.Hash]bool),
 	}
 }
 
@@ -177,7 +189,7 @@ func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 		return value
 	}
 	if value, cached := s.originStorage[key]; cached {
-		return value
+		return value.Value
 	}
 	// If the object was destructed in *this* block (and potentially resurrected),
 	// the storage has been cleared out, and we should *not* consult the previous
@@ -190,9 +202,10 @@ func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 	}
 	// If no live objects are available, attempt to use snapshots
 	var (
-		enc   []byte
-		err   error
-		value common.Hash
+		enc     []byte
+		err     error
+		value   common.Hash
+		present bool = true
 	)
 	if s.db.snap != nil {
 		start := time.Now()
@@ -207,7 +220,7 @@ func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 			}
 			value.SetBytes(content)
 		} else {
-			s.isFilled[key] = true // if we get here, it means that the fill wasn't cached and so it's a fill
+			present = false // if we get here, it means that the fill wasn't cached and so it's a fill
 		}
 	}
 	// If the snapshot is unavailable or reading from it fails, load from the database.
@@ -227,15 +240,17 @@ func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 			return common.Hash{}
 		}
 		value.SetBytes(val)
-		s.isFilled[key] = len(val) == 0
+		present = len(val) != 0
 	}
 
-	s.originStorage[key] = value
+	s.originStorage[key] = OptionalSlot{Value: value, Present: present}
 	return value
 }
 
 func (s *stateObject) GetFillStatus(key common.Hash) bool {
-	return s.isFilled[key]
+	_, isDirty := s.dirtyStorage[key]
+	_, isPending := s.pendingStorage[key]
+	return !s.originStorage[key].Present && (isPending || isDirty)
 }
 
 // SetState updates a value in account storage.
@@ -252,7 +267,6 @@ func (s *stateObject) SetState(key, value common.Hash) {
 		prevalue: prev,
 	})
 	s.setState(key, value)
-	s.isFilled[key] = false
 }
 
 func (s *stateObject) setState(key, value common.Hash) {
@@ -265,7 +279,7 @@ func (s *stateObject) finalise(prefetch bool) {
 	slotsToPrefetch := make([][]byte, 0, len(s.dirtyStorage))
 	for key, value := range s.dirtyStorage {
 		s.pendingStorage[key] = value
-		if value != s.originStorage[key] {
+		if value != s.originStorage[key].Value {
 			slotsToPrefetch = append(slotsToPrefetch, common.CopyBytes(key[:])) // Copy needed for closure
 		}
 	}
@@ -305,11 +319,11 @@ func (s *stateObject) updateTrie() (Trie, error) {
 	usedStorage := make([][]byte, 0, len(s.pendingStorage))
 	for key, value := range s.pendingStorage {
 		// Skip noop changes, persist actual changes
-		if value == s.originStorage[key] {
+		if value == s.originStorage[key].Value {
 			continue
 		}
 		prev := s.originStorage[key]
-		s.originStorage[key] = value
+		s.originStorage[key] = OptionalSlot{Value: value, Present: true}
 
 		// rlp-encoded value to be used by the snapshot
 		var snapshotVal []byte
@@ -348,12 +362,16 @@ func (s *stateObject) updateTrie() (Trie, error) {
 		}
 		// Track the original value of slot only if it's mutated first time
 		if _, ok := origin[khash]; !ok {
-			if prev == (common.Hash{}) {
+			if prev.Value == (common.Hash{}) && (!prev.Present || !s.db.trie.IsVerkle()) {
 				origin[khash] = nil // nil if it was not present previously
 			} else {
-				// Encoding []byte cannot fail, ok to ignore the error.
-				b, _ := rlp.EncodeToBytes(common.TrimLeftZeroes(prev[:]))
-				origin[khash] = b
+				if !s.db.trie.IsVerkle() {
+					// Encoding []byte cannot fail, ok to ignore the error.
+					b, _ := rlp.EncodeToBytes(common.TrimLeftZeroes(prev.Value[:]))
+					origin[khash] = b
+				} else {
+					origin[khash] = prev.Value[:]
+				}
 			}
 		}
 		// Cache the items for preloading
