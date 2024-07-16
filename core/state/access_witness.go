@@ -17,6 +17,8 @@
 package state
 
 import (
+	"os"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/params"
@@ -156,6 +158,23 @@ func (aw *AccessWitness) TouchTxExistingAndComputeGas(targetAddr []byte, sendsVa
 func (aw *AccessWitness) TouchSlotAndChargeGas(addr []byte, slot common.Hash, isWrite bool) uint64 {
 	treeIndex, subIndex := utils.GetTreeKeyStorageSlotTreeIndexes(slot.Bytes())
 	return aw.touchAddressAndChargeGas(addr, *treeIndex, subIndex, isWrite)
+}
+
+func AppendBytesToFile(filename string, bytes []byte) error {
+	// Open or create file for writing; append data if file exists
+	file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// Write bytes to file
+	_, err = file.Write(bytes)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (aw *AccessWitness) touchAddressAndChargeGas(addr []byte, treeIndex uint256.Int, subIndex byte, isWrite bool) uint64 {
