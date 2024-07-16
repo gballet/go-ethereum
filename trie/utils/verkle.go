@@ -25,12 +25,12 @@ import (
 
 const (
 	VersionLeafKey  = 0
-	BalanceLeafKey  = 1
-	NonceLeafKey    = 2
+	BalanceLeafKey  = 2
+	NonceLeafKey    = 1
 	CodeHashLeafKey = 3
 	CodeSizeLeafKey = 4
 
-	BasicDataNonceOffset = 8
+	BasicDataNonceOffset = 0
 
 	maxPointCacheByteSize = 100 << 20
 )
