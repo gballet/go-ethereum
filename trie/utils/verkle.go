@@ -30,7 +30,7 @@ const (
 	CodeHashLeafKey = 3
 	CodeSizeLeafKey = 4
 
-	BasicDataNonceOffset = 8
+	BasicDataNonceOffset = 0
 
 	maxPointCacheByteSize = 100 << 20
 )
