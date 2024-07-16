@@ -31,6 +31,8 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-verkle"
+	"github.com/pk910/dynamic-ssz"
 )
 
 // StateProcessor is a basic Processor, which takes care of transitioning
@@ -108,6 +110,90 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.engine.Finalize(p.bc, header, statedb, block.Transactions(), block.Uncles(), withdrawals)
+
+	header.Root = statedb.IntermediateRoot(true)
+	// Associate current conversion state to computed state
+	// root and store it in the database for later recovery.
+	statedb.Database().SaveTransitionState(header.Root)
+
+	var (
+		proof     *verkle.VerkleProof
+		statediff verkle.StateDiff
+		keys      = statedb.Witness().Keys()
+	)
+	// Open the pre-tree to prove the pre-state against
+	parent := p.bc.GetHeaderByNumber(header.Number.Uint64() - 1)
+	if parent == nil {
+		return nil, nil, 0, fmt.Errorf("nil parent header for block %d", header.Number)
+	}
+
+	// Load transition state at beginning of block, because
+	// OpenTrie needs to know what the conversion status is.
+	// statedb.Database().LoadTransitionState(parent.Root)
+
+	preTrie, err := statedb.Database().OpenTrie(parent.Root)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("error opening pre-state tree root: %w", err)
+	}
+	// statedb.Database().LoadTransitionState(header.Root)
+
+	var okpre, okpost bool
+	var vtrpre, vtrpost *trie.VerkleTrie
+	switch pre := preTrie.(type) {
+	case *trie.VerkleTrie:
+		vtrpre, okpre = preTrie.(*trie.VerkleTrie)
+		switch tr := statedb.GetTrie().(type) {
+		case *trie.VerkleTrie:
+			vtrpost = tr
+			okpost = true
+		// This is to handle a situation right at the start of the conversion:
+		// the post trie is a transition tree when the pre tree is an empty
+		// verkle tree.
+		case *trie.TransitionTrie:
+			vtrpost = tr.Overlay()
+			okpost = true
+		default:
+			okpost = false
+		}
+	case *trie.TransitionTrie:
+		vtrpre = pre.Overlay()
+		okpre = true
+		post, _ := statedb.GetTrie().(*trie.TransitionTrie)
+		vtrpost = post.Overlay()
+		okpost = true
+	default:
+		// This should only happen for the first block of the
+		// conversion, when the previous tree is a merkle tree.
+		//  Logically, the "previous" verkle tree is an empty tree.
+		okpre = true
+		vtrpre = trie.NewVerkleTrie(verkle.New(), statedb.Database().TrieDB(), utils.NewPointCache(), false)
+		post := statedb.GetTrie().(*trie.TransitionTrie)
+		vtrpost = post.Overlay()
+		okpost = true
+	}
+	if okpre && okpost {
+		if len(keys) > 0 {
+			proof, statediff, err = trie.ProveAndSerialize(vtrpre, vtrpost, keys, vtrpre.FlatdbNodeResolver)
+			if err != nil {
+				return nil, nil, 0, fmt.Errorf("error generating verkle proof for block %d: %w", header.Number, err)
+			}
+		}
+
+		ew := types.ExecutionWitness{StateDiff: statediff, VerkleProof: proof}
+		encoder := dynssz.NewDynSsz(map[string]any{})
+		encoded, err := encoder.MarshalSSZ(&ew)
+		if err != nil {
+			spew.Dump(ew)
+			panic(err)
+		}
+		state.AppendBytesToFile("witness_size.csv", []byte(fmt.Sprintf("%d,%d\n", header.Number, len(encoded))))
+		if header.Number.Uint64()%10000 == 0 {
+			data := make([]byte, 8+len(encoded))
+			copy(data[8:], encoded)
+			binary.LittleEndian.PutUint64(data[:8], block.NumberU64())
+			state.AppendBytesToFile("witnesses.ssz", data)
+		}
+	}
 
 	if block.NumberU64()%100 == 0 {
 		stateRoot := statedb.GetTrie().Hash()

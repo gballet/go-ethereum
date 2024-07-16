@@ -21,7 +21,7 @@ require (
 	github.com/docker/docker v1.6.2
 	github.com/dop251/goja v0.0.0-20230605162241-28ee0ee714f3
 	github.com/ethereum/c-kzg-4844 v0.3.0
-	github.com/ethereum/go-verkle v0.1.1-0.20240306133620-7d920df305f0
+	github.com/ethereum/go-verkle v0.1.1-0.20240710134556-4941876f32aa
 	github.com/fatih/color v1.7.0
 	github.com/fjl/gencodec v0.0.0-20230517082657-f9840df7b83e
 	github.com/fjl/memsize v0.0.0-20190710130421-bcb5799ab5e5
@@ -65,8 +65,8 @@ require (
 	go.uber.org/automaxprocs v1.5.2
 	golang.org/x/crypto v0.10.0
 	golang.org/x/exp v0.0.0-20230515195305-f3d0a9c9a5cc
-	golang.org/x/sync v0.4.0
-	golang.org/x/sys v0.13.0
+	golang.org/x/sync v0.7.0
+	golang.org/x/sys v0.22.0
 	golang.org/x/text v0.10.0
 	golang.org/x/time v0.3.0
 	golang.org/x/tools v0.9.1
@@ -86,7 +86,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sts v1.1.1 // indirect
 	github.com/aws/smithy-go v1.1.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/bits-and-blooms/bitset v1.10.0 // indirect
+	github.com/bits-and-blooms/bitset v1.13.0 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
 	github.com/cockroachdb/errors v1.9.1 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b // indirect
@@ -114,6 +114,7 @@ require (
 	github.com/mmcloughlin/addchain v0.4.0 // indirect
 	github.com/naoina/go-stringutil v0.1.0 // indirect
 	github.com/opentracing/opentracing-go v1.1.0 // indirect
+	github.com/pk910/dynamic-ssz v0.0.4 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/prometheus/client_golang v1.14.0 // indirect
@@ -129,6 +130,7 @@ require (
 	golang.org/x/net v0.10.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220517211312-f3a8303e98df // indirect
 	google.golang.org/protobuf v1.28.1 // indirect
+	gopkg.in/Knetic/govaluate.v3 v3.0.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )

@@ -337,22 +337,22 @@ func DeserializeAndVerifyVerkleProof(vp *verkle.VerkleProof, preStateRoot []byte
 	// TODO this should not be necessary, remove it
 	// after the new proof generation code has stabilized.
 	for _, stemdiff := range statediff {
-		for _, suffixdiff := range stemdiff.SuffixDiffs {
+		for i, suffix := range stemdiff.Suffixes {
 			var key [32]byte
 			copy(key[:31], stemdiff.Stem[:])
-			key[31] = suffixdiff.Suffix
+			key[31] = suffix
 
 			val, err := pretree.Get(key[:], nil)
 			if err != nil {
 				return fmt.Errorf("could not find key %x in tree rebuilt from proof: %w", key, err)
 			}
 			if len(val) > 0 {
-				if !bytes.Equal(val, suffixdiff.CurrentValue[:]) {
-					return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, *suffixdiff.CurrentValue)
+				if !bytes.Equal(val, stemdiff.Current[i]) {
+					return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, stemdiff.Current[i])
 				}
 			} else {
-				if suffixdiff.CurrentValue != nil && len(suffixdiff.CurrentValue) != 0 {
-					return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, *suffixdiff.CurrentValue)
+				if stemdiff.Current[i] != nil && len(stemdiff.Current[i]) != 0 {
+					return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, stemdiff.Current[i])
 				}
 			}
 		}
