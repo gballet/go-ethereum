@@ -175,6 +175,7 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount)
 	values[utils.NonceLeafKey] = nonce[:]
 	values[utils.BalanceLeafKey] = balance[:]
 	values[utils.CodeHashLeafKey] = acc.CodeHash[:]
+	fmt.Printf("updating nonce=%x\n", nonce)
 
 	binary.LittleEndian.PutUint64(nonce[:], acc.Nonce)
 	bbytes := acc.Balance.Bytes()
