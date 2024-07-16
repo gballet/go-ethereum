@@ -173,6 +173,7 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount)
 
 	// Only evaluate the polynomial once
 	values[utils.VersionLeafKey] = zero[:]
+	binary.LittleEndian.PutUint64(nonce[:], acc.Nonce)
 	binary.LittleEndian.PutUint64(nonce[utils.BasicDataNonceOffset:], acc.Nonce)
 	fmt.Printf("updating nonce=%x\n", nonce)
 	values[utils.NonceLeafKey] = nonce[:]
