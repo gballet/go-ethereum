@@ -11,8 +11,6 @@
   "istanbulBlock": 0,
   "berlinBlock": 0,
   "londonBlock": 0,
-  "eip1559FeeCollectorTransition": 0,
-  "eip1559FeeCollector": "0x1559000000000000000000000000000000000000",
   "terminalTotalDifficulty": 231707791542740786049188744689299064356246512,
   "terminalTotalDifficultyPassed": true,
   "shanghaiTime": 1684934220,
@@ -56,6 +54,9 @@
     "blockGasLimitContractTransitions": {
       "0": "0x4000000000000000000000000000000000000001"
     },
-    "registrar": "0x6000000000000000000000000000000000000000"
+    "eip1559FeeCollectorTransition": 0,
+    "eip1559FeeCollector": "0x1559000000000000000000000000000000000000",
+    "registrar": "0x6000000000000000000000000000000000000000",
+    "withdrawalContractAddress": "0xb97036A26259B7147018913bD58a774cf91acf25"
   }
 }

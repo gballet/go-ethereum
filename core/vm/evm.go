@@ -448,7 +448,9 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	// Create a new account on the state
 	snapshot := evm.StateDB.Snapshot()
 	evm.StateDB.CreateAccount(address)
-	if evm.chainRules.IsEIP158 {
+	// On gnosis chains, this is activated as part of SpuriousDragon in
+	// spite of being part of eip 161.
+	if evm.chainRules.IsEIP155 {
 		evm.StateDB.SetNonce(address, 1)
 	}
 	evm.Context.Transfer(evm.StateDB, caller.Address(), address, value)
