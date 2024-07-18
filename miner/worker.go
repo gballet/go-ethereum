@@ -513,6 +513,7 @@ func (w *worker) mainLoop() {
 	for {
 		select {
 		case req := <-w.newWorkCh:
+			fmt.Println("committing work")
 			w.commitWork(req.interrupt, req.timestamp)
 
 		case req := <-w.getWorkCh:
