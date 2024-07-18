@@ -374,6 +374,7 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 // FinalizeAndAssemble implements consensus.Engine, setting the final state and
 // assembling the block.
 func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt, withdrawals []*types.Withdrawal) (*types.Block, error) {
+	fmt.Println("finalizing and assembling block", beacon.IsPoSHeader(header))
 	if !beacon.IsPoSHeader(header) {
 		return beacon.ethone.FinalizeAndAssemble(chain, header, state, txs, uncles, receipts, nil)
 	}
@@ -390,12 +391,15 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	}
 	// Finalize and assemble the block.
 	beacon.Finalize(chain, header, state, txs, uncles, withdrawals)
+	fmt.Println("finalization worked")
 
 	// Assign the final state root to header.
 	header.Root = state.IntermediateRoot(true)
+	fmt.Println("intermediate root worked")
 	// Associate current conversion state to computed state
 	// root and store it in the database for later recovery.
 	state.Database().SaveTransitionState(header.Root)
+	fmt.Println("saved transition state")
 
 	var (
 		p    *verkle.VerkleProof

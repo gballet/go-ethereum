@@ -129,7 +129,8 @@ func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 	}
 
 	if len(values[utils.NonceLeafKey]) > 0 {
-		acc.Nonce = binary.LittleEndian.Uint64(values[utils.NonceLeafKey])
+		fmt.Printf("reading nonce=%x\n", values[utils.NonceLeafKey])
+		acc.Nonce = binary.LittleEndian.Uint64(values[utils.NonceLeafKey][utils.BasicDataNonceOffset:])
 	}
 	// if the account has been deleted, then values[10] will be 0 and not nil. If it has
 	// been recreated after that, then its code keccak will NOT be 0. So return `nil` if
@@ -172,11 +173,13 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount)
 
 	// Only evaluate the polynomial once
 	values[utils.VersionLeafKey] = zero[:]
+	binary.LittleEndian.PutUint64(nonce[:], acc.Nonce)
+	binary.LittleEndian.PutUint64(nonce[utils.BasicDataNonceOffset:], acc.Nonce)
+	fmt.Printf("updating nonce=%x\n", nonce)
 	values[utils.NonceLeafKey] = nonce[:]
 	values[utils.BalanceLeafKey] = balance[:]
 	values[utils.CodeHashLeafKey] = acc.CodeHash[:]
 
-	binary.LittleEndian.PutUint64(nonce[:], acc.Nonce)
 	bbytes := acc.Balance.Bytes()
 	if len(bbytes) > 0 {
 		for i, b := range bbytes {

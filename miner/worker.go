@@ -513,6 +513,7 @@ func (w *worker) mainLoop() {
 	for {
 		select {
 		case req := <-w.newWorkCh:
+			fmt.Println("committing work")
 			w.commitWork(req.interrupt, req.timestamp)
 
 		case req := <-w.getWorkCh:
@@ -714,6 +715,7 @@ func (w *worker) makeEnv(parent *types.Header, header *types.Header, coinbase co
 
 // updateSnapshot updates pending snapshot block, receipts and state.
 func (w *worker) updateSnapshot(env *environment) {
+	fmt.Println("updating snapshot")
 	w.snapshotMu.Lock()
 	defer w.snapshotMu.Unlock()
 
@@ -980,8 +982,10 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, *big.Int, e
 	}
 	block, err := w.engine.FinalizeAndAssemble(w.chain, work.header, work.state, work.txs, nil, work.receipts, params.withdrawals)
 	if err != nil {
+		fmt.Println("error finalizing block", err)
 		return nil, nil, err
 	}
+	fmt.Println("finalized block")
 	return block, totalFees(block, work.receipts), nil
 }
 
@@ -1011,7 +1015,9 @@ func (w *worker) commitWork(interrupt *atomic.Int32, timestamp int64) {
 		return
 	}
 	// Fill pending transactions from the txpool into the block.
+	fmt.Println("filling txs")
 	err = w.fillTransactions(interrupt, work)
+	fmt.Println("filled txs", err)
 	switch {
 	case err == nil:
 		// The entire block is filled, decrease resubmit interval in case
@@ -1019,6 +1025,7 @@ func (w *worker) commitWork(interrupt *atomic.Int32, timestamp int64) {
 		w.resubmitAdjustCh <- &intervalAdjust{inc: false}
 
 	case errors.Is(err, errBlockInterruptedByRecommit):
+		fmt.Println("recommit")
 		// Notify resubmit loop to increase resubmitting interval if the
 		// interruption is due to frequent commits.
 		gaslimit := work.header.GasLimit
@@ -1032,6 +1039,7 @@ func (w *worker) commitWork(interrupt *atomic.Int32, timestamp int64) {
 		}
 
 	case errors.Is(err, errBlockInterruptedByNewHead):
+		fmt.Println("discarding block")
 		// If the block building is interrupted by newhead event, discard it
 		// totally. Committing the interrupted block introduces unnecessary
 		// delay, and possibly causes miner to mine on the previous head,
@@ -1067,6 +1075,7 @@ func (w *worker) commit(env *environment, interval func(), update bool, start ti
 		if err != nil {
 			return err
 		}
+		fmt.Println("finalize and assemble", err)
 
 		// If we're post merge, just ignore
 		if !w.isTTDReached(block.Header()) {
