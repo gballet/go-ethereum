@@ -114,6 +114,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		log.Info("State root", "number", block.NumberU64(), "hash", stateRoot)
 	}
 
+	fmt.Println("done processing txs")
 	return receipts, allLogs, *usedGas, nil
 }
 

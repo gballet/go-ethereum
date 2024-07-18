@@ -558,7 +558,7 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 		enc := gob.NewEncoder(&buf)
 		err := enc.Encode(db.CurrentTransitionState)
 		if err != nil {
-			log.Error("failed to encode transition state", "err", err)
+			fmt.Println("failed to encode transition state", "err", err)
 			return
 		}
 
@@ -570,7 +570,7 @@ func (db *cachingDB) SaveTransitionState(root common.Hash) {
 			rawdb.WriteVerkleTransitionState(db.DiskDB(), root, buf.Bytes())
 		}
 
-		log.Debug("saving transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.Ended, "started", db.CurrentTransitionState.Started)
+		fmt.Println("saving transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.Ended, "started", db.CurrentTransitionState.Started)
 	}
 }
 
@@ -584,7 +584,7 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 		// Not in the cache, try getting it from the DB
 		data, err := rawdb.ReadVerkleTransitionState(db.DiskDB(), root)
 		if err != nil {
-			log.Error("failed to read transition state", "err", err)
+			fmt.Println("failed to read transition state", "err", err)
 			return
 		}
 
@@ -609,7 +609,7 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 			// Initialize the first transition state, with the "ended"
 			// field set to true if the database was created
 			// as a verkle database.
-			log.Debug("no transition state found, starting fresh", "is verkle", db.triedb.IsVerkle())
+			fmt.Println("no transition state found, starting fresh", "is verkle", db.triedb.IsVerkle())
 			// Start with a fresh state
 			ts = &TransitionState{Ended: db.triedb.IsVerkle()}
 		}
@@ -619,7 +619,7 @@ func (db *cachingDB) LoadTransitionState(root common.Hash) {
 	// doesn't get overwritten.
 	db.CurrentTransitionState = ts.Copy()
 
-	log.Debug("loaded transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.Ended, "started", db.CurrentTransitionState.Started)
+	fmt.Println("loaded transition state", "storage processed", db.CurrentTransitionState.StorageProcessed, "addr", db.CurrentTransitionState.CurrentAccountAddress, "slot hash", db.CurrentTransitionState.CurrentSlotHash, "root", root, "ended", db.CurrentTransitionState.Ended, "started", db.CurrentTransitionState.Started)
 }
 
 func (db *cachingDB) LockCurrentTransitionState() {

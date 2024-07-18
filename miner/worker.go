@@ -1011,7 +1011,9 @@ func (w *worker) commitWork(interrupt *atomic.Int32, timestamp int64) {
 		return
 	}
 	// Fill pending transactions from the txpool into the block.
+	fmt.Println("filling txs")
 	err = w.fillTransactions(interrupt, work)
+	fmt.Println("filled txs", err)
 	switch {
 	case err == nil:
 		// The entire block is filled, decrease resubmit interval in case
@@ -1019,6 +1021,7 @@ func (w *worker) commitWork(interrupt *atomic.Int32, timestamp int64) {
 		w.resubmitAdjustCh <- &intervalAdjust{inc: false}
 
 	case errors.Is(err, errBlockInterruptedByRecommit):
+		fmt.Println("recommit")
 		// Notify resubmit loop to increase resubmitting interval if the
 		// interruption is due to frequent commits.
 		gaslimit := work.header.GasLimit
@@ -1032,6 +1035,7 @@ func (w *worker) commitWork(interrupt *atomic.Int32, timestamp int64) {
 		}
 
 	case errors.Is(err, errBlockInterruptedByNewHead):
+		fmt.Println("discarding block")
 		// If the block building is interrupted by newhead event, discard it
 		// totally. Committing the interrupted block introduces unnecessary
 		// delay, and possibly causes miner to mine on the previous head,
