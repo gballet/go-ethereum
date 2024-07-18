@@ -84,6 +84,8 @@ type StateDB interface {
 
 	Witness() *state.AccessWitness
 	SetWitness(*state.AccessWitness)
+
+	IsSlotFilled(common.Address, common.Hash) bool
 }
 
 // CallContext provides a basic interface for the EVM calling conventions. The EVM

@@ -24,6 +24,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/cockroachdb/pebble"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state/snapshot"
@@ -36,6 +37,7 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/ethereum/go-ethereum/trie/triestate"
+	"github.com/ethereum/go-ethereum/trie/utils"
 )
 
 type revision struct {
@@ -1466,4 +1468,14 @@ func copy2DSet[k comparable](set map[k]map[common.Hash][]byte) map[k]map[common.
 		}
 	}
 	return copied
+}
+
+func (s *StateDB) IsSlotFilled(addr common.Address, slot common.Hash) bool {
+	// The snapshot can not be used, because it uses the old encoding where
+	// no difference is made between 0 and no data.
+	_, err := s.db.DiskDB().Get(utils.GetTreeKeyStorageSlotWithEvaluatedAddress(s.witness.pointCache.GetTreeKeyHeader(addr[:]), slot[:]))
+	// The error needs to be checked because we want to be future-proof
+	// and not rely on the length of the encoding, in case 0-values are
+	// somehow compressed later.
+	return errors.Is(pebble.ErrNotFound, err)
 }

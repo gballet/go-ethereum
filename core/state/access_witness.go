@@ -42,6 +42,7 @@ var zeroTreeIndex uint256.Int
 type AccessWitness struct {
 	branches map[branchAccessKey]mode
 	chunks   map[chunkAccessKey]mode
+	fills    map[chunkAccessKey]struct{}
 
 	pointCache *utils.PointCache
 }
@@ -50,6 +51,7 @@ func NewAccessWitness(pointCache *utils.PointCache) *AccessWitness {
 	return &AccessWitness{
 		branches:   make(map[branchAccessKey]mode),
 		chunks:     make(map[chunkAccessKey]mode),
+		fills:      make(map[chunkAccessKey]struct{}),
 		pointCache: pointCache,
 	}
 }
@@ -63,6 +65,9 @@ func (aw *AccessWitness) Merge(other *AccessWitness) {
 	}
 	for k, chunk := range other.chunks {
 		aw.chunks[k] |= chunk
+	}
+	for k := range other.fills {
+		aw.fills[k] = struct{}{}
 	}
 }
 
@@ -83,6 +88,7 @@ func (aw *AccessWitness) Copy() *AccessWitness {
 	naw := &AccessWitness{
 		branches:   make(map[branchAccessKey]mode),
 		chunks:     make(map[chunkAccessKey]mode),
+		fills:      make(map[chunkAccessKey]struct{}),
 		pointCache: aw.pointCache,
 	}
 	naw.Merge(aw)
@@ -153,9 +159,13 @@ func (aw *AccessWitness) TouchTxExistingAndComputeGas(targetAddr []byte, sendsVa
 	return 0
 }
 
-func (aw *AccessWitness) TouchSlotAndChargeGas(addr []byte, slot common.Hash, isWrite bool) uint64 {
+func (aw *AccessWitness) TouchSlotAndChargeGas(addr []byte, slot common.Hash, isWrite, isFill bool) uint64 {
 	treeIndex, subIndex := utils.GetTreeKeyStorageSlotTreeIndexes(slot.Bytes())
-	return aw.touchAddressAndChargeGas(addr, *treeIndex, subIndex, isWrite)
+	gas := aw.touchAddressAndChargeGas(addr, *treeIndex, subIndex, isWrite)
+	if isFill {
+		gas += params.WitnessChunkFillCost
+	}
+	return gas
 }
 
 func (aw *AccessWitness) touchAddressAndChargeGas(addr []byte, treeIndex uint256.Int, subIndex byte, isWrite bool) uint64 {
