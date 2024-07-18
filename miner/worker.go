@@ -714,6 +714,7 @@ func (w *worker) makeEnv(parent *types.Header, header *types.Header, coinbase co
 
 // updateSnapshot updates pending snapshot block, receipts and state.
 func (w *worker) updateSnapshot(env *environment) {
+	fmt.Println("updating snapshot")
 	w.snapshotMu.Lock()
 	defer w.snapshotMu.Unlock()
 
@@ -980,8 +981,10 @@ func (w *worker) generateWork(params *generateParams) (*types.Block, *big.Int, e
 	}
 	block, err := w.engine.FinalizeAndAssemble(w.chain, work.header, work.state, work.txs, nil, work.receipts, params.withdrawals)
 	if err != nil {
+		fmt.Println("error finalizing block", err)
 		return nil, nil, err
 	}
+	fmt.Println("finalized block")
 	return block, totalFees(block, work.receipts), nil
 }
 
@@ -1071,6 +1074,7 @@ func (w *worker) commit(env *environment, interval func(), update bool, start ti
 		if err != nil {
 			return err
 		}
+		fmt.Println("finalize and assemble", err)
 
 		// If we're post merge, just ignore
 		if !w.isTTDReached(block.Header()) {
