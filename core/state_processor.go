@@ -182,7 +182,7 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 
 func InsertBlockHashHistoryAtEip2935Fork(statedb *state.StateDB, prevNumber uint64, prevHash common.Hash, chain consensus.ChainHeaderReader) {
 	// Make sure that the historical contract is added to the witness
-	statedb.Witness().TouchFullAccount(params.HistoryStorageAddress[:], true)
+	statedb.Witness().TouchFullAccount(params.HistoryStorageAddress[:], true, true /* noop */)
 
 	ancestor := chain.GetHeader(prevHash, prevNumber)
 	for i := prevNumber; i > 0 && i >= prevNumber-params.Eip2935BlockHashHistorySize; i-- {

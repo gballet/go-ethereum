@@ -198,7 +198,7 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 	if !evm.StateDB.Exist(addr) {
 		if !isPrecompile && evm.chainRules.IsEIP4762 {
 			// add proof of absence to witness
-			wgas := evm.Accesses.TouchFullAccount(addr.Bytes(), false)
+			wgas := evm.Accesses.TouchFullAccount(addr.Bytes(), false, false)
 			if gas < wgas {
 				evm.StateDB.RevertToSnapshot(snapshot)
 				return nil, 0, ErrOutOfGas
@@ -518,7 +518,7 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 			}
 		} else {
 			// Contract creation completed, touch the missing fields in the contract
-			if !contract.UseGas(evm.Accesses.TouchFullAccount(address.Bytes()[:], true)) {
+			if !contract.UseGas(evm.Accesses.TouchFullAccount(address.Bytes()[:], true, true)) {
 				err = ErrCodeStoreOutOfGas
 			}
 

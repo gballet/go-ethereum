@@ -105,7 +105,7 @@ func gasSelfdestructEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Mem
 	if _, isPrecompile := evm.precompile(beneficiaryAddr); isPrecompile {
 		return 0, nil
 	}
-
+	// SELFDESTRUCT is the only use case for which a FILL might happen
 	contractAddr := contract.Address()
 	statelessGas := evm.Accesses.TouchVersion(contractAddr[:], false)
 	statelessGas += evm.Accesses.TouchCodeSize(contractAddr[:], false)
