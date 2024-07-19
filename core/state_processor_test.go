@@ -586,6 +586,103 @@ func TestProcessVerkle(t *testing.T) {
 	}
 }
 
+// TestProcessVerkleFillThenNoFill tests the case where a slot is filled in a first transaction, for which the
+// CHUNK_EDIT costs are filled, and then the same slot is written to in a second transaction, for which the CHUNK_EDIT
+// costs are not charged, provided the two transactions occur in the same block.
+func TestProcessVerkleFillThenNoFill(t *testing.T) {
+	var (
+		config = &params.ChainConfig{
+			ChainID:                       big.NewInt(1),
+			HomesteadBlock:                big.NewInt(0),
+			EIP150Block:                   big.NewInt(0),
+			EIP155Block:                   big.NewInt(0),
+			EIP158Block:                   big.NewInt(0),
+			ByzantiumBlock:                big.NewInt(0),
+			ConstantinopleBlock:           big.NewInt(0),
+			PetersburgBlock:               big.NewInt(0),
+			IstanbulBlock:                 big.NewInt(0),
+			MuirGlacierBlock:              big.NewInt(0),
+			BerlinBlock:                   big.NewInt(0),
+			LondonBlock:                   big.NewInt(0),
+			Ethash:                        new(params.EthashConfig),
+			ShanghaiTime:                  u64(0),
+			PragueTime:                    u64(0),
+			TerminalTotalDifficulty:       common.Big0,
+			TerminalTotalDifficultyPassed: true,
+			ProofInBlocks:                 true,
+		}
+		signer     = types.LatestSigner(config)
+		testKey, _ = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
+		bcdb       = rawdb.NewMemoryDatabase() // Database for the blockchain
+		gendb      = rawdb.NewMemoryDatabase() // Database for the block-generation code, they must be separate as they are path-based.
+		coinbase   = common.HexToAddress("0x71562b71999873DB5b286dF957af199Ec94617F7")
+		gspec      = &Genesis{
+			Config: config,
+			Alloc: GenesisAlloc{
+				coinbase: GenesisAccount{
+					Balance: big.NewInt(1000000000000000000), // 1 ether
+				},
+				common.Address{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}: GenesisAccount{
+					// PUSH1 0, CALLDATALOAD, PUSH1 2, SSTORE
+					Code:    []byte{0x60, 0, 0x35, 0x60, 2, 0x55},
+					Balance: big.NewInt(1000000000000000000),
+				},
+			},
+		}
+		loggerCfg = &logger.Config{}
+	)
+
+	os.MkdirAll("output", 0755)
+	traceFile, err := os.Create("./output/traces.jsonl")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Verkle trees use the snapshot, which must be enabled before the
+	// data is saved into the tree+database.
+	genesis := gspec.MustCommit(bcdb)
+	blockchain, _ := NewBlockChain(bcdb, nil, gspec, nil, beacon.New(ethash.NewFaker()), vm.Config{Tracer: logger.NewJSONLogger(loggerCfg, traceFile)}, nil, nil)
+	defer blockchain.Stop()
+	// Commit the genesis block to the block-generation database as it
+	// is now independent of the blockchain database.
+	gspec.MustCommit(gendb)
+
+	blockGasUsagesExpected := params.TxGas + 216 /* intrinsic gas */ + 3*vm.GasFastestStep + params.WitnessChunkReadCost + params.WitnessChunkWriteCost
+	chain, _, _, _ := GenerateVerkleChain(gspec.Config, genesis, beacon.New(ethash.NewFaker()), gendb, 1, func(i int, gen *BlockGen) {
+		gen.SetPoS()
+
+		// fill slot
+		tx, _ := types.SignTx(types.NewTransaction(0, common.Address{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, big.NewInt(999), blockGasUsagesExpected+params.WitnessChunkFillCost, big.NewInt(875000000), []byte{1}), signer, testKey)
+		gen.AddTx(tx)
+		// write but no fill
+		tx, _ = types.SignTx(types.NewTransaction(1, common.Address{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, big.NewInt(999), blockGasUsagesExpected, big.NewInt(875000000), []byte{2}), signer, testKey)
+		gen.AddTx(tx)
+	})
+
+	// check the proof for the last block
+	// err = trie.DeserializeAndVerifyVerkleProof(proofs[0], genesis.Root().Bytes(), chain[0].Root().Bytes(), keyvals[0])
+	// if err != nil {
+	// 	t.Fatal(err)
+	// }
+	// t.Log("verfied verkle proof")
+
+	endnum, err := blockchain.InsertChain(chain)
+	if err != nil {
+		t.Fatalf("block %d imported with error: %v", endnum, err)
+	}
+
+	b := blockchain.GetBlockByNumber(1)
+	if b == nil {
+		t.Fatalf("expected block %d to be present in chain", 1)
+	}
+	if b.Hash() != chain[0].Hash() {
+		t.Fatalf("block #%d not found at expected height", b.NumberU64())
+	}
+	if b.GasUsed() != 2*blockGasUsagesExpected+params.WitnessChunkFillCost {
+		t.Fatalf("expected block #%d txs to use %d, got %d\n", b.NumberU64(), 2*blockGasUsagesExpected, b.GasUsed())
+	}
+}
+
 func TestProcessVerkleInvalidContractCreation(t *testing.T) {
 	var (
 		config = &params.ChainConfig{

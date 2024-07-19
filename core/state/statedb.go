@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state/snapshot"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethdb/memorydb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
@@ -196,7 +197,7 @@ func (s *StateDB) NewAccessWitness() *AccessWitness {
 // but reusing the state fills map so that the fill costs are not
 // charged multiple times in the same block.
 func (s *StateDB) NewAccessWitnessWithFills() *AccessWitness {
-	return NewAccessWitness(s.db.(*cachingDB).addrToPoint, s.NewAccessWitness().fills)
+	return NewAccessWitness(s.db.(*cachingDB).addrToPoint, s.witness.fills)
 }
 func (s *StateDB) Witness() *AccessWitness {
 	if s.witness == nil {
@@ -1483,5 +1484,5 @@ func (s *StateDB) IsSlotFilled(addr common.Address, slot common.Hash) bool {
 	// The error needs to be checked because we want to be future-proof
 	// and not rely on the length of the encoding, in case 0-values are
 	// somehow compressed later.
-	return errors.Is(pebble.ErrNotFound, err)
+	return errors.Is(pebble.ErrNotFound, err) || errors.Is(memorydb.ErrMemorydbNotFound, err)
 }
