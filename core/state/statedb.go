@@ -24,11 +24,13 @@ import (
 	"sort"
 	"time"
 
+	"github.com/cockroachdb/pebble"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state/snapshot"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethdb/memorydb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
@@ -36,6 +38,7 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/ethereum/go-ethereum/trie/triestate"
+	"github.com/ethereum/go-ethereum/trie/utils"
 )
 
 type revision struct {
@@ -187,12 +190,18 @@ func (s *StateDB) Snaps() *snapshot.Tree {
 }
 
 func (s *StateDB) NewAccessWitness() *AccessWitness {
-	return NewAccessWitness(s.db.(*cachingDB).addrToPoint)
+	return NewAccessWitness(s.db.(*cachingDB).addrToPoint, make(map[chunkAccessKey]struct{}))
 }
 
+// NewAccessWitnessWithFills does the same thing as NewAccessWitness,
+// but reusing the state fills map so that the fill costs are not
+// charged multiple times in the same block.
+func (s *StateDB) NewAccessWitnessWithFills() *AccessWitness {
+	return NewAccessWitness(s.db.(*cachingDB).addrToPoint, s.witness.fills)
+}
 func (s *StateDB) Witness() *AccessWitness {
 	if s.witness == nil {
-		s.witness = s.NewAccessWitness()
+		panic("witness wasn't initialized")
 	}
 	return s.witness
 }
@@ -1466,4 +1475,14 @@ func copy2DSet[k comparable](set map[k]map[common.Hash][]byte) map[k]map[common.
 		}
 	}
 	return copied
+}
+
+func (s *StateDB) IsSlotFilled(addr common.Address, slot common.Hash) bool {
+	// The snapshot can not be used, because it uses the old encoding where
+	// no difference is made between 0 and no data.
+	_, err := s.db.DiskDB().Get(utils.GetTreeKeyStorageSlotWithEvaluatedAddress(s.witness.pointCache.GetTreeKeyHeader(addr[:]), slot[:]))
+	// The error needs to be checked because we want to be future-proof
+	// and not rely on the length of the encoding, in case 0-values are
+	// somehow compressed later.
+	return errors.Is(pebble.ErrNotFound, err) || errors.Is(memorydb.ErrMemorydbNotFound, err)
 }

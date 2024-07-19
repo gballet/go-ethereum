@@ -137,9 +137,6 @@ func NewEVM(blockCtx BlockContext, txCtx TxContext, statedb StateDB, chainConfig
 		chainConfig: chainConfig,
 		chainRules:  chainConfig.Rules(blockCtx.BlockNumber, blockCtx.Random != nil, blockCtx.Time),
 	}
-	if txCtx.Accesses == nil && chainConfig.IsPrague(blockCtx.BlockNumber, blockCtx.Time) {
-		evm.Accesses = evm.StateDB.(*state.StateDB).NewAccessWitness()
-	}
 	evm.interpreter = NewEVMInterpreter(evm)
 	return evm
 }
@@ -148,7 +145,7 @@ func NewEVM(blockCtx BlockContext, txCtx TxContext, statedb StateDB, chainConfig
 // This is not threadsafe and should only be done very cautiously.
 func (evm *EVM) Reset(txCtx TxContext, statedb StateDB) {
 	if txCtx.Accesses == nil && evm.chainRules.IsPrague {
-		txCtx.Accesses = evm.StateDB.(*state.StateDB).NewAccessWitness()
+		txCtx.Accesses = evm.StateDB.(*state.StateDB).NewAccessWitnessWithFills()
 	}
 	evm.TxContext = txCtx
 	evm.StateDB = statedb
@@ -198,7 +195,7 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 	if !evm.StateDB.Exist(addr) {
 		if !isPrecompile && evm.chainRules.IsEIP4762 {
 			// add proof of absence to witness
-			wgas := evm.Accesses.TouchFullAccount(addr.Bytes(), false)
+			wgas := evm.Accesses.TouchFullAccount(addr.Bytes(), false, false)
 			if gas < wgas {
 				evm.StateDB.RevertToSnapshot(snapshot)
 				return nil, 0, ErrOutOfGas
@@ -518,7 +515,7 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 			}
 		} else {
 			// Contract creation completed, touch the missing fields in the contract
-			if !contract.UseGas(evm.Accesses.TouchFullAccount(address.Bytes()[:], true)) {
+			if !contract.UseGas(evm.Accesses.TouchFullAccount(address.Bytes()[:], true, true)) {
 				err = ErrCodeStoreOutOfGas
 			}
 

@@ -120,7 +120,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 func applyTransaction(msg *Message, config *params.ChainConfig, gp *GasPool, statedb *state.StateDB, blockNumber *big.Int, blockHash common.Hash, tx *types.Transaction, usedGas *uint64, evm *vm.EVM) (*types.Receipt, error) {
 	// Create a new context to be used in the EVM environment.
 	txContext := NewEVMTxContext(msg)
-	txContext.Accesses = statedb.NewAccessWitness()
+	txContext.Accesses = statedb.NewAccessWitnessWithFills()
 	evm.Reset(txContext, statedb)
 
 	// Apply the transaction to the current state (included in the env).
@@ -182,7 +182,7 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 
 func InsertBlockHashHistoryAtEip2935Fork(statedb *state.StateDB, prevNumber uint64, prevHash common.Hash, chain consensus.ChainHeaderReader) {
 	// Make sure that the historical contract is added to the witness
-	statedb.Witness().TouchFullAccount(params.HistoryStorageAddress[:], true)
+	statedb.Witness().TouchFullAccount(params.HistoryStorageAddress[:], true, true /* noop */)
 
 	ancestor := chain.GetHeader(prevHash, prevNumber)
 	for i := prevNumber; i > 0 && i >= prevNumber-params.Eip2935BlockHashHistorySize; i-- {
@@ -196,5 +196,5 @@ func ProcessParentBlockHash(statedb *state.StateDB, prevNumber uint64, prevHash 
 	var key common.Hash
 	binary.BigEndian.PutUint64(key[24:], ringIndex)
 	statedb.SetState(params.HistoryStorageAddress, key, prevHash)
-	statedb.Witness().TouchSlotAndChargeGas(params.HistoryStorageAddress[:], key, true)
+	statedb.Witness().TouchSlotAndChargeGas(params.HistoryStorageAddress[:], key, true, true /* noop */)
 }
