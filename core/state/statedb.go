@@ -192,7 +192,7 @@ func (s *StateDB) NewAccessWitness() *AccessWitness {
 
 func (s *StateDB) Witness() *AccessWitness {
 	if s.witness == nil {
-		s.witness = s.NewAccessWitness()
+		panic("witness wasn't initialized")
 	}
 	return s.witness
 }
