@@ -137,9 +137,6 @@ func NewEVM(blockCtx BlockContext, txCtx TxContext, statedb StateDB, chainConfig
 		chainConfig: chainConfig,
 		chainRules:  chainConfig.Rules(blockCtx.BlockNumber, blockCtx.Random != nil, blockCtx.Time),
 	}
-	if txCtx.Accesses == nil && chainConfig.IsPrague(blockCtx.BlockNumber, blockCtx.Time) {
-		evm.Accesses = evm.StateDB.(*state.StateDB).NewAccessWitness()
-	}
 	evm.interpreter = NewEVMInterpreter(evm)
 	return evm
 }
@@ -148,7 +145,7 @@ func NewEVM(blockCtx BlockContext, txCtx TxContext, statedb StateDB, chainConfig
 // This is not threadsafe and should only be done very cautiously.
 func (evm *EVM) Reset(txCtx TxContext, statedb StateDB) {
 	if txCtx.Accesses == nil && evm.chainRules.IsPrague {
-		txCtx.Accesses = evm.StateDB.(*state.StateDB).NewAccessWitness()
+		txCtx.Accesses = evm.StateDB.(*state.StateDB).NewAccessWitnessWithFills()
 	}
 	evm.TxContext = txCtx
 	evm.StateDB = statedb

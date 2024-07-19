@@ -189,12 +189,18 @@ func (s *StateDB) Snaps() *snapshot.Tree {
 }
 
 func (s *StateDB) NewAccessWitness() *AccessWitness {
-	return NewAccessWitness(s.db.(*cachingDB).addrToPoint)
+	return NewAccessWitness(s.db.(*cachingDB).addrToPoint, make(map[chunkAccessKey]struct{}))
 }
 
+// NewAccessWitnessWithFills does the same thing as NewAccessWitness,
+// but reusing the state fills map so that the fill costs are not
+// charged multiple times in the same block.
+func (s *StateDB) NewAccessWitnessWithFills() *AccessWitness {
+	return NewAccessWitness(s.db.(*cachingDB).addrToPoint, s.NewAccessWitness().fills)
+}
 func (s *StateDB) Witness() *AccessWitness {
 	if s.witness == nil {
-		s.witness = s.NewAccessWitness()
+		panic("witness wasn't initialized")
 	}
 	return s.witness
 }

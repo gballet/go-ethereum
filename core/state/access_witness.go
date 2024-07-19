@@ -47,11 +47,11 @@ type AccessWitness struct {
 	pointCache *utils.PointCache
 }
 
-func NewAccessWitness(pointCache *utils.PointCache) *AccessWitness {
+func NewAccessWitness(pointCache *utils.PointCache, fills map[chunkAccessKey]struct{}) *AccessWitness {
 	return &AccessWitness{
 		branches:   make(map[branchAccessKey]mode),
 		chunks:     make(map[chunkAccessKey]mode),
-		fills:      make(map[chunkAccessKey]struct{}),
+		fills:      fills,
 		pointCache: pointCache,
 	}
 }
