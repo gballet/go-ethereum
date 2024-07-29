@@ -347,7 +347,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	}
 	if chainConfig.IsPrague(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) {
 		if err := overlay.OverlayVerkleTransition(statedb, common.Hash{}, chainConfig.OverlayStride); err != nil {
-			log.Error("error performing the transition", "err", err)
+			return nil, nil, fmt.Errorf("error performing the transition, err=%w", err)
 		}
 	}
 	// Commit block
@@ -357,29 +357,28 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	}
 
 	// Add the witness to the execution result
-	var p *verkle.VerkleProof
-	var k verkle.StateDiff
+	var vktProof *verkle.VerkleProof
+	var vktStateDiff verkle.StateDiff
 	if chainConfig.IsPrague(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) {
 		keys := statedb.Witness().Keys()
-
-		var proofTrie *trie.VerkleTrie
-		switch tr := statedb.GetTrie().(type) {
-		case *trie.VerkleTrie:
-			proofTrie = tr
-		case *trie.TransitionTrie:
-			proofTrie = tr.Overlay()
-		default:
-			panic("shouldn't be here")
-		}
 		if len(keys) > 0 && vtrpre != nil {
-			p, k, err = trie.ProveAndSerialize(vtrpre, proofTrie, keys, vtrpre.FlatdbNodeResolver)
+
+			var proofTrie *trie.VerkleTrie
+			switch tr := statedb.GetTrie().(type) {
+			case *trie.VerkleTrie:
+				proofTrie = tr
+			case *trie.TransitionTrie:
+				proofTrie = tr.Overlay()
+			default:
+				return nil, nil, fmt.Errorf("invalid tree type in proof generation: %v", tr)
+			}
+			vktProof, vktStateDiff, err = trie.ProveAndSerialize(vtrpre, proofTrie, keys, vtrpre.FlatdbNodeResolver)
 			if err != nil {
 				return nil, nil, fmt.Errorf("error generating verkle proof for block %d: %w", pre.Env.Number, err)
 			}
 		}
 	}
 
-	sdb := statedb.Database()
 	execRs := &ExecutionResult{
 		StateRoot:   root,
 		TxRoot:      types.DeriveSha(includedTxs, trie.NewStackTrie(nil)),
@@ -391,8 +390,8 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		Difficulty:  (*math.HexOrDecimal256)(vmContext.Difficulty),
 		GasUsed:     (math.HexOrDecimal64)(gasUsed),
 		BaseFee:     (*math.HexOrDecimal256)(vmContext.BaseFee),
-		VerkleProof: p,
-		StateDiff:   k,
+		VerkleProof: vktProof,
+		StateDiff:   vktStateDiff,
 	}
 	if pre.Env.Withdrawals != nil {
 		h := types.DeriveSha(types.Withdrawals(pre.Env.Withdrawals), trie.NewStackTrie(nil))
@@ -403,6 +402,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		execRs.CurrentBlobGasUsed = (*math.HexOrDecimal64)(&blobGasUsed)
 	}
 	if chainConfig.IsPrague(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) {
+		sdb := statedb.Database()
 		ended := sdb.Transitioned()
 		if !ended {
 			var (
@@ -428,8 +428,8 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 
 func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prestate, verkle bool) *state.StateDB {
 	// Start with generating the MPT DB, which should be empty if it's post-verkle transition
-	mptSdb := state.NewDatabaseWithConfig(db, &trie.Config{Preimages: true, Verkle: false})
-	statedb, _ := state.New(types.EmptyRootHash, mptSdb, nil)
+	sdb := state.NewDatabaseWithConfig(db, &trie.Config{Preimages: true, Verkle: false})
+	statedb, _ := state.New(types.EmptyRootHash, sdb, nil)
 
 	// MPT pre is the same as the pre state for first conversion block
 	for addr, a := range pre.Pre {
@@ -448,9 +448,9 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		if err != nil {
 			panic(err)
 		}
-		rawdb.WritePreimages(mptSdb.DiskDB(), statedb.Preimages())
-		mptSdb.TrieDB().WritePreimages()
-		snaps, err := snapshot.New(snapshot.Config{AsyncBuild: false, CacheSize: 10}, mptSdb.DiskDB(), mptSdb.TrieDB(), mptRoot)
+		rawdb.WritePreimages(sdb.DiskDB(), statedb.Preimages())
+		sdb.TrieDB().WritePreimages()
+		snaps, err := snapshot.New(snapshot.Config{AsyncBuild: false, CacheSize: 10}, sdb.DiskDB(), sdb.TrieDB(), mptRoot)
 		if err != nil {
 			panic(err)
 		}
@@ -460,7 +460,6 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		snaps.Cap(mptRoot, 0)
 
 		// reuse the backend db so that the snapshot can be enumerated
-		sdb := mptSdb // := state.NewDatabaseWithConfig(db, &trie.Config{Verkle: true})
 
 		// Load the conversion status
 		log.Info("loading conversion status", "started", pre.Env.Started)
@@ -486,6 +485,11 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 			sdb.StartVerkleTransition(mptRoot, mptRoot, chainConfig, chainConfig.PragueTime, mptRoot)
 		}
 
+		// create the state database without the snapshot, so that it's not overwritten
+		// when the vkt values are inserted. This state db is used temporarily in order
+		// to dump the tree that was passed as parameters, but is not suited for block
+		// execution since it's missing the snapshot and therefore it can't go through
+		// the conversion.
 		statedb, err = state.New(types.EmptyRootHash, sdb, nil)
 		if err != nil {
 			panic(err)
@@ -511,13 +515,15 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		}
 
 		root, _ := statedb.Commit(0, false)
+
+		// recreate the verkle db with the tree root, but this time with the mpt snapshot,
+		// so that the conversion can proceed.
 		statedb, err = state.New(root, sdb, snaps)
 		if err != nil {
 			panic(err)
 		}
 	}
 
-	log.Info("at end of makestate")
 	if statedb.Database().InTransition() || statedb.Database().Transitioned() {
 		log.Info("at end of makestate", "in transition", statedb.Database().InTransition(), "during", statedb.Database().Transitioned(), "account hash", statedb.Database().GetCurrentAccountHash())
 	}
