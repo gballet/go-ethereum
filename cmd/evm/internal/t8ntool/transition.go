@@ -568,6 +568,11 @@ func VerkleKeys(ctx *cli.Context) error {
 		if err != nil {
 			return fmt.Errorf("error inserting account: %w", err)
 		}
+
+		err = vkt.UpdateContractCode(addr, common.BytesToHash(account.CodeHash), acc.Code)
+		if err != nil {
+			return fmt.Errorf("error inserting code: %w", err)
+		}
 	}
 
 	collector := make(map[common.Hash]hexutil.Bytes)
