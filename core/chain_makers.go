@@ -445,7 +445,6 @@ func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine
 		if err != nil {
 			panic(fmt.Sprintf("could not find state for block %d: err=%v, parent root=%x", i, err, parent.Root()))
 		}
-		statedb.NewAccessWitness()
 		block, receipt := genblock(i, parent, statedb)
 		blocks[i] = block
 		receipts[i] = receipt
