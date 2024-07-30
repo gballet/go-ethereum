@@ -526,7 +526,7 @@ func VerkleKey(ctx *cli.Context) error {
 		}
 		fmt.Printf("%#x\n", utils.GetTreeKeyStorageSlotWithEvaluatedAddress(ap, slot))
 	} else {
-		fmt.Printf("%#x\n", utils.GetTreeKeyVersionWithEvaluatedAddress(ap))
+		fmt.Printf("%#x\n", utils.GetTreeKeyBasicDataEvaluatedAddress(ap))
 	}
 	return nil
 }
@@ -564,7 +564,7 @@ func VerkleKeys(ctx *cli.Context) error {
 			CodeHash: crypto.Keccak256Hash(acc.Code).Bytes(),
 			Root:     common.Hash{},
 		}
-		err := vkt.UpdateAccount(addr, account)
+		err := vkt.UpdateAccount(addr, account, len(acc.Code))
 		if err != nil {
 			return fmt.Errorf("error inserting account: %w", err)
 		}
