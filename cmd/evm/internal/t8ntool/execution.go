@@ -186,6 +186,8 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		GetHash:     getHash,
 	}
 
+	// We save the current state of the Verkle Tree before applying the transactions.
+	// Note that if the Verkle fork isn't active, this will be a noop.
 	switch tr := statedb.GetTrie().(type) {
 	case *trie.VerkleTrie:
 		vtrpre = tr.Copy()
@@ -451,6 +453,8 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 			panic(err)
 		}
 
+		// If the current tree is a VerkleTrie, it means the state conversion has ended.
+		// We don't need to continue with conversion setups and can return early.
 		if _, ok := statedb.GetTrie().(*trie.VerkleTrie); ok {
 			return statedb
 		}
