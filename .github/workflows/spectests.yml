@@ -1,0 +1,72 @@
+name: Execution spec tests
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master, kaustinen-with-shapella ]
+  workflow_dispatch:
+
+jobs:
+  spectests:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.22.4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: ''
+      - name: Fill tests
+        run: |
+          | go build -v ./cmd/evm
+          | git clone https://github.com/ethereum/execution-spec-tests -b verkle/main
+          | cd execution-spec-tests
+          | python3 -m venv venv
+          | . ./venv/bin/activate
+          | pip install -e ".[docs,lint,test]"
+          | fill --fork EIP6800Transition -n 4 --evm-dump-dir=../tmp -v -m blockchain_test --evm-bin=../evm
+      - name: Consume tests
+        run: ./evm blocktest ./tmp
+
+  lint:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.21.1
+      - name: Download golangci-lint
+        run: wget -O- -nv https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s v1.54.2
+      - name: Lint
+        run: ./bin/golangci-lint run
+      - name: Vet
+        run: go vet
+
+  test:
+    runs-on: self-hosted
+    needs: [test-process-verkle]
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.21.1
+      - name: Test
+        run: go test ./... -timeout=20m
+
+  test-process-verkle:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v2
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.21.1
+      - name: Test
+        run: go test ./core -run=TestProcessVerkle
