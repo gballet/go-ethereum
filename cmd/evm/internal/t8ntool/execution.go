@@ -428,11 +428,25 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 	// Start with generating the MPT DB, which should be empty if it's post-verkle transition
 	sdb := state.NewDatabaseWithConfig(db, &trie.Config{Preimages: true, Verkle: false})
 
-	// TODO: this only works for verkle-genesis tests. We can fix this line whenever the testing infra sends the correct
-	// started/ended transition flags in env for verkle-genesis tests.
-	sdb.InitTransitionStatus(true, true, common.Hash{})
+	if pre.Env.Ended != nil && *pre.Env.Ended {
+		sdb.InitTransitionStatus(true, true, common.Hash{})
+	}
 
 	statedb, _ := state.New(types.EmptyRootHash, sdb, nil)
+
+	if pre.Env.Ended != nil && *pre.Env.Ended {
+		vtr := statedb.GetTrie().(*trie.VerkleTrie)
+
+		// create the vkt, should be empty on first insert
+		for k, v := range pre.VKT {
+			values := make([][]byte, 256)
+			values[k[31]] = make([]byte, 32)
+			copy(values[k[31]], v)
+			vtr.UpdateStem(k.Bytes(), values)
+		}
+
+		return statedb
+	}
 
 	// MPT pre is the same as the pre state for first conversion block
 	for addr, a := range pre.Pre {
