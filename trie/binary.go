@@ -1,4 +1,4 @@
-// Copyright 2024 go-ethereum Authors
+// Copyright 2021 go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -18,238 +18,258 @@ package trie
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"hash"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/ethereum/go-ethereum/trie/utils"
-	"github.com/ethereum/go-verkle"
-	"golang.org/x/crypto/blake2b"
+	"github.com/holiman/uint256"
 )
 
-// BinaryNode represents any node in a binary trie.
-type BinaryNode interface {
-	Hash() []byte
-	Get([]byte, verkle.NodeResolverFn) ([]byte, error)
-	Insert([]byte, []byte, verkle.NodeResolverFn) error
-}
-
-type hashType int
-
-// All known implementations of binaryNode
 type (
-	// branch is a node with two children ("left" and "right")
-	// It can be prefixed by bits that are common to all subtrie
-	// keys and it can also hold a value.
-	branch struct {
-		left  BinaryNode
-		right BinaryNode
-		depth int
+	NodeResolverFn func([]byte) ([][]byte, error)
 
-		// key   []byte // TODO split into leaf and branch
-		// value []byte
-
-		// Used to send (hash, preimage) pairs when hashing
-		// CommitCh chan BinaryHashPreimage
-
-		// This is the binary equivalent of "extension nodes":
-		// binary nodes can have a prefix that is common to all
-		// subtrees.
-		// stem []byte
-
-		hasher hash.Hash
+	BinaryNode interface {
+		Get([]byte, NodeResolverFn) ([][]byte, error)
+		Insert([]byte, [][]byte, NodeResolverFn) error
+		Hash() []byte
 	}
 
+	// Represents an internal node, with an optional
+	// extension.
+	branch struct {
+		depth       int
+		extension   []byte
+		left, right BinaryNode
+	}
+
+	// Represents a group of values at the bottom of the tree,
+	// with their specific merkleization rules.
 	group struct {
+		depth  int
 		stem   []byte
 		values [][]byte
-		hasher hash.Hash
 	}
 
-	hashBinaryNode []byte
-
 	empty struct{}
+
+	undefined struct{}
+
+	hashed struct{}
 )
 
-func (b *branch) getBit(stem []byte) bool {
-	return stem[b.depth/8]&(1<<(7-b.depth%8)) == 0
+const NValuesPerGroup = 256
+
+func (empty) Get([]byte, NodeResolverFn) ([][]byte, error)      { panic("not implemented") }
+func (empty) Insert([]byte, [][]byte, NodeResolverFn) error     { panic("not implemented") }
+func (empty) Hash() []byte                                      { return zero[:] }
+func (hashed) Get([]byte, NodeResolverFn) ([][]byte, error)     { panic("not implemented") }
+func (hashed) Insert([]byte, [][]byte, NodeResolverFn) error    { panic("not implemented") }
+func (hashed) Hash() []byte                                     { panic("not implemented") }
+func (undefined) Get([]byte, NodeResolverFn) ([][]byte, error)  { panic("not implemented") }
+func (undefined) Insert([]byte, [][]byte, NodeResolverFn) error { panic("not implemented") }
+func (undefined) Hash() []byte                                  { panic("not implemented") }
+
+func (b *branch) Get(key []byte, resolver NodeResolverFn) ([][]byte, error) {
+	isRight := key[b.depth/8]&(1<<(b.depth%8)) != 0
+	var child BinaryNode
+	if isRight {
+		child = b.right
+	} else {
+		child = b.left
+	}
+
+	switch child.(type) {
+	case undefined:
+		return nil, errors.New("missing node in stateless mode")
+	case empty:
+		return nil, nil
+	case hashed:
+		if resolver == nil {
+			return nil, errors.New("could not resolve node")
+		}
+		serialized, err := resolver(key[:b.depth+1])
+		if err != nil {
+			return nil, fmt.Errorf("resolving node %x at depth %d: %w", key, b.depth, err)
+		}
+		resolved, err := ParseNode(serialized, b.depth+1)
+		if err != nil {
+			return nil, fmt.Errorf("verkle tree: error parsing resolved node %x: %w", key, err)
+		}
+		if isRight {
+			b.right = resolved
+		} else {
+			b.left = resolved
+		}
+		// recurse to handle the case of a LeafNode child that
+		// splits.
+		return b.Get(key, resolver)
+	case *branch, *group:
+		return child.Get(key, resolver)
+	default:
+		return nil, errors.New("unknown node type")
+	}
+}
+
+func split(a, b []byte) (int, bool) {
+	for i := range a {
+		for j := 7; j >= 0; j-- {
+			a_byte := a[i]
+			b_byte := b[i]
+			a_bit := a_byte & (1 << j)
+			b_bit := b_byte & (1 << j)
+			if a_bit != b_bit {
+				return i*8 + j, a_bit == 0
+			}
+		}
+	}
+	return 8 * len(a), false
+}
+func (b *branch) Insert(key []byte, values [][]byte, resolver NodeResolverFn) error {
+	isRight := key[b.depth/8]&(1<<(b.depth%8)) != 0
+	var child *BinaryNode
+	if isRight {
+		child = &b.right
+	} else {
+		child = &b.left
+	}
+
+	switch chld := (*child).(type) {
+	case undefined:
+		return errors.New("missing node in stateless mode")
+	case empty:
+		*child = &group{
+			depth:  b.depth + 1,
+			values: values,
+			stem:   key[:31],
+		}
+		return nil
+	case hashed:
+		if resolver == nil {
+			return errors.New("could not resolve node")
+		}
+		serialized, err := resolver(key[:b.depth+1])
+		if err != nil {
+			return fmt.Errorf("resolving node %x at depth %d: %w", key, b.depth, err)
+		}
+		resolved, err := ParseNode(serialized, b.depth+1)
+		if err != nil {
+			return fmt.Errorf("verkle tree: error parsing resolved node %x: %w", key, err)
+		}
+		if isRight {
+			b.right = resolved
+		} else {
+			b.left = resolved
+		}
+		// recurse to handle the case of a LeafNode child that
+		// splits.
+		return b.Insert(key, values, resolver)
+	case *group:
+		splitIdx, isLeft := split(key, chld.stem)
+		if splitIdx != 8*31 {
+			newbr := &branch{
+				depth:     b.depth + 1,
+				extension: make([]byte, splitIdx),
+			}
+			if isLeft {
+				newbr.left = &group{
+					depth:  b.depth + 2,
+					stem:   key[:31],
+					values: values,
+				}
+				newbr.right = chld
+			}
+			*child = newbr
+		}
+		return b.Insert(key, values, resolver)
+	case *branch:
+		return nil
+	default:
+		panic("unknown node type")
+	}
 }
 
 func (b *branch) Hash() []byte {
-	leftH := b.left.Hash()
-	rightH := b.right.Hash()
-	b.hasher.Reset()
-	b.hasher.Write(leftH)
-	b.hasher.Write(rightH)
-	return b.hasher.Sum(nil)
+
 }
 
-func (b *branch) Get(key []byte, resolver verkle.NodeResolverFn) ([]byte, error) {
-	if b.getBit(key) {
-		return b.right.Get(key, resolver)
+func (g *group) Get(key []byte, resolver NodeResolverFn) ([][]byte, error) {
+	if bytes.Equal(key[:31], g.stem) {
+		return g.values[:], nil
 	}
-	return b.left.Get(key, resolver)
+
+	return nil, nil
 }
 
-func (b *branch) Insert(key, value []byte, resolver verkle.NodeResolverFn) error {
-	var child BinaryNode
-	if b.getBit(key) {
-		child = b.left
-	} else {
-		child = b.right
+func (g *group) Insert(key []byte, values [][]byte, _ NodeResolverFn) error {
+	for i, val := range values {
+		if val != nil {
+			g.values[i] = val
+		}
 	}
-
-	switch child := child.(type) {
-	case empty:
-		childGroup := &group{
-			stem:   key[:31],
-			values: make([][]byte, 256),
-			hasher: b.hasher,
-		}
-		childGroup.values[key[31]] = value
-		child = childGroup
-		return nil
-	case hashBinaryNode:
-		serialized, err := resolver()
-		if err != nil {
-			return err
-		}
-		// TODO parse node
-		child = parsed
-		return b.Insert(key, value, resolver)
-	case *group:
-		// compare stems
-		if bytes.Equal(child.stem, key[:31]) {
-			child.values[key[31]] = value
-			return nil
-		}
-
-		// we need to split
-		newsplit := &branch{
-			depth:  b.depth + 1,
-			hasher: b.hasher,
-		}
-
-		if newsplit.getBit(key) {
-			newsplit.right = child
-		} else {
-			newsplit.left = right
-		}
-		child = newsplit
-		return child.Insert(key, value, resolver)
-	default:
-		return child.Insert(key, value, resolver)
-	}
-}
-
-func (g *group) Hash() []byte {
-	var below [][]byte = g.values
-	var list [][]byte
-	for i := 7; i >= 0; i++ {
-		list = make([][]byte, 1<<i)
-		for j := 0; j < (1 << (i + 1)); j++ {
-			if j%2 == 0 {
-				g.hasher.Reset()
-			} else {
-				list[j/2] = g.hasher.Sum(below[j])
-			}
-		}
-		below = list
-	}
-	g.hasher.Reset()
-	g.hasher.Write(g.stem)
-	return g.hasher.Sum(list[0])
-}
-
-func (g *group) Insert(key, value []byte, resolver verkle.NodeResolverFn) error {
-	if !bytes.Equal(g.stem, key[:31]) {
-		return errors.New("can not directly insert in group node")
-	}
-
-	g.values[key[31]] = value
 	return nil
 }
 
-func (g *group) Get(key []byte, resolver verkle.NodeResolverFn) ([]byte, error) {
-	if !bytes.Equal(g.stem, key[:31]) {
-		return nil, nil
-	}
+func (g *group) Hash() []byte {}
 
-	return g.values[key[31]], nil
-}
-
-// BinaryTrie represents a multi-level binary trie.
-//
-// Nodes with only one child are compacted into a "prefix"
-// for the first node that has two children.
+// BinaryTrie is a wrapper around BinaryNode that implements the trie.Trie
+// interface so that Binary trees can be reused verbatim.
 type BinaryTrie struct {
-	root   BinaryNode
-	store  *Database
-	hasher hash.Hash
+	root       *branch
+	db         *Database
+	pointCache *utils.PointCache
+	ended      bool
 }
 
-func NewBinaryTrie(root BinaryNode, db *Database, hasher hash.Hash) *BinaryTrie {
-	return &BinaryTrie{root, db, hasher}
+func (vt *BinaryTrie) ToDot() string {
+	return ToDot(vt.root)
 }
 
-func NewBlake2sBinaryTree(root BinaryNode, db *Database) *BinaryTrie {
-	hasher, err := blake2b.New256(nil)
-	if err != nil {
-		panic(err)
+func NewBinaryTrie(root BinaryNode, db *Database, pointCache *utils.PointCache, ended bool) *BinaryTrie {
+	return &BinaryTrie{
+		root:       root,
+		db:         db,
+		pointCache: pointCache,
+		ended:      ended,
 	}
-	return NewBinaryTrie(root, db, hasher)
 }
 
-func NewSha256BinaryTree(root BinaryNode, db *Database) *BinaryTrie {
-	return NewBinaryTrie(root, db, sha256.New())
+func (trie *BinaryTrie) FlatdbNodeResolver(path []byte) ([]byte, error) {
+	return trie.db.diskdb.Get(append(FlatDBBinaryNodeKeyPrefix, path...))
+}
+
+func (trie *BinaryTrie) InsertMigratedLeaves(leaves []LeafNode) error {
+	return trie.root.InsertMigratedLeaves(leaves, trie.FlatdbNodeResolver)
 }
 
 var (
-	FlatDBBinaryNodeKeyPrefix = []byte("flat-binary-") // prefix for flatdb keys
+	FlatDBBinaryNodeKeyPrefix = []byte("binary-") // prefix for flatdb keys
 )
 
-func (t *BinaryTrie) FlatdbNodeResolver(path []byte) ([]byte, error) {
-	return t.store.diskdb.Get(append(FlatDBVerkleNodeKeyPrefix, path...))
+// GetKey returns the sha3 preimage of a hashed key that was previously used
+// to store a value.
+func (trie *BinaryTrie) GetKey(key []byte) []byte {
+	return key
 }
 
-func (t *BinaryTrie) UpdateAccount(addr common.Address, acc *types.StateAccount) error {
-	var (
-		err            error
-		nonce, balance [32]byte
-		values         = make([][]byte, verkle.NodeWidth)
-		stem           = TODO
-	)
+// Get returns the value for key stored in the trie. The value bytes must
+// not be modified by the caller. If a node was not found in the database, a
+// trie.MissingNodeError is returned.
+func (trie *BinaryTrie) GetStorage(addr common.Address, key []byte) ([]byte, error) {
+	pointEval := trie.pointCache.GetTreeKeyHeader(addr[:])
+	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(pointEval, key)
+	return trie.root.Get(k, trie.FlatdbNodeResolver)
+}
 
-	// Only evaluate the polynomial once
-	values[utils.VersionLeafKey] = zero[:]
-	values[utils.NonceLeafKey] = nonce[:]
-	values[utils.BalanceLeafKey] = balance[:]
-	values[utils.CodeHashLeafKey] = acc.CodeHash[:]
-
-	binary.LittleEndian.PutUint64(nonce[:], acc.Nonce)
-	bbytes := acc.Balance.Bytes()
-	if len(bbytes) > 0 {
-		for i, b := range bbytes {
-			balance[len(bbytes)-i-1] = b
-		}
-	}
-
-	switch root := t.root.(type) {
-	case *branch:
-		err = root.InsertValuesAtStem(stem, values, t.FlatdbNodeResolver)
-	default:
-		return errInvalidRootType
-	}
-	if err != nil {
-		return fmt.Errorf("UpdateAccount (%x) error: %v", addr, err)
-	}
-
-	return nil
+// GetWithHashedKey returns the value, assuming that the key has already
+// been hashed.
+func (trie *BinaryTrie) GetWithHashedKey(key []byte) ([]byte, error) {
+	return trie.root.Get(key, trie.FlatdbNodeResolver)
 }
 
 func (t *BinaryTrie) GetAccount(addr common.Address) (*types.StateAccount, error) {
@@ -259,9 +279,9 @@ func (t *BinaryTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 		values [][]byte
 		err    error
 	)
-	switch b := t.root.(type) {
+	switch t.root.(type) {
 	case *branch:
-		values, err = b.GetValuesAtStem(versionkey[:31], t.FlatdbNodeResolver)
+		values, err = t.root.(*branch).GetValuesAtStem(versionkey[:31], t.FlatdbNodeResolver)
 	default:
 		return nil, errInvalidRootType
 	}
@@ -288,14 +308,14 @@ func (t *BinaryTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 	// if the account has been deleted, then values[10] will be 0 and not nil. If it has
 	// been recreated after that, then its code keccak will NOT be 0. So return `nil` if
 	// the nonce, and values[10], and code keccak is 0.
-	// if acc.Nonce == 0 && len(values) > 10 && len(values[10]) > 0 && bytes.Equal(values[utils.CodeHashLeafKey], zero[:]) {
-	// 	if !t.ended {
-	// 		return nil, errDeletedAccount
-	// 	} else {
-	// 		return nil, nil
-	// 	}
-	// }
 
+	if acc.Nonce == 0 && len(values) > 10 && len(values[10]) > 0 && bytes.Equal(values[utils.CodeHashLeafKey], zero[:]) {
+		if !t.ended {
+			return nil, errDeletedAccount
+		} else {
+			return nil, nil
+		}
+	}
 	var balance [32]byte
 	copy(balance[:], values[utils.BalanceLeafKey])
 	for i := 0; i < len(balance)/2; i++ {
@@ -314,15 +334,57 @@ func (t *BinaryTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 	return acc, nil
 }
 
-func (trie *BinaryTrie) GetKey(key []byte) []byte {
-	return key
+var zero [32]byte
+
+func (t *BinaryTrie) UpdateAccount(addr common.Address, acc *types.StateAccount) error {
+	var (
+		err            error
+		nonce, balance [32]byte
+		values         = make([][]byte, NValuesPerGroup)
+		stem           = t.pointCache.GetTreeKeyVersionCached(addr[:])
+	)
+
+	// Only evaluate the polynomial once
+	values[utils.VersionLeafKey] = zero[:]
+	values[utils.NonceLeafKey] = nonce[:]
+	values[utils.BalanceLeafKey] = balance[:]
+	values[utils.CodeHashLeafKey] = acc.CodeHash[:]
+
+	binary.LittleEndian.PutUint64(nonce[:], acc.Nonce)
+	bbytes := acc.Balance.Bytes()
+	if len(bbytes) > 0 {
+		for i, b := range bbytes {
+			balance[len(bbytes)-i-1] = b
+		}
+	}
+
+	switch root := t.root.(type) {
+	case *branch:
+		err = root.InsertValuesAtStem(stem, values, t.FlatdbNodeResolver)
+	default:
+		return errInvalidRootType
+	}
+	if err != nil {
+		return fmt.Errorf("UpdateAccount (%x) error: %v", addr, err)
+	}
+	// TODO figure out if the code size needs to be updated, too
+
+	return nil
 }
 
-func (trie *BinaryTrie) GetStorage(addr common.Address, key []byte) ([]byte, error) {
-	pointEval := trie.pointCache.GetTreeKeyHeader(addr[:])
-	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(pointEval, key)
-	return trie.root.Get(k, trie.FlatdbNodeResolver)
+func (trie *BinaryTrie) UpdateStem(key []byte, values [][]byte) error {
+	switch root := trie.root.(type) {
+	case *branch:
+		return root.InsertValuesAtStem(key, values, trie.FlatdbNodeResolver)
+	default:
+		panic("invalid root type")
+	}
 }
+
+// Update associates key with value in the trie. If value has length zero, any
+// existing value is deleted from the trie. The value bytes must not be modified
+// by the caller while they are stored in the trie. If a node was not found in the
+// database, a trie.MissingNodeError is returned.
 func (trie *BinaryTrie) UpdateStorage(address common.Address, key, value []byte) error {
 	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(trie.pointCache.GetTreeKeyHeader(address[:]), key)
 	var v [32]byte
@@ -366,10 +428,10 @@ func (trie *BinaryTrie) Commit(_ bool) (common.Hash, *trienode.NodeSet, error) {
 	}
 
 	batch := trie.db.diskdb.NewBatch()
-	path := make([]byte, 0, len(FlatDBVerkleNodeKeyPrefix)+32)
-	path = append(path, FlatDBVerkleNodeKeyPrefix...)
+	path := make([]byte, 0, len(FlatDBBinaryNodeKeyPrefix)+32)
+	path = append(path, FlatDBBinaryNodeKeyPrefix...)
 	for _, node := range nodes {
-		path := append(path[:len(FlatDBVerkleNodeKeyPrefix)], node.Path...)
+		path := append(path[:len(FlatDBBinaryNodeKeyPrefix)], node.Path...)
 
 		if err := batch.Put(path, node.SerializedBytes); err != nil {
 			return common.Hash{}, nil, fmt.Errorf("put node to disk: %s", err)
@@ -388,7 +450,7 @@ func (trie *BinaryTrie) Commit(_ bool) (common.Hash, *trienode.NodeSet, error) {
 // NodeIterator returns an iterator that returns nodes of the trie. Iteration
 // starts at the key after the given start key.
 func (trie *BinaryTrie) NodeIterator(startKey []byte) (NodeIterator, error) {
-	return newVerkleNodeIterator(trie, nil)
+	return newBinaryNodeIterator(trie, nil)
 }
 
 // Prove constructs a Merkle proof for key. The result contains all encoded nodes
@@ -404,14 +466,160 @@ func (trie *BinaryTrie) Prove(key []byte, proofDb ethdb.KeyValueWriter) error {
 
 func (trie *BinaryTrie) Copy() *BinaryTrie {
 	return &BinaryTrie{
-		root:   trie.root.Copy(),
-		store:  trie.store,
-		hasher: trie.hasher,
+		root:       trie.root.Copy(),
+		db:         trie.db,
+		pointCache: trie.pointCache,
 	}
 }
 
-func (trie *BinaryTrie) IsVerkle() bool {
+func (trie *BinaryTrie) IsBinary() bool {
 	return true
+}
+
+func ProveAndSerialize(pretrie, posttrie *BinaryTrie, keys [][]byte, resolver NodeResolverFn) (*BinaryProof, StateDiff, error) {
+	var postroot BinaryNode
+	if posttrie != nil {
+		postroot = posttrie.root
+	}
+	proof, _, _, _, err := MakeBinaryMultiProof(pretrie.root, postroot, keys, resolver)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	p, kvps, err := SerializeProof(proof)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return p, kvps, nil
+}
+
+func DeserializeAndVerifyBinaryProof(vp *BinaryProof, preStateRoot []byte, postStateRoot []byte, statediff StateDiff) error {
+	// TODO: check that `OtherStems` have expected length and values.
+
+	proof, err := DeserializeProof(vp, statediff)
+	if err != nil {
+		return fmt.Errorf("proof deserialization error: %w", err)
+	}
+
+	rootC := new(Point)
+	rootC.SetBytes(preStateRoot)
+	pretree, err := PreStateTreeFromProof(proof, rootC)
+	if err != nil {
+		return fmt.Errorf("error rebuilding the pre-tree from proof: %w", err)
+	}
+	// TODO this should not be necessary, remove it
+	// after the new proof generation code has stabilized.
+	for _, stemdiff := range statediff {
+		for _, suffixdiff := range stemdiff.SuffixDiffs {
+			var key [32]byte
+			copy(key[:31], stemdiff.Stem[:])
+			key[31] = suffixdiff.Suffix
+
+			val, err := pretree.Get(key[:], nil)
+			if err != nil {
+				return fmt.Errorf("could not find key %x in tree rebuilt from proof: %w", key, err)
+			}
+			if len(val) > 0 {
+				if !bytes.Equal(val, suffixdiff.CurrentValue[:]) {
+					return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, *suffixdiff.CurrentValue)
+				}
+			} else {
+				if suffixdiff.CurrentValue != nil && len(suffixdiff.CurrentValue) != 0 {
+					return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, *suffixdiff.CurrentValue)
+				}
+			}
+		}
+	}
+
+	// TODO: this is necessary to verify that the post-values are the correct ones.
+	// But all this can be avoided with a even faster way. The EVM block execution can
+	// keep track of the written keys, and compare that list with this post-values list.
+	// This can avoid regenerating the post-tree which is somewhat expensive.
+	posttree, err := PostStateTreeFromStateDiff(pretree, statediff)
+	if err != nil {
+		return fmt.Errorf("error rebuilding the post-tree from proof: %w", err)
+	}
+	regeneratedPostTreeRoot := posttree.Commitment().Bytes()
+	if !bytes.Equal(regeneratedPostTreeRoot[:], postStateRoot) {
+		return fmt.Errorf("post tree root mismatch: %x != %x", regeneratedPostTreeRoot, postStateRoot)
+	}
+
+	return VerifyBinaryProofWithPreState(proof, pretree)
+}
+
+// ChunkedCode represents a sequence of 32-bytes chunks of code (31 bytes of which
+// are actual code, and 1 byte is the pushdata offset).
+type ChunkedCode []byte
+
+// Copy the values here so as to avoid an import cycle
+const (
+	PUSH1  = byte(0x60)
+	PUSH3  = byte(0x62)
+	PUSH4  = byte(0x63)
+	PUSH7  = byte(0x66)
+	PUSH21 = byte(0x74)
+	PUSH30 = byte(0x7d)
+	PUSH32 = byte(0x7f)
+)
+
+// ChunkifyCode generates the chunked version of an array representing EVM bytecode
+func ChunkifyCode(code []byte) ChunkedCode {
+	var (
+		chunkOffset = 0 // offset in the chunk
+		chunkCount  = len(code) / 31
+		codeOffset  = 0 // offset in the code
+	)
+	if len(code)%31 != 0 {
+		chunkCount++
+	}
+	chunks := make([]byte, chunkCount*32)
+	for i := 0; i < chunkCount; i++ {
+		// number of bytes to copy, 31 unless
+		// the end of the code has been reached.
+		end := 31 * (i + 1)
+		if len(code) < end {
+			end = len(code)
+		}
+
+		// Copy the code itself
+		copy(chunks[i*32+1:], code[31*i:end])
+
+		// chunk offset = taken from the
+		// last chunk.
+		if chunkOffset > 31 {
+			// skip offset calculation if push
+			// data covers the whole chunk
+			chunks[i*32] = 31
+			chunkOffset = 1
+			continue
+		}
+		chunks[32*i] = byte(chunkOffset)
+		chunkOffset = 0
+
+		// Check each instruction and update the offset
+		// it should be 0 unless a PUSHn overflows.
+		for ; codeOffset < end; codeOffset++ {
+			if code[codeOffset] >= PUSH1 && code[codeOffset] <= PUSH32 {
+				codeOffset += int(code[codeOffset] - PUSH1 + 1)
+				if codeOffset+1 >= 31*(i+1) {
+					codeOffset++
+					chunkOffset = codeOffset - 31*(i+1)
+					break
+				}
+			}
+		}
+	}
+
+	return chunks
+}
+
+func (t *BinaryTrie) SetStorageRootConversion(addr common.Address, root common.Hash) {
+	t.db.SetStorageRootConversion(addr, root)
+}
+
+func (t *BinaryTrie) ClearStrorageRootConversion(addr common.Address) {
+	t.db.ClearStorageRootConversion(addr)
 }
 
 func (t *BinaryTrie) UpdateContractCode(addr common.Address, codeHash common.Hash, code []byte) error {
@@ -424,7 +632,7 @@ func (t *BinaryTrie) UpdateContractCode(addr common.Address, codeHash common.Has
 	for i, chunknr := 0, uint64(0); i < len(chunks); i, chunknr = i+32, chunknr+1 {
 		groupOffset := (chunknr + 128) % 256
 		if groupOffset == 0 /* start of new group */ || chunknr == 0 /* first chunk in header group */ {
-			values = make([][]byte, verkle.NodeWidth)
+			values = make([][]byte, NValuesPerGroup)
 			key = utils.GetTreeKeyCodeChunkWithEvaluatedAddress(t.pointCache.GetTreeKeyHeader(addr[:]), uint256.NewInt(chunknr))
 		}
 		values[groupOffset] = chunks[i : i+32]
