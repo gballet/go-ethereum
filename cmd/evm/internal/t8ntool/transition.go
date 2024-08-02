@@ -548,31 +548,9 @@ func VerkleKeys(ctx *cli.Context) error {
 		}
 	}
 
-	vkt := trie.NewVerkleTrie(verkle.New(), trie.NewDatabase(rawdb.NewMemoryDatabase()), utils.NewPointCache(), true)
-
-	for addr, acc := range alloc {
-		for slot, value := range acc.Storage {
-			err := vkt.UpdateStorage(addr, slot.Bytes(), value.Big().Bytes())
-			if err != nil {
-				return fmt.Errorf("error inserting storage: %w", err)
-			}
-		}
-
-		account := &types.StateAccount{
-			Balance:  acc.Balance,
-			Nonce:    acc.Nonce,
-			CodeHash: crypto.Keccak256Hash(acc.Code).Bytes(),
-			Root:     common.Hash{},
-		}
-		err := vkt.UpdateAccount(addr, account, len(acc.Code))
-		if err != nil {
-			return fmt.Errorf("error inserting account: %w", err)
-		}
-
-		err = vkt.UpdateContractCode(addr, common.BytesToHash(account.CodeHash), acc.Code)
-		if err != nil {
-			return fmt.Errorf("error inserting code: %w", err)
-		}
+	vkt, err := genVktFromAlloc(alloc)
+	if err != nil {
+		return fmt.Errorf("error generating vkt: %w", err)
 	}
 
 	collector := make(map[common.Hash]hexutil.Bytes)
@@ -594,6 +572,61 @@ func VerkleKeys(ctx *cli.Context) error {
 	fmt.Println(string(output))
 
 	return nil
+}
+
+// VerkleRoot computes the root of a VKT from a genesis alloc.
+func VerkleRoot(ctx *cli.Context) error {
+	var allocStr = ctx.String(InputAllocFlag.Name)
+	var alloc core.GenesisAlloc
+	if allocStr == stdinSelector {
+		decoder := json.NewDecoder(os.Stdin)
+		if err := decoder.Decode(&alloc); err != nil {
+			return NewError(ErrorJson, fmt.Errorf("failed unmarshaling stdin: %v", err))
+		}
+	}
+	if allocStr != stdinSelector {
+		if err := readFile(allocStr, "alloc", &alloc); err != nil {
+			return err
+		}
+	}
+
+	vkt, err := genVktFromAlloc(alloc)
+	if err != nil {
+		return fmt.Errorf("error generating vkt: %w", err)
+	}
+	fmt.Println(vkt.Hash().Hex())
+
+	return nil
+}
+
+func genVktFromAlloc(alloc core.GenesisAlloc) (*trie.VerkleTrie, error) {
+	vkt := trie.NewVerkleTrie(verkle.New(), trie.NewDatabase(rawdb.NewMemoryDatabase()), utils.NewPointCache(), true)
+
+	for addr, acc := range alloc {
+		for slot, value := range acc.Storage {
+			err := vkt.UpdateStorage(addr, slot.Bytes(), value.Big().Bytes())
+			if err != nil {
+				return nil, fmt.Errorf("error inserting storage: %w", err)
+			}
+		}
+
+		account := &types.StateAccount{
+			Balance:  acc.Balance,
+			Nonce:    acc.Nonce,
+			CodeHash: crypto.Keccak256Hash(acc.Code).Bytes(),
+			Root:     common.Hash{},
+		}
+		err := vkt.UpdateAccount(addr, account, len(acc.Code))
+		if err != nil {
+			return nil, fmt.Errorf("error inserting account: %w", err)
+		}
+
+		err = vkt.UpdateContractCode(addr, common.BytesToHash(account.CodeHash), acc.Code)
+		if err != nil {
+			return nil, fmt.Errorf("error inserting code: %w", err)
+		}
+	}
+	return vkt, nil
 }
 
 // VerkleCodeChunkKey computes the tree key of a code-chunk for a given address.

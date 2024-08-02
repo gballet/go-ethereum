@@ -188,6 +188,15 @@ var verkleCommand = &cli.Command{
 			Usage:   "chunkify a given bytecode",
 			Action:  t8ntool.VerkleChunkifyCode,
 		},
+		{
+			Name:    "state-root",
+			Aliases: []string{"VR"},
+			Usage:   "compute the state-root of a verkle tree for the given alloc",
+			Action:  t8ntool.VerkleRoot,
+			Flags: []cli.Flag{
+				t8ntool.InputAllocFlag,
+			},
+		},
 	},
 }
 
