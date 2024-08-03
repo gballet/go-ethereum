@@ -22,6 +22,7 @@ jobs:
           go-version: 1.22.4
       - name: Fill tests
         run: |
+          export PATH=$PATH:/home/devops/.cargo/bin
           go build -v ./cmd/evm
           git clone https://github.com/ethereum/execution-spec-tests -b verkle/main
           cd execution-spec-tests
