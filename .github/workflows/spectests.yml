@@ -15,20 +15,20 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: 'pypy3.10'
       - name: Set up Go
         uses: actions/setup-go@v2
         with:
           go-version: 1.22.4
       - name: Fill tests
         run: |
-          | go build -v ./cmd/evm
-          | git clone https://github.com/ethereum/execution-spec-tests -b verkle/main
-          | cd execution-spec-tests
-          | python3 -m venv venv
-          | . ./venv/bin/activate
-          | pip install -e ".[docs,lint,test]"
-          | fill --fork EIP6800Transition -n 4 --evm-dump-dir=../tmp -v -m blockchain_test --evm-bin=../evm
+          go build -v ./cmd/evm
+          git clone https://github.com/ethereum/execution-spec-tests -b verkle/main
+          cd execution-spec-tests
+          python3 -m venv venv
+          . ./venv/bin/activate
+          pip install -e ".[docs,lint,test]"
+          fill --fork EIP6800Transition -n 4 --evm-dump-dir=../tmp -v -m blockchain_test --evm-bin=../evm
       - name: Consume tests
         run: ./evm blocktest ./tmp
 
