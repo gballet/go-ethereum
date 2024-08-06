@@ -452,7 +452,6 @@ func (t *VerkleTrie) UpdateContractCode(addr common.Address, codeHash common.Has
 		if groupOffset == 0 /* start of new group */ || chunknr == 0 /* first chunk in header group */ {
 			values = make([][]byte, verkle.NodeWidth)
 			key = utils.GetTreeKeyCodeChunkWithEvaluatedAddress(t.pointCache.GetTreeKeyHeader(addr[:]), uint256.NewInt(chunknr))
-			// panic(fmt.Sprintf("STEM2: %x\n", key))
 		}
 		values[groupOffset] = chunks[i : i+32]
 
