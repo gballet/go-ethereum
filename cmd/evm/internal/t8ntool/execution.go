@@ -445,6 +445,12 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 			vtr.UpdateStem(k.Bytes(), values)
 		}
 
+		codeWriter := statedb.Database().DiskDB()
+		for _, acc := range pre.Pre {
+			codeHash := crypto.Keccak256Hash(acc.Code)
+			rawdb.WriteCode(codeWriter, codeHash, acc.Code)
+		}
+
 		return statedb
 	}
 
