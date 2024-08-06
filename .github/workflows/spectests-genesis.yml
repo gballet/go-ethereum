@@ -1,0 +1,37 @@
+name: Execution spec tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master, kaustinen-with-shapella]
+  workflow_dispatch:
+
+jobs:
+  spectests:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.4"
+          # python-version: 'pypy3.10'
+          cache: ""
+      - name: Set up Go
+        uses: actions/setup-go@v2
+        with:
+          go-version: 1.22.4
+      - name: Fill tests
+        run: |
+          export PATH=$PATH:/home/devops/.cargo/bin
+          go build -v ./cmd/evm
+          git clone https://github.com/jsign/execution-spec-tests -b jsign-verkle-rebased-mainnet
+          cd execution-spec-tests
+          python3 -m venv venv
+          . ./venv/bin/activate
+          pip install -e ".[docs,lint,test]"
+
+          fill --fork Verkle -n 4 --evm-dump-dir=../tmp -v -m blockchain_test --evm-bin=../evm -k eip6800_genesis
+      - name: Consume tests
+        run: find ./tmp -type f | xargs ./evm blocktest
