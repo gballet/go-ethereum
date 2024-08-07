@@ -30,6 +30,8 @@ jobs:
           python3 -m venv venv
           . ./venv/bin/activate
           pip install -e ".[docs,lint,test]"
+          solc-select install 0.8.20
+          solc-select use 0.8.20
 
           fill --fork Verkle -n 4 --evm-dump-dir=../tmp -v -m blockchain_test --evm-bin=../evm -k eip6800_genesis
       - name: Consume tests
