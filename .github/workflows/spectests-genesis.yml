@@ -9,14 +9,13 @@ on:
 
 jobs:
   spectests:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12.4"
-          # python-version: 'pypy3.10'
           cache: ""
       - name: Set up Go
         uses: actions/setup-go@v2
