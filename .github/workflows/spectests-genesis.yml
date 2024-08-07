@@ -37,4 +37,4 @@ jobs:
           fill --fork Verkle -n 4 -v -m blockchain_test --evm-bin=../evm -k eip6800_genesis
           fill --fork Verkle -n 4 -v -m blockchain_test --evm-bin=../evm -k eip4762
 
-          consume direct --evm-bin=../evm --input=fixtures/blockchain_tests/ -v
+          consume direct --evm-bin=../evm --input=fixtures/blockchain_tests/ -v -n 8
