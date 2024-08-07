@@ -33,6 +33,6 @@ jobs:
           solc-select install 0.8.20
           solc-select use 0.8.20
 
-          fill --fork Verkle -n 4 --evm-dump-dir=../tmp -v -m blockchain_test --evm-bin=../evm -k eip6800_genesis
+          fill --fork Verkle -n 4 -v -m blockchain_test --evm-bin=../evm -k eip6800_genesis
       - name: Consume tests
-        run: find ./tmp -type f | xargs ./evm blocktest
+        run: consume direct --evm-bin=$(pwd)/evm --input=fixtures/blockchain_tests/ -v
