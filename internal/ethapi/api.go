@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
 	"strings"
 	"time"
 
@@ -1276,6 +1277,11 @@ func (s *BlockChainAPI) EstimateGas(ctx context.Context, args TransactionArgs, b
 
 // RPCMarshalHeader converts the given header to the RPC output .
 func RPCMarshalHeader(head *types.Header) map[string]interface{} {
+	aa, err := rlp.EncodeToBytes(head)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Fprintf(os.Stderr, "RPCMarshalHeader RLP: %x\n", aa)
 	result := map[string]interface{}{
 		"number":           (*hexutil.Big)(head.Number),
 		"hash":             head.Hash(),
