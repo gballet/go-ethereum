@@ -464,15 +464,15 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		}
 	}
 
+	state.NoBanner()
+	// Commit db an create a snapshot from it.
+	mptRoot, err := statedb.Commit(0, false)
+	if err != nil {
+		panic(err)
+	}
+
 	// If verkle mode started, establish the conversion
 	if verkle {
-		state.NoBanner()
-		// Commit db an create a snapshot from it.
-		mptRoot, err := statedb.Commit(0, false)
-		if err != nil {
-			panic(err)
-		}
-
 		// If the current tree is a VerkleTrie, it means the state conversion has ended.
 		// We don't need to continue with conversion setups and can return early.
 		if _, ok := statedb.GetTrie().(*trie.VerkleTrie); ok {
@@ -550,6 +550,11 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		// recreate the verkle db with the tree root, but this time with the mpt snapshot,
 		// so that the conversion can proceed.
 		statedb, err = state.New(root, sdb, snaps)
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		statedb, err = state.New(mptRoot, sdb, nil)
 		if err != nil {
 			panic(err)
 		}
