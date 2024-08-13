@@ -71,7 +71,7 @@ jobs:
           if [ "${{ matrix.test-type }}" == "genesis" ]; then
             fill --fork Verkle --output=../fixtures-${{ matrix.test-type }} -v -m blockchain_test -n auto
           else
-            fill --fork EIP6800Transition --output=../fixtures-${{ matrix.test-type }} -v -m blockchain_test -n auto
+            fill --from Shanghai --until EIP6800Transition --output=../fixtures-${{ matrix.test-type }} -v -m blockchain_test -n auto
           fi
         shell: bash
 
