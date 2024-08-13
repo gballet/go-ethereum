@@ -8,8 +8,8 @@ on:
   workflow_dispatch:
 
 env:
-  EEST_USER: "jsign"
-  EEST_BRANCH: "jsign-fix-vm"
+  EEST_USER: "ethereum"
+  EEST_BRANCH: "verkle/main"
 
 jobs:
   setup:
