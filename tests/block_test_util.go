@@ -148,6 +148,8 @@ func (t *BlockTest) Run(snapshotter bool, tracer vm.EVMLogger) error {
 		return fmt.Errorf("post state validation failed: %v", err)
 	}
 	// Cross-check the snapshot-to-hash against the trie hash
+	// TODO: re-enable this whenever we decide how to handle the Overlay Tree situation
+	// for snapshot regeneration.
 	if snapshotter && false {
 		if err := chain.Snapshots().Verify(chain.CurrentBlock().Root); err != nil {
 			return err
