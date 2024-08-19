@@ -526,7 +526,7 @@ func VerkleKey(ctx *cli.Context) error {
 		}
 		fmt.Printf("%#x\n", utils.GetTreeKeyStorageSlotWithEvaluatedAddress(ap, slot))
 	} else {
-		fmt.Printf("%#x\n", utils.GetTreeKeyVersionWithEvaluatedAddress(ap))
+		fmt.Printf("%#x\n", utils.GetTreeKeyBasicDataEvaluatedAddress(ap))
 	}
 	return nil
 }

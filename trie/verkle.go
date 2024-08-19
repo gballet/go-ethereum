@@ -163,14 +163,14 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount,
 		stem      = t.pointCache.GetTreeKeyBasicDataCached(addr[:])
 	)
 
-	binary.LittleEndian.PutUint64(basicData[utils.BasicDataNonceOffset:], acc.Nonce)
+	binary.BigEndian.PutUint64(basicData[utils.BasicDataNonceOffset:], acc.Nonce)
 	// get the lower 16 bytes of water and change its endianness
 	balanceBytes := acc.Balance.Bytes()
 	for i := 0; i < 16 && i < len(balanceBytes); i++ {
-		basicData[utils.BasicDataBalanceOffset+i] = balanceBytes[len(balanceBytes)-1-i]
+		basicData[utils.BasicDataBalanceOffset+i] = balanceBytes[i]
 	}
 	// var cs [8]byte
-	// binary.LittleEndian.PutUint64(cs[:], uint64(codeLen))
+	// binary.BigEndian.PutUint64(cs[:], uint64(codeLen))
 	// copy(basicData[utils.BasicDataCodeSizeOffset:], cs[:3])
 
 	values[utils.BasicDataLeafKey] = basicData[:]
@@ -457,8 +457,11 @@ func (t *VerkleTrie) UpdateContractCode(addr common.Address, codeHash common.Has
 
 		// Reuse the calculated key to also update the code size.
 		if i == 0 {
+			var basicDataKey [32]byte
+			copy(basicDataKey[:], key[:31])
+			basicDataKey[31] = utils.BasicDataLeafKey
 			// XXX add subfield update api
-			basicdata, err := t.root.Get(key, nil)
+			basicdata, err := t.root.Get(basicDataKey[:], nil)
 			if err != nil {
 				return fmt.Errorf("UpdateContractCode (addr=%x) error getting basic data leaf: %w", addr[:], err)
 			}
