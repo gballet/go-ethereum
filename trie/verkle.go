@@ -129,7 +129,7 @@ func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 	}
 
 	if len(values[utils.BasicDataLeafKey]) > 0 {
-		acc.Nonce = binary.LittleEndian.Uint64(values[utils.BasicDataLeafKey][utils.BasicDataNonceOffset:])
+		acc.Nonce = binary.BigEndian.Uint64(values[utils.BasicDataLeafKey][utils.BasicDataNonceOffset:])
 	}
 
 	// if the account has been deleted, then values[10] will be 0 and not nil. If it has
@@ -143,9 +143,8 @@ func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 		}
 	}
 	var balance [32]byte
-	copy(balance[16:], values[utils.BasicDataLeafKey][utils.BasicDataBalanceOffset:])
-	for i := 0; i < 8; i++ {
-		balance[31-i], balance[utils.BasicDataBalanceOffset+i] = balance[utils.BasicDataBalanceOffset+i], balance[31-i]
+	for i, b := range values[utils.BasicDataLeafKey][utils.BasicDataBalanceOffset:] {
+		balance[32-i-1] = b
 	}
 	acc.Balance = new(big.Int).SetBytes(balance[:])
 	acc.CodeHash = values[utils.CodeHashLeafKey]
@@ -163,15 +162,19 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount,
 		stem      = t.pointCache.GetTreeKeyBasicDataCached(addr[:])
 	)
 
+	// XXX this is a workaround until we manage to "update subfields"
+	bd, err := t.root.Get(stem, t.FlatdbNodeResolver)
+	if err == nil && len(bd) > 0 {
+		basicData[utils.BasicDataVersionOffset] = bd[utils.BasicDataVersionOffset]
+		copy(basicData[utils.BasicDataCodeSizeOffset:utils.BasicDataNonceOffset], bd[utils.BasicDataCodeSizeOffset:utils.BasicDataNonceOffset])
+	}
+
 	binary.BigEndian.PutUint64(basicData[utils.BasicDataNonceOffset:], acc.Nonce)
 	// get the lower 16 bytes of water and change its endianness
 	balanceBytes := acc.Balance.Bytes()
 	for i := 0; i < 16 && i < len(balanceBytes); i++ {
-		basicData[utils.BasicDataBalanceOffset+i] = balanceBytes[i]
+		basicData[utils.BasicDataBalanceOffset+i] = balanceBytes[len(balanceBytes)-1-i]
 	}
-	// var cs [8]byte
-	// binary.BigEndian.PutUint64(cs[:], uint64(codeLen))
-	// copy(basicData[utils.BasicDataCodeSizeOffset:], cs[:3])
 
 	values[utils.BasicDataLeafKey] = basicData[:]
 	values[utils.CodeHashLeafKey] = acc.CodeHash[:]
@@ -214,6 +217,24 @@ func (trie *VerkleTrie) UpdateStorage(address common.Address, key, value []byte)
 }
 
 func (t *VerkleTrie) DeleteAccount(addr common.Address) error {
+	var (
+		err    error
+		values = make([][]byte, verkle.NodeWidth)
+		stem   = t.pointCache.GetTreeKeyVersionCached(addr[:])
+	)
+
+	for i := 0; i < verkle.NodeWidth; i++ {
+		values[i] = zero[:]
+	}
+	switch root := t.root.(type) {
+	case *verkle.InternalNode:
+		err = root.InsertValuesAtStem(stem, values, t.FlatdbNodeResolver)
+	default:
+		return errInvalidRootType
+	}
+	if err != nil {
+		return fmt.Errorf("DeleteAccount (%x) error: %v", addr, err)
+	}
 	return nil
 }
 
@@ -470,7 +491,7 @@ func (t *VerkleTrie) UpdateContractCode(addr common.Address, codeHash common.Has
 			}
 			cs := make([]byte, 32)
 			copy(cs[:], basicdata)
-			binary.BigEndian.PutUint32(cs[utils.BasicDataCodeSizeOffset-1:], uint32(len(code)))
+			binary.BigEndian.PutUint32(cs[utils.BasicDataCodeSizeOffset:], uint32(len(code)))
 			values[utils.BasicDataLeafKey] = cs
 		}
 
