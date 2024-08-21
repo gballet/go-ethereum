@@ -616,7 +616,7 @@ func genVktFromAlloc(alloc core.GenesisAlloc) (*trie.VerkleTrie, error) {
 			CodeHash: crypto.Keccak256Hash(acc.Code).Bytes(),
 			Root:     common.Hash{},
 		}
-		err := vkt.UpdateAccount(addr, account)
+		err := vkt.UpdateAccount(addr, account, len(acc.Code))
 		if err != nil {
 			return nil, fmt.Errorf("error inserting account: %w", err)
 		}
