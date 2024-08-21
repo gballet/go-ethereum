@@ -160,7 +160,7 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount,
 		stem      = t.pointCache.GetTreeKeyBasicDataCached(addr[:])
 	)
 
-	binary.BigEndian.PutUint32(basicData[utils.BasicDataCodeSizeOffset:], uint32(codelen))
+	binary.BigEndian.PutUint32(basicData[utils.BasicDataCodeSizeOffset-1:], uint32(codeLen))
 	binary.BigEndian.PutUint64(basicData[utils.BasicDataNonceOffset:], acc.Nonce)
 	// get the lower 16 bytes of water and change its endianness
 	balanceBytes := acc.Balance.Bytes()

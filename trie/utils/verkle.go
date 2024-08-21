@@ -28,7 +28,7 @@ const (
 	CodeHashLeafKey  = 1
 
 	BasicDataVersionOffset  = 0
-	BasicDataCodeSizeOffset = 4
+	BasicDataCodeSizeOffset = 5
 	BasicDataNonceOffset    = 8
 	BasicDataBalanceOffset  = 16
 
