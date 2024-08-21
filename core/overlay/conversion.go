@@ -101,9 +101,7 @@ func (kvm *keyValueMigrator) addAccount(addr []byte, acc *types.StateAccount) {
 
 	// get the lower 16 bytes of water and change its endianness
 	balanceBytes := acc.Balance.Bytes()
-	for i := 0; i < 16 && i < len(balanceBytes); i++ {
-		basicData[utils.BasicDataBalanceOffset+i] = balanceBytes[len(balanceBytes)-1-i]
-	}
+	copy(basicData[32-len(balanceBytes):], balanceBytes[:])
 
 	leafNodeData.Values[utils.BasicDataLeafKey] = basicData[:]
 	leafNodeData.Values[utils.CodeHashLeafKey] = acc.CodeHash[:]
