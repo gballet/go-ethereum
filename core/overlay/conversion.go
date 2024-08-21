@@ -112,9 +112,7 @@ func (kvm *keyValueMigrator) addAccountCode(addr []byte, codeSize uint64, chunks
 	leafNodeData := kvm.getOrInitLeafNodeData(newBranchKey(addr, &zeroTreeIndex))
 
 	// Save the code size.
-	var cs [4]byte
-	binary.BigEndian.PutUint32(cs[:], uint32(codeSize))
-	copy(leafNodeData.Values[utils.BasicDataLeafKey][utils.BasicDataCodeSizeOffset:utils.BasicDataNonceOffset], cs[1:])
+	binary.BigEndian.PutUint32(leafNodeData.Values[utils.BasicDataLeafKey][utils.BasicDataCodeSizeOffset-1:utils.BasicDataNonceOffset], uint32(codeSize))
 
 	// The first 128 chunks are stored in the account header leaf.
 	for i := 0; i < 128 && i < len(chunks)/32; i++ {
