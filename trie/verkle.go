@@ -129,7 +129,7 @@ func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 	}
 
 	if len(values[utils.BasicDataLeafKey]) > 0 {
-		acc.Nonce = binary.LittleEndian.Uint64(values[utils.BasicDataLeafKey][utils.BasicDataNonceOffset:])
+		acc.Nonce = binary.BigEndian.Uint64(values[utils.BasicDataLeafKey][utils.BasicDataNonceOffset:])
 	}
 
 	// if the account has been deleted, then values[10] will be 0 and not nil. If it has
@@ -142,11 +142,8 @@ func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 			return nil, nil
 		}
 	}
-	var balance [32]byte
-	copy(balance[16:], values[utils.BasicDataLeafKey][utils.BasicDataBalanceOffset:])
-	for i := 0; i < 8; i++ {
-		balance[31-i], balance[utils.BasicDataBalanceOffset+i] = balance[utils.BasicDataBalanceOffset+i], balance[31-i]
-	}
+	var balance [16]byte
+	copy(balance[:], values[utils.BasicDataLeafKey][utils.BasicDataBalanceOffset:])
 	acc.Balance = new(big.Int).SetBytes(balance[:])
 	acc.CodeHash = values[utils.CodeHashLeafKey]
 
@@ -163,16 +160,11 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount,
 		stem      = t.pointCache.GetTreeKeyBasicDataCached(addr[:])
 	)
 
+	binary.BigEndian.PutUint32(basicData[utils.BasicDataCodeSizeOffset-1:], uint32(codeLen))
 	binary.BigEndian.PutUint64(basicData[utils.BasicDataNonceOffset:], acc.Nonce)
 	// get the lower 16 bytes of water and change its endianness
 	balanceBytes := acc.Balance.Bytes()
-	for i := 0; i < 16 && i < len(balanceBytes); i++ {
-		basicData[utils.BasicDataBalanceOffset+i] = balanceBytes[i]
-	}
-	// var cs [8]byte
-	// binary.BigEndian.PutUint64(cs[:], uint64(codeLen))
-	// copy(basicData[utils.BasicDataCodeSizeOffset:], cs[:3])
-
+	copy(basicData[32-len(balanceBytes):], balanceBytes[:])
 	values[utils.BasicDataLeafKey] = basicData[:]
 	values[utils.CodeHashLeafKey] = acc.CodeHash[:]
 
@@ -454,25 +446,6 @@ func (t *VerkleTrie) UpdateContractCode(addr common.Address, codeHash common.Has
 			key = utils.GetTreeKeyCodeChunkWithEvaluatedAddress(t.pointCache.GetTreeKeyHeader(addr[:]), uint256.NewInt(chunknr))
 		}
 		values[groupOffset] = chunks[i : i+32]
-
-		// Reuse the calculated key to also update the code size.
-		if i == 0 {
-			var basicDataKey [32]byte
-			copy(basicDataKey[:], key[:31])
-			basicDataKey[31] = utils.BasicDataLeafKey
-			// XXX add subfield update api
-			basicdata, err := t.root.Get(basicDataKey[:], nil)
-			if err != nil {
-				return fmt.Errorf("UpdateContractCode (addr=%x) error getting basic data leaf: %w", addr[:], err)
-			}
-			if len(basicdata) == 0 {
-				return fmt.Errorf("UpdateContractCode (addr=%x) error getting non-zero basic data leaf: %w", addr[:], err)
-			}
-			cs := make([]byte, 32)
-			copy(cs[:], basicdata)
-			binary.BigEndian.PutUint32(cs[utils.BasicDataCodeSizeOffset-1:], uint32(len(code)))
-			values[utils.BasicDataLeafKey] = cs
-		}
 
 		if groupOffset == 255 || len(chunks)-i <= 32 {
 			err = t.UpdateStem(key[:31], values)
