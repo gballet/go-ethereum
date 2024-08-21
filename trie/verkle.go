@@ -142,10 +142,8 @@ func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 			return nil, nil
 		}
 	}
-	var balance [32]byte
-	for i, b := range values[utils.BasicDataLeafKey][utils.BasicDataBalanceOffset:] {
-		balance[32-i-1] = b
-	}
+	var balance [16]byte
+	copy(balance[:], values[utils.BasicDataLeafKey][utils.BasicDataBalanceOffset:])
 	acc.Balance = new(big.Int).SetBytes(balance[:])
 	acc.CodeHash = values[utils.CodeHashLeafKey]
 
@@ -162,20 +160,11 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount,
 		stem      = t.pointCache.GetTreeKeyBasicDataCached(addr[:])
 	)
 
-	// XXX this is a workaround until we manage to "update subfields"
-	bd, err := t.root.Get(stem, t.FlatdbNodeResolver)
-	if err == nil && len(bd) > 0 {
-		basicData[utils.BasicDataVersionOffset] = bd[utils.BasicDataVersionOffset]
-		copy(basicData[utils.BasicDataCodeSizeOffset:utils.BasicDataNonceOffset], bd[utils.BasicDataCodeSizeOffset:utils.BasicDataNonceOffset])
-	}
-
+	binary.BigEndian.PutUint32(basicData[utils.BasicDataCodeSizeOffset:], uint32(codelen))
 	binary.BigEndian.PutUint64(basicData[utils.BasicDataNonceOffset:], acc.Nonce)
 	// get the lower 16 bytes of water and change its endianness
 	balanceBytes := acc.Balance.Bytes()
-	for i := 0; i < 16 && i < len(balanceBytes); i++ {
-		basicData[utils.BasicDataBalanceOffset+i] = balanceBytes[len(balanceBytes)-1-i]
-	}
-
+	copy(basicData[32-len(balanceBytes):], balanceBytes[:])
 	values[utils.BasicDataLeafKey] = basicData[:]
 	values[utils.CodeHashLeafKey] = acc.CodeHash[:]
 
@@ -475,25 +464,6 @@ func (t *VerkleTrie) UpdateContractCode(addr common.Address, codeHash common.Has
 			key = utils.GetTreeKeyCodeChunkWithEvaluatedAddress(t.pointCache.GetTreeKeyHeader(addr[:]), uint256.NewInt(chunknr))
 		}
 		values[groupOffset] = chunks[i : i+32]
-
-		// Reuse the calculated key to also update the code size.
-		if i == 0 {
-			var basicDataKey [32]byte
-			copy(basicDataKey[:], key[:31])
-			basicDataKey[31] = utils.BasicDataLeafKey
-			// XXX add subfield update api
-			basicdata, err := t.root.Get(basicDataKey[:], nil)
-			if err != nil {
-				return fmt.Errorf("UpdateContractCode (addr=%x) error getting basic data leaf: %w", addr[:], err)
-			}
-			if len(basicdata) == 0 {
-				return fmt.Errorf("UpdateContractCode (addr=%x) error getting non-zero basic data leaf: %w", addr[:], err)
-			}
-			cs := make([]byte, 32)
-			copy(cs[:], basicdata)
-			binary.BigEndian.PutUint32(cs[utils.BasicDataCodeSizeOffset:], uint32(len(code)))
-			values[utils.BasicDataLeafKey] = cs
-		}
 
 		if groupOffset == 255 || len(chunks)-i <= 32 {
 			err = t.UpdateStem(key[:31], values)
