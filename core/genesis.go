@@ -333,7 +333,7 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *trie.Database, gen
 	// TODO: remove `true`. The problem is that for test consumption, the genesis block is stored
 	// in the db and is unaware of preimage recording. This means that we won't enter this if and
 	// save the genesis block state with preimages enabled, thus missing the genesis preimages.
-	if true || (stored == common.Hash{}) {
+	if (stored == common.Hash{}) {
 		if genesis == nil {
 			log.Info("Writing default main-net genesis block")
 			genesis = DefaultGenesisBlock()
@@ -563,7 +563,7 @@ func (g *Genesis) Commit(db ethdb.Database, triedb *trie.Database) (*types.Block
 // Note the state changes will be committed in hash-based scheme, use Commit
 // if path-scheme is preferred.
 func (g *Genesis) MustCommit(db ethdb.Database) *types.Block {
-	triedb := trie.NewDatabaseWithConfig(db, &trie.Config{Verkle: g.Config != nil && g.Config.IsVerkle(big.NewInt(int64(g.Number)), g.Timestamp)})
+	triedb := trie.NewDatabaseWithConfig(db, &trie.Config{Preimages: true, Verkle: g.Config != nil && g.Config.IsVerkle(big.NewInt(int64(g.Number)), g.Timestamp)})
 	block, err := g.Commit(db, triedb)
 	if err != nil {
 		panic(err)
