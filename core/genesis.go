@@ -161,6 +161,7 @@ func (ga *GenesisAlloc) flush(db ethdb.Database, triedb *trie.Database, blockhas
 	}
 
 	for addr, account := range *ga {
+		// TODO set back to AddBalance after rebase
 		statedb.SetBalance(addr, account.Balance)
 		statedb.SetCode(addr, account.Code)
 		statedb.SetNonce(addr, account.Nonce)

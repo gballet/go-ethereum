@@ -172,25 +172,25 @@ var verkleCommand = &cli.Command{
 		},
 		{
 			Name:    "single-key",
-			Aliases: []string{"V"},
+			Aliases: []string{"vk"},
 			Usage:   "compute the verkle tree key given an address and optional slot number",
 			Action:  t8ntool.VerkleKey,
 		},
 		{
 			Name:    "code-chunk-key",
-			Aliases: []string{"VCK"},
+			Aliases: []string{"vck"},
 			Usage:   "compute the verkle tree key given an address and chunk number",
 			Action:  t8ntool.VerkleCodeChunkKey,
 		},
 		{
 			Name:    "chunkify-code",
-			Aliases: []string{"VCC"},
+			Aliases: []string{"vcc"},
 			Usage:   "chunkify a given bytecode",
 			Action:  t8ntool.VerkleChunkifyCode,
 		},
 		{
 			Name:    "state-root",
-			Aliases: []string{"VR"},
+			Aliases: []string{"vsr"},
 			Usage:   "compute the state-root of a verkle tree for the given alloc",
 			Action:  t8ntool.VerkleRoot,
 			Flags: []cli.Flag{
