@@ -113,11 +113,11 @@ func (t *TransitionTrie) UpdateStorage(address common.Address, key []byte, value
 }
 
 // UpdateAccount abstract an account write to the trie.
-func (t *TransitionTrie) UpdateAccount(addr common.Address, account *types.StateAccount) error {
+func (t *TransitionTrie) UpdateAccount(addr common.Address, account *types.StateAccount, codelen int) error {
 	if account.Root != (common.Hash{}) && account.Root != types.EmptyRootHash {
 		t.overlay.db.SetStorageRootConversion(addr, account.Root)
 	}
-	return t.overlay.UpdateAccount(addr, account)
+	return t.overlay.UpdateAccount(addr, account, codelen)
 }
 
 // Delete removes any existing value for key from the trie. If a node was not

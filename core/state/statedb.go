@@ -177,6 +177,8 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 		sdb.witness = sdb.NewAccessWitness()
 	}
 	if sdb.snaps != nil {
+		// 	if sdb.snap = sdb.snaps.Snapshot(root); sdb.snap == nil {
+		// 	}
 		sdb.snap = sdb.snaps.Snapshot(root)
 	}
 	return sdb, nil
@@ -576,7 +578,7 @@ func (s *StateDB) updateStateObject(obj *stateObject) {
 	}
 	// Encode the account and update the account trie
 	addr := obj.Address()
-	if err := s.trie.UpdateAccount(addr, &obj.data); err != nil {
+	if err := s.trie.UpdateAccount(addr, &obj.data, len(obj.code)); err != nil {
 		s.setError(fmt.Errorf("updateStateObject (%x) error: %v", addr[:], err))
 	}
 	if obj.dirtyCode {

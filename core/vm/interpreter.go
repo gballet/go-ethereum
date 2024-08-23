@@ -61,6 +61,7 @@ func NewEVMInterpreter(evm *EVM) *EVMInterpreter {
 	case evm.chainRules.IsPrague:
 		// TODO replace with proper instruction set when fork is specified
 		table = &shanghaiInstructionSet
+		// EnableEIP(4762, table)
 	case evm.chainRules.IsShanghai:
 		table = &shanghaiInstructionSet
 	case evm.chainRules.IsMerge:

@@ -425,7 +425,7 @@ func exportOverlayPreimages(ctx *cli.Context) error {
 	stack, _ := makeConfigNode(ctx)
 	defer stack.Close()
 
-	chain, _ := utils.MakeChain(ctx, stack, true)
+	chain, _ := utils.MakeChain(ctx, stack, false)
 
 	var root common.Hash
 	if ctx.String(utils.TreeRootFlag.Name) != "" {

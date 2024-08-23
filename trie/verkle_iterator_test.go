@@ -37,7 +37,7 @@ func TestVerkleIterator(t *testing.T) {
 	}
 	// NOTE: the code size isn't written to the trie via TryUpdateAccount
 	// so it will be missing from the test nodes.
-	trie.UpdateAccount(common.Address{}, account0)
+	trie.UpdateAccount(common.Address{}, account0, 0)
 	account1 := &types.StateAccount{
 		Nonce:    1337,
 		Balance:  big.NewInt(2000),
@@ -46,7 +46,7 @@ func TestVerkleIterator(t *testing.T) {
 	}
 	// This address is meant to hash to a value that has the same first byte as 0xbf
 	var clash = common.HexToAddress("69fd8034cdb20934dedffa7dccb4fb3b8062a8be")
-	trie.UpdateAccount(clash, account1)
+	trie.UpdateAccount(clash, account1, 0)
 
 	// Manually go over every node to check that we get all
 	// the correct nodes.

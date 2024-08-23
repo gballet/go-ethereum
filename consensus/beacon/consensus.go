@@ -32,8 +32,9 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/ethereum/go-ethereum/trie"
-	"github.com/ethereum/go-ethereum/trie/utils"
-	"github.com/ethereum/go-verkle"
+	// "github.com/ethereum/go-ethereum/trie/utils"
+	// "github.com/ethereum/go-verkle"
+	// "github.com/pk910/dynamic-ssz"
 )
 
 // Proof-of-stake protocol constants.
@@ -373,9 +374,9 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 
 // FinalizeAndAssemble implements consensus.Engine, setting the final state and
 // assembling the block.
-func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt, withdrawals []*types.Withdrawal) (*types.Block, error) {
+func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *types.Header, statedb *state.StateDB, txs []*types.Transaction, uncles []*types.Header, receipts []*types.Receipt, withdrawals []*types.Withdrawal) (*types.Block, error) {
 	if !beacon.IsPoSHeader(header) {
-		return beacon.ethone.FinalizeAndAssemble(chain, header, state, txs, uncles, receipts, nil)
+		return beacon.ethone.FinalizeAndAssemble(chain, header, statedb, txs, uncles, receipts, nil)
 	}
 	shanghai := chain.Config().IsShanghai(header.Number, header.Time)
 	if shanghai {
@@ -389,86 +390,66 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 		}
 	}
 	// Finalize and assemble the block.
-	beacon.Finalize(chain, header, state, txs, uncles, withdrawals)
+	beacon.Finalize(chain, header, statedb, txs, uncles, withdrawals)
 
 	// Assign the final state root to header.
-	header.Root = state.IntermediateRoot(true)
+	header.Root = statedb.IntermediateRoot(true)
 	// Associate current conversion state to computed state
 	// root and store it in the database for later recovery.
-	state.Database().SaveTransitionState(header.Root)
+	statedb.Database().SaveTransitionState(header.Root)
 
-	var (
-		p    *verkle.VerkleProof
-		k    verkle.StateDiff
-		keys = state.Witness().Keys()
-	)
-	if chain.Config().IsPrague(header.Number, header.Time) {
-		// Open the pre-tree to prove the pre-state against
-		parent := chain.GetHeaderByNumber(header.Number.Uint64() - 1)
-		if parent == nil {
-			return nil, fmt.Errorf("nil parent header for block %d", header.Number)
-		}
+	// var (
+	// 	p    *verkle.VerkleProof
+	// 	k    verkle.StateDiff
+	// 	keys = statedb.Witness().Keys()
+	// )
+	// if chain.Config().IsPrague(header.Number, header.Time) {
+	// 	// Open the pre-tree to prove the pre-state against
+	// 	parent := chain.GetHeaderByNumber(header.Number.Uint64() - 1)
+	// 	if parent == nil {
+	// 		return nil, fmt.Errorf("nil parent header for block %d", header.Number)
+	// 	}
 
-		// Load transition state at beginning of block, because
-		// OpenTrie needs to know what the conversion status is.
-		state.Database().LoadTransitionState(parent.Root)
+	// 	// Load transition state at beginning of block, because
+	// 	// OpenTrie needs to know what the conversion status is.
+	// 	statedb.Database().LoadTransitionState(parent.Root)
 
-		if chain.Config().ProofInBlocks {
-			preTrie, err := state.Database().OpenTrie(parent.Root)
-			if err != nil {
-				return nil, fmt.Errorf("error opening pre-state tree root: %w", err)
-			}
+	// 	preTrie, err := statedb.Database().OpenTrie(parent.Root)
+	// 	if err != nil {
+	// 		return nil, fmt.Errorf("error opening pre-state tree root: %w", err)
+	// 	}
 
-			var okpre, okpost bool
-			var vtrpre, vtrpost *trie.VerkleTrie
-			switch pre := preTrie.(type) {
-			case *trie.VerkleTrie:
-				vtrpre, okpre = preTrie.(*trie.VerkleTrie)
-				switch tr := state.GetTrie().(type) {
-				case *trie.VerkleTrie:
-					vtrpost = tr
-					okpost = true
-				// This is to handle a situation right at the start of the conversion:
-				// the post trie is a transition tree when the pre tree is an empty
-				// verkle tree.
-				case *trie.TransitionTrie:
-					vtrpost = tr.Overlay()
-					okpost = true
-				default:
-					okpost = false
-				}
-			case *trie.TransitionTrie:
-				vtrpre = pre.Overlay()
-				okpre = true
-				post, _ := state.GetTrie().(*trie.TransitionTrie)
-				vtrpost = post.Overlay()
-				okpost = true
-			default:
-				// This should only happen for the first block of the
-				// conversion, when the previous tree is a merkle tree.
-				//  Logically, the "previous" verkle tree is an empty tree.
-				okpre = true
-				vtrpre = trie.NewVerkleTrie(verkle.New(), state.Database().TrieDB(), utils.NewPointCache(), false)
-				post := state.GetTrie().(*trie.TransitionTrie)
-				vtrpost = post.Overlay()
-				okpost = true
-			}
-			if okpre && okpost {
-				if len(keys) > 0 {
-					p, k, err = trie.ProveAndSerialize(vtrpre, vtrpost, keys, vtrpre.FlatdbNodeResolver)
-					if err != nil {
-						return nil, fmt.Errorf("error generating verkle proof for block %d: %w", header.Number, err)
-					}
-				}
-			}
-		}
-	}
+	// 	var vtrpre *trie.VerkleTrie
+	// 	switch pre := preTrie.(type) {
+	// 	case *trie.VerkleTrie:
+	// 		vtrpre = preTrie.(*trie.VerkleTrie)
+	// 	case *trie.TransitionTrie:
+	// 		vtrpre = pre.Overlay()
+	// 	default:
+	// 		panic("should not happen")
+	// 	}
+	// 	if len(keys) > 0 {
+	// 		p, k, err = trie.ProveAndSerialize(vtrpre, nil, keys, vtrpre.FlatdbNodeResolver)
+	// 		if err != nil {
+	// 			return nil, fmt.Errorf("error generating verkle proof for block %d: %w", header.Number, err)
+	// 		}
+	// 	}
+
+	// 	ew := types.ExecutionWitness{StateDiff: k, VerkleProof: p}
+	// 	encoder := dynssz.NewDynSsz(map[string]any{})
+	// 	encoded, err := encoder.MarshalSSZ(&ew)
+	// 	if err != nil {
+	// 		spew.Dump(ew)
+	// 		panic(err)
+	// 	}
+	// 	state.AppendBytesToFile("witness_size.csv", []byte(fmt.Sprintf("%d,%d", header.Number, len(encoded))))
+	// }
 
 	// Assemble and return the final block.
 	block := types.NewBlockWithWithdrawals(header, txs, uncles, receipts, withdrawals, trie.NewStackTrie(nil))
-	if chain.Config().IsPrague(header.Number, header.Time) && chain.Config().ProofInBlocks {
-		block.SetVerkleProof(p, k)
-	}
+	// if chain.Config().IsPrague(header.Number, header.Time) && chain.Config().ProofInBlocks {
+	// 	block.SetVerkleProof(p, k)
+	// }
 	return block, nil
 }
 
