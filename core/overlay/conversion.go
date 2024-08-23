@@ -95,19 +95,15 @@ func (kvm *keyValueMigrator) addStorageSlot(addr []byte, slotNumber []byte, slot
 func (kvm *keyValueMigrator) addAccount(addr []byte, acc *types.StateAccount) {
 	leafNodeData := kvm.getOrInitLeafNodeData(newBranchKey(addr, &zeroTreeIndex))
 
-	var version [verkle.LeafValueSize]byte
-	leafNodeData.Values[utils.VersionLeafKey] = version[:]
+	var basicData [verkle.LeafValueSize]byte
+	basicData[utils.BasicDataVersionOffset] = 0
+	binary.BigEndian.PutUint64(basicData[utils.BasicDataNonceOffset:], acc.Nonce)
 
-	var balance [verkle.LeafValueSize]byte
-	for i, b := range acc.Balance.Bytes() {
-		balance[len(acc.Balance.Bytes())-1-i] = b
-	}
-	leafNodeData.Values[utils.BalanceLeafKey] = balance[:]
+	// get the lower 16 bytes of water and change its endianness
+	balanceBytes := acc.Balance.Bytes()
+	copy(basicData[32-len(balanceBytes):], balanceBytes[:])
 
-	var nonce [verkle.LeafValueSize]byte
-	binary.LittleEndian.PutUint64(nonce[:8], acc.Nonce)
-	leafNodeData.Values[utils.NonceLeafKey] = nonce[:]
-
+	leafNodeData.Values[utils.BasicDataLeafKey] = basicData[:]
 	leafNodeData.Values[utils.CodeHashLeafKey] = acc.CodeHash[:]
 }
 
@@ -115,9 +111,9 @@ func (kvm *keyValueMigrator) addAccountCode(addr []byte, codeSize uint64, chunks
 	leafNodeData := kvm.getOrInitLeafNodeData(newBranchKey(addr, &zeroTreeIndex))
 
 	// Save the code size.
-	var codeSizeBytes [verkle.LeafValueSize]byte
-	binary.LittleEndian.PutUint64(codeSizeBytes[:8], codeSize)
-	leafNodeData.Values[utils.CodeSizeLeafKey] = codeSizeBytes[:]
+	var cs [4]byte
+	binary.BigEndian.PutUint32(cs[:], uint32(codeSize))
+	copy(leafNodeData.Values[utils.BasicDataLeafKey][utils.BasicDataCodeSizeOffset:utils.BasicDataNonceOffset], cs[:])
 
 	// The first 128 chunks are stored in the account header leaf.
 	for i := 0; i < 128 && i < len(chunks)/32; i++ {
@@ -218,11 +214,26 @@ func (kvm *keyValueMigrator) migrateCollectedKeyValues(tree *trie.VerkleTrie) er
 	return nil
 }
 
+var dump bool = false
+
 // OverlayVerkleTransition contains the overlay conversion logic
 func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedCount uint64) error {
 	migrdb := statedb.Database()
 	migrdb.LockCurrentTransitionState()
 	defer migrdb.UnLockCurrentTransitionState()
+
+	// Open or create file for writing; append data if file exists
+	var (
+		file *os.File
+		err  error
+	)
+	if dump {
+		file, err = os.OpenFile("prout.bin", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+	}
 
 	// verkle transition: if the conversion process is in progress, move
 	// N values from the MPT into the verkle tree.
@@ -270,6 +281,13 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 				addr = common.BytesToAddress(rawdb.ReadPreimage(migrdb.DiskDB(), accIt.Hash()))
 				if len(addr) != 20 {
 					return fmt.Errorf("addr len is zero is not 32: %d", len(addr))
+				}
+				if dump {
+					n, err := file.Write(addr.Bytes())
+					if err != nil {
+						fmt.Println(n, addr, err, file)
+						panic(err)
+					}
 				}
 			}
 			migrdb.SetCurrentAccountAddress(addr)
@@ -344,7 +362,13 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 					} else {
 						slotnr = rawdb.ReadPreimage(migrdb.DiskDB(), stIt.Hash())
 						if len(slotnr) != 32 {
-							return fmt.Errorf("slotnr len is zero is not 32: %d", len(slotnr))
+							panic(fmt.Errorf("slotnr len is zero is not 32: %d", len(slotnr)))
+						}
+						if dump {
+							_, err = file.Write(slotnr)
+							if err != nil {
+								panic(err)
+							}
 						}
 					}
 					log.Trace("found slot number", "number", slotnr)
@@ -399,6 +423,12 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 						addr = common.BytesToAddress(rawdb.ReadPreimage(migrdb.DiskDB(), accIt.Hash()))
 						if len(addr) != 20 {
 							return fmt.Errorf("account address len is zero is not 20: %d", len(addr))
+						}
+						if dump {
+							_, err = file.Write(addr.Bytes())
+							if err != nil {
+								panic(err)
+							}
 						}
 					}
 					if crypto.Keccak256Hash(addr[:]) != accIt.Hash() {

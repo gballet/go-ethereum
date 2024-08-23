@@ -141,7 +141,7 @@ type Trie interface {
 	// UpdateAccount abstracts an account write to the trie. It encodes the
 	// provided account object with associated algorithm and then updates it
 	// in the trie with provided address.
-	UpdateAccount(address common.Address, account *types.StateAccount) error
+	UpdateAccount(address common.Address, account *types.StateAccount, codelen int) error
 
 	// UpdateContractCode abstracts code write to the trie. It is expected
 	// to be moved to the stateWriter interface when the latter is ready.
@@ -312,7 +312,6 @@ type cachingDB struct {
 
 	// Transition-specific fields
 	// TODO ensure that this info is in the DB
-	LastMerkleRoot         common.Hash // root hash of the read-only base tree
 	CurrentTransitionState *TransitionState
 	TransitionStatePerRoot lru.BasicLRU[common.Hash, *TransitionState]
 	transitionStateLock    sync.Mutex
@@ -349,7 +348,7 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 		mpt Trie
 		err error
 	)
-	fmt.Printf("opening trie with root %x, %v %v\n", root, db.InTransition(), db.Transitioned())
+	// fmt.Printf("opening trie with root %x, %v %v\n", root, db.InTransition(), db.Transitioned())
 
 	// TODO separate both cases when I can be certain that it won't
 	// find a Verkle trie where is expects a Transitoion trie.
@@ -415,8 +414,8 @@ func (db *cachingDB) OpenStorageTrie(stateRoot common.Hash, address common.Addre
 		}
 	}
 	if db.InTransition() {
-		fmt.Printf("OpenStorageTrie during transition, state root=%x root=%x\n", stateRoot, root)
-		mpt, err := db.openStorageMPTrie(db.LastMerkleRoot, address, root, nil)
+		// fmt.Printf("OpenStorageTrie during transition, state root=%x root=%x\n", stateRoot, root)
+		mpt, err := db.openStorageMPTrie(db.baseRoot, address, root, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -548,7 +547,7 @@ func (db *cachingDB) AddRootTranslation(originalRoot, translatedRoot common.Hash
 }
 
 func (db *cachingDB) SetLastMerkleRoot(merkleRoot common.Hash) {
-	db.LastMerkleRoot = merkleRoot
+	db.baseRoot = merkleRoot
 }
 
 func (db *cachingDB) SaveTransitionState(root common.Hash) {

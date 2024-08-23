@@ -81,11 +81,12 @@ func BenchmarkTransactionTrace(b *testing.B) {
 	}
 	_, statedb := tests.MakePreState(rawdb.NewMemoryDatabase(), alloc, false)
 	// Create the tracer, the EVM environment and run it
+	istarget := context.BlockNumber.Uint64() == 17366216
 	tracer := logger.NewStructLogger(&logger.Config{
-		Debug: false,
-		//DisableStorage: true,
+		Debug:          istarget,
+		DisableStorage: !istarget,
 		//EnableMemory: false,
-		//EnableReturnData: false,
+		EnableReturnData: istarget,
 	})
 	evm := vm.NewEVM(context, txContext, statedb, params.AllEthashProtocolChanges, vm.Config{Tracer: tracer})
 	msg, err := core.TransactionToMessage(tx, signer, nil)

@@ -249,7 +249,7 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 	}
 	if overrides != nil {
 		if overrides.OverrideProofInBlock != nil {
-			chainConfig.ProofInBlocks = *overrides.OverrideProofInBlock
+			chainConfig.ProofInBlocks = true // *overrides.OverrideProofInBlock
 		}
 		if overrides.OverrideOverlayStride != nil {
 			chainConfig.OverlayStride = *overrides.OverrideOverlayStride
@@ -322,7 +322,7 @@ func NewBlockChain(db ethdb.Database, cacheConfig *CacheConfig, genesis *Genesis
 		// for it to be able to recover if interrupted during the transition
 		// but that's left out to a later PR since there's not really a need
 		// right now.
-		bc.stateCache.InitTransitionStatus(true, true)
+		bc.stateCache.InitTransitionStatus(false, false)
 		bc.stateCache.EndVerkleTransition()
 	}
 

@@ -115,11 +115,6 @@ func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 		return nil, fmt.Errorf("GetAccount (%x) error: %v", addr, err)
 	}
 
-	// The following code is required for the MPT->VKT conversion.
-	// An account can be partially migrated, where storage slots were moved to the VKT
-	// but not yet the account. This means some account information as (header) storage slots
-	// are in the VKT but basic account information must be read in the base tree (MPT).
-	// TODO: we can simplify this logic depending if the conversion is in progress or finished.
 	emptyAccount := true
 	for i := 0; values != nil && i <= utils.CodeHashLeafKey && emptyAccount; i++ {
 		emptyAccount = emptyAccount && values[i] == nil
@@ -128,61 +123,48 @@ func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 		return nil, nil
 	}
 
-	if len(values[utils.NonceLeafKey]) > 0 {
-		acc.Nonce = binary.LittleEndian.Uint64(values[utils.NonceLeafKey])
+	if len(values[utils.BasicDataLeafKey]) > 0 {
+		acc.Nonce = binary.BigEndian.Uint64(values[utils.BasicDataLeafKey][utils.BasicDataNonceOffset:])
 	}
 	// if the account has been deleted, then values[10] will be 0 and not nil. If it has
 	// been recreated after that, then its code keccak will NOT be 0. So return `nil` if
 	// the nonce, and values[10], and code keccak is 0.
 
-	if acc.Nonce == 0 && len(values) > 10 && len(values[10]) > 0 && bytes.Equal(values[utils.CodeHashLeafKey], zero[:]) {
+	// XXX voir si effectivement de detruis tout
+	if bytes.Equal(values[utils.BasicDataLeafKey], zero[:]) && len(values) > 10 && len(values[10]) > 0 && bytes.Equal(values[utils.CodeHashLeafKey], zero[:]) {
 		if !t.ended {
 			return nil, errDeletedAccount
 		} else {
 			return nil, nil
 		}
 	}
-	var balance [32]byte
-	copy(balance[:], values[utils.BalanceLeafKey])
-	for i := 0; i < len(balance)/2; i++ {
-		balance[len(balance)-i-1], balance[i] = balance[i], balance[len(balance)-i-1]
-	}
-	// var balance [32]byte
-	// if len(values[utils.BalanceLeafKey]) > 0 {
-	// 	for i := 0; i < len(balance); i++ {
-	// 		balance[len(balance)-i-1] = values[utils.BalanceLeafKey][i]
-	// 	}
-	// }
+	var balance [16]byte
+	copy(balance[:], values[utils.BasicDataLeafKey][utils.BasicDataBalanceOffset:])
 	acc.Balance = new(big.Int).SetBytes(balance[:])
 	acc.CodeHash = values[utils.CodeHashLeafKey]
-	// TODO fix the code size as well
 
 	return acc, nil
 }
 
 var zero [32]byte
 
-func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount) error {
+func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount, codelen int) error {
 	var (
-		err            error
-		nonce, balance [32]byte
-		values         = make([][]byte, verkle.NodeWidth)
-		stem           = t.pointCache.GetTreeKeyVersionCached(addr[:])
+		err       error
+		basicData [32]byte
+		values    = make([][]byte, verkle.NodeWidth)
+		stem      = t.pointCache.GetTreeKeyVersionCached(addr[:])
 	)
 
-	// Only evaluate the polynomial once
-	values[utils.VersionLeafKey] = zero[:]
-	values[utils.NonceLeafKey] = nonce[:]
-	values[utils.BalanceLeafKey] = balance[:]
+	binary.BigEndian.PutUint32(basicData[utils.BasicDataCodeSizeOffset:], uint32(codelen))
+	binary.BigEndian.PutUint64(basicData[utils.BasicDataNonceOffset:], acc.Nonce)
+	// get the lower 16 bytes of water and change its endianness
+	balanceBytes := acc.Balance.Bytes()
+	copy(basicData[32-len(balanceBytes):], balanceBytes[:])
+	// XXX overwrite code size if present and not updated
+	// this will happen e.g. when updating the balance
+	values[utils.BasicDataLeafKey] = basicData[:]
 	values[utils.CodeHashLeafKey] = acc.CodeHash[:]
-
-	binary.LittleEndian.PutUint64(nonce[:], acc.Nonce)
-	bbytes := acc.Balance.Bytes()
-	if len(bbytes) > 0 {
-		for i, b := range bbytes {
-			balance[len(bbytes)-i-1] = b
-		}
-	}
 
 	switch root := t.root.(type) {
 	case *verkle.InternalNode:
@@ -193,7 +175,6 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount)
 	if err != nil {
 		return fmt.Errorf("UpdateAccount (%x) error: %v", addr, err)
 	}
-	// TODO figure out if the code size needs to be updated, too
 
 	return nil
 }
@@ -257,6 +238,11 @@ func (trie *VerkleTrie) DeleteStorage(addr common.Address, key []byte) error {
 // can be used even if the trie doesn't have one.
 func (trie *VerkleTrie) Hash() common.Hash {
 	return trie.root.Commit().Bytes()
+}
+
+func nodeToDBKey(n verkle.VerkleNode) []byte {
+	ret := n.Commitment().Bytes()
+	return ret[:]
 }
 
 // Commit writes all nodes to the trie's memory database, tracking the internal
@@ -339,6 +325,7 @@ func ProveAndSerialize(pretrie, posttrie *VerkleTrie, keys [][]byte, resolver ve
 }
 
 func DeserializeAndVerifyVerkleProof(vp *verkle.VerkleProof, preStateRoot []byte, postStateRoot []byte, statediff verkle.StateDiff) error {
+	panic("pas appele j'espere")
 	// TODO: check that `OtherStems` have expected length and values.
 
 	proof, err := verkle.DeserializeProof(vp, statediff)
@@ -354,27 +341,105 @@ func DeserializeAndVerifyVerkleProof(vp *verkle.VerkleProof, preStateRoot []byte
 	}
 	// TODO this should not be necessary, remove it
 	// after the new proof generation code has stabilized.
-	for _, stemdiff := range statediff {
-		for _, suffixdiff := range stemdiff.SuffixDiffs {
-			var key [32]byte
-			copy(key[:31], stemdiff.Stem[:])
-			key[31] = suffixdiff.Suffix
+	// for _, stemdiff := range statediff {
+	// method 1
+	// for i, suffix := range stemdiff.Suffixes {
+	// 	var key [32]byte
+	// 	copy(key[:31], stemdiff.Stem[:])
+	// 	key[31] = suffix
 
-			val, err := pretree.Get(key[:], nil)
-			if err != nil {
-				return fmt.Errorf("could not find key %x in tree rebuilt from proof: %w", key, err)
-			}
-			if len(val) > 0 {
-				if !bytes.Equal(val, suffixdiff.CurrentValue[:]) {
-					return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, *suffixdiff.CurrentValue)
-				}
-			} else {
-				if suffixdiff.CurrentValue != nil && len(suffixdiff.CurrentValue) != 0 {
-					return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, *suffixdiff.CurrentValue)
-				}
-			}
-		}
-	}
+	// 	val, err := pretree.Get(key[:], nil)
+	// 	if err != nil {
+	// 		return fmt.Errorf("could not find key %x in tree rebuilt from proof: %w", key, err)
+	// 	}
+	// 	if len(val) > 0 {
+	// 		if !bytes.Equal(val, stemdiff.Current[i]) {
+	// 			return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, stemdiff.Current[i])
+	// 		}
+	// 	} else {
+	// 		if stemdiff.Current[i] != nil && len(stemdiff.Current[i]) != 0 {
+	// 			return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, stemdiff.Current[i])
+	// 		}
+	// 	}
+	// }
+
+	// method 2
+	// for i, suffix := range stemdiff.ReadSuffixes {
+	// 	var key [32]byte
+	// 	copy(key[:31], stemdiff.Stem[:])
+	// 	key[31] = suffix
+	// 	val, err := pretree.Get(key[:], nil)
+	// 	if err != nil {
+	// 		return fmt.Errorf("could not find key %x in tree rebuilt from proof: %w", key, err)
+	// 	}
+	// 	if len(val) > 0 {
+	// 		if !bytes.Equal(val, stemdiff.ReadCurrent[i]) {
+	// 			return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, stemdiff.ReadCurrent[i])
+	// 		}
+	// 	} else {
+	// 		if stemdiff.ReadCurrent[i] != nil && len(stemdiff.ReadCurrent[i]) != 0 {
+	// 			return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, stemdiff.ReadCurrent[i])
+	// 		}
+	// 	}
+	// }
+	// for i, suffix := range stemdiff.UpdatedSuffixes {
+	// 	var key [32]byte
+	// 	copy(key[:31], stemdiff.Stem[:])
+	// 	key[31] = suffix
+	// 	val, err := pretree.Get(key[:], nil)
+	// 	if err != nil {
+	// 		return fmt.Errorf("could not find key %x in tree rebuilt from proof: %w", key, err)
+	// 	}
+	// 	if len(val) > 0 {
+	// 		if !bytes.Equal(val, stemdiff.UpdatedCurrent[i]) {
+	// 			return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, stemdiff.UpdatedCurrent[i])
+	// 		}
+	// 	} else {
+	// 		if stemdiff.UpdatedCurrent[i] != nil && len(stemdiff.UpdatedCurrent[i]) != 0 {
+	// 			return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, stemdiff.UpdatedCurrent[i])
+	// 		}
+	// 	}
+	// }
+
+	// method 3
+	// for i, suffix := range stemdiff.ReadSuffixes {
+	// 	var key [32]byte
+	// 	copy(key[:31], stemdiff.Stem[:])
+	// 	key[31] = suffix
+	// 	val, err := pretree.Get(key[:], nil)
+	// 	if err != nil {
+	// 		return fmt.Errorf("could not find key %x in tree rebuilt from proof: %w", key, err)
+	// 	}
+	// 	if len(val) > 0 {
+	// 		if !bytes.Equal(val, stemdiff.ReadCurrent[i]) {
+	// 			return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, stemdiff.ReadCurrent[i])
+	// 		}
+	// 	} else {
+	// 		if stemdiff.ReadCurrent[i] != nil && len(stemdiff.ReadCurrent[i]) != 0 {
+	// 			return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, stemdiff.ReadCurrent[i])
+	// 		}
+	// 	}
+	// }
+	// for i, suffix := range stemdiff.UpdatedSuffixes {
+	// 	var key [32]byte
+	// 	copy(key[:31], stemdiff.Stem[:])
+	// 	key[31] = suffix
+	// 	val, err := pretree.Get(key[:], nil)
+	// 	if err != nil {
+	// 		return fmt.Errorf("could not find key %x in tree rebuilt from proof: %w", key, err)
+	// 	}
+	// 	if len(val) > 0 {
+	// 		if !bytes.Equal(val, stemdiff.UpdatedCurrent[i]) {
+	// 			return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, stemdiff.UpdatedCurrent[i])
+	// 		}
+	// 	} else {
+	// 		if stemdiff.UpdatedCurrent[i] != nil && len(stemdiff.UpdatedCurrent[i]) != 0 {
+	// 			return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, stemdiff.UpdatedCurrent[i])
+	// 		}
+	// 	}
+	// }
+
+	// }
 
 	// TODO: this is necessary to verify that the post-values are the correct ones.
 	// But all this can be avoided with a even faster way. The EVM block execution can
@@ -480,13 +545,6 @@ func (t *VerkleTrie) UpdateContractCode(addr common.Address, codeHash common.Has
 			key = utils.GetTreeKeyCodeChunkWithEvaluatedAddress(t.pointCache.GetTreeKeyHeader(addr[:]), uint256.NewInt(chunknr))
 		}
 		values[groupOffset] = chunks[i : i+32]
-
-		// Reuse the calculated key to also update the code size.
-		if i == 0 {
-			cs := make([]byte, 32)
-			binary.LittleEndian.PutUint64(cs, uint64(len(code)))
-			values[utils.CodeSizeLeafKey] = cs
-		}
 
 		if groupOffset == 255 || len(chunks)-i <= 32 {
 			err = t.UpdateStem(key[:31], values)

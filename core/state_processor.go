@@ -21,7 +21,9 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc"
@@ -29,8 +31,13 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/trie/utils"
+	"github.com/ethereum/go-verkle"
+	"github.com/pk910/dynamic-ssz"
 )
 
 // StateProcessor is a basic Processor, which takes care of transitioning
@@ -85,14 +92,37 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		} else {
 			ProcessParentBlockHash(statedb, block.NumberU64()-1, block.ParentHash())
 		}
+
+		// var record [1 + 8]byte
+		// record[0] = 1
+		// binary.LittleEndian.PutUint64(record[1:], block.NumberU64())
+		// state.AppendBytesToFile("gas.log", record[:])
 	}
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
+		// var record [1 + 32]byte
+		// record[0] = 2
+		// copy(record[1:], tx.Hash().Bytes())
+		// state.AppendBytesToFile("gas.log", record[:])
 		msg, err := TransactionToMessage(tx, signer, header.BaseFee)
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
 		}
 		statedb.SetTxContext(tx.Hash(), i)
+		thash := tx.Hash()
+		if thash[0] == 0xe5 && thash[1] == 0x5a && thash[2] == 0x21 && thash[3] == 0x50 {
+			file, err := os.Create("bug.json")
+			if err != nil {
+				panic(err)
+			}
+			defer file.Close()
+			vmenv.Config.Tracer = logger.NewJSONLogger(&logger.Config{
+				EnableMemory:     true,
+				EnableReturnData: true,
+			}, file)
+		} else {
+			vmenv.Config.Tracer = nil
+		}
 		receipt, err := applyTransaction(msg, p.config, gp, statedb, blockNumber, blockHash, tx, usedGas, vmenv)
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
@@ -109,6 +139,89 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	// Finalize the block, applying any consensus engine specific extras (e.g. block rewards)
 	p.engine.Finalize(p.bc, header, statedb, block.Transactions(), block.Uncles(), withdrawals)
 
+	header.Root = statedb.IntermediateRoot(true)
+	// Associate current conversion state to computed state
+	// root and store it in the database for later recovery.
+	statedb.Database().SaveTransitionState(header.Root)
+
+	var (
+		proof     *verkle.VerkleProof
+		statediff verkle.StateDiff
+		keys      = statedb.Witness().Keys()
+	)
+	// Open the pre-tree to prove the pre-state against
+	parent := p.bc.GetHeaderByNumber(header.Number.Uint64() - 1)
+	if parent == nil {
+		return nil, nil, 0, fmt.Errorf("nil parent header for block %d", header.Number)
+	}
+
+	// Load transition state at beginning of block, because
+	// OpenTrie needs to know what the conversion status is.
+	// statedb.Database().LoadTransitionState(parent.Root)
+
+	preTrie, err := statedb.Database().OpenTrie(parent.Root)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("error opening pre-state tree root: %w", err)
+	}
+	// statedb.Database().LoadTransitionState(header.Root)
+
+	var okpre, okpost bool
+	var vtrpre, vtrpost *trie.VerkleTrie
+	switch pre := preTrie.(type) {
+	case *trie.VerkleTrie:
+		vtrpre, okpre = preTrie.(*trie.VerkleTrie)
+		switch tr := statedb.GetTrie().(type) {
+		case *trie.VerkleTrie:
+			vtrpost = tr
+			okpost = true
+		// This is to handle a situation right at the start of the conversion:
+		// the post trie is a transition tree when the pre tree is an empty
+		// verkle tree.
+		case *trie.TransitionTrie:
+			vtrpost = tr.Overlay()
+			okpost = true
+		default:
+			okpost = false
+		}
+	case *trie.TransitionTrie:
+		vtrpre = pre.Overlay()
+		okpre = true
+		post, _ := statedb.GetTrie().(*trie.TransitionTrie)
+		vtrpost = post.Overlay()
+		okpost = true
+	default:
+		// This should only happen for the first block of the
+		// conversion, when the previous tree is a merkle tree.
+		//  Logically, the "previous" verkle tree is an empty tree.
+		okpre = true
+		vtrpre = trie.NewVerkleTrie(verkle.New(), statedb.Database().TrieDB(), utils.NewPointCache(), false)
+		post := statedb.GetTrie().(*trie.TransitionTrie)
+		vtrpost = post.Overlay()
+		okpost = true
+	}
+	if okpre && okpost {
+		if len(keys) > 0 {
+			proof, statediff, err = trie.ProveAndSerialize(vtrpre, vtrpost, keys, vtrpre.FlatdbNodeResolver)
+			if err != nil {
+				return nil, nil, 0, fmt.Errorf("error generating verkle proof for block %d: %w", header.Number, err)
+			}
+		}
+
+		ew := types.ExecutionWitness{StateDiff: statediff, VerkleProof: proof}
+		encoder := dynssz.NewDynSsz(map[string]any{})
+		encoded, err := encoder.MarshalSSZ(&ew)
+		if err != nil {
+			spew.Dump(ew)
+			panic(err)
+		}
+		state.AppendBytesToFile("witness_size.csv", []byte(fmt.Sprintf("%d,%d\n", header.Number, len(encoded))))
+		if header.Number.Uint64()%10000 == 0 {
+			data := make([]byte, 8+len(encoded))
+			copy(data[8:], encoded)
+			binary.LittleEndian.PutUint64(data[:8], block.NumberU64())
+			state.AppendBytesToFile("witnesses.ssz", data)
+		}
+	}
 	if block.NumberU64()%100 == 0 {
 		stateRoot := statedb.GetTrie().Hash()
 		log.Info("State root", "number", block.NumberU64(), "hash", stateRoot)
@@ -176,6 +289,16 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 	}
 	// Create a new context to be used in the EVM environment
 	blockContext := NewEVMBlockContext(header, bc, author)
+	istarget := blockContext.BlockNumber.Uint64() == 17366216
+	if istarget {
+		tracer := logger.NewStructLogger(&logger.Config{
+			Debug:          istarget,
+			DisableStorage: !istarget,
+			//EnableMemory: false,
+			EnableReturnData: istarget,
+		})
+		cfg.Tracer = tracer
+	}
 	vmenv := vm.NewEVM(blockContext, vm.TxContext{BlobHashes: tx.BlobHashes()}, statedb, config, cfg)
 	return applyTransaction(msg, config, gp, statedb, header.Number, header.Hash(), tx, usedGas, vmenv)
 }
@@ -185,7 +308,7 @@ func InsertBlockHashHistoryAtEip2935Fork(statedb *state.StateDB, prevNumber uint
 	statedb.Witness().TouchFullAccount(params.HistoryStorageAddress[:], true)
 
 	ancestor := chain.GetHeader(prevHash, prevNumber)
-	for i := prevNumber; i > 0 && i >= prevNumber-params.Eip2935BlockHashHistorySize; i-- {
+	for i := prevNumber; i > 0 && i > prevNumber-params.Eip2935BlockHashHistorySize; i-- {
 		ProcessParentBlockHash(statedb, i, ancestor.Hash())
 		ancestor = chain.GetHeader(ancestor.ParentHash, ancestor.Number.Uint64()-1)
 	}
