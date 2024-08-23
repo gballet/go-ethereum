@@ -204,23 +204,17 @@ func (trie *VerkleTrie) UpdateStorage(address common.Address, key, value []byte)
 }
 
 func (t *VerkleTrie) DeleteAccount(addr common.Address) error {
-	var (
-		err    error
-		values = make([][]byte, verkle.NodeWidth)
-		stem   = t.pointCache.GetTreeKeyVersionCached(addr[:])
-	)
+	var key = t.pointCache.GetTreeKeyVersionCached(addr[:])
 
-	for i := 0; i < verkle.NodeWidth; i++ {
-		values[i] = zero[:]
-	}
-	switch root := t.root.(type) {
-	case *verkle.InternalNode:
-		err = root.InsertValuesAtStem(stem, values, t.FlatdbNodeResolver)
-	default:
-		return errInvalidRootType
-	}
-	if err != nil {
-		return fmt.Errorf("DeleteAccount (%x) error: %v", addr, err)
+	// XXX this only deletes the header account, but for completeness,
+	// we need to delete everything. This is only a problem pre-cancun
+	// which unfortunately we are still stuck at.
+	// NOTE we should also return immediately if we are post-transition.
+	for i := 0; i < 256; i++ {
+		key[31] = byte(i)
+		if root, err := t.root.(*verkle.InternalNode).Delete(key, t.FlatdbNodeResolver); root || err != nil {
+			return fmt.Errorf("error deleting key %x: %w", err)
+		}
 	}
 	return nil
 }
@@ -230,8 +224,11 @@ func (t *VerkleTrie) DeleteAccount(addr common.Address) error {
 func (trie *VerkleTrie) DeleteStorage(addr common.Address, key []byte) error {
 	pointEval := trie.pointCache.GetTreeKeyHeader(addr[:])
 	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(pointEval, key)
-	var zero [32]byte
-	return trie.root.Insert(k, zero[:], trie.FlatdbNodeResolver)
+	deleteRoot, err := trie.root.Delete(k, trie.FlatdbNodeResolver)
+	if deleteRoot {
+		return errors.New("trying to delete the root node, that should never happen")
+	}
+	return err
 }
 
 // Hash returns the root hash of the trie. It does not write to the database and

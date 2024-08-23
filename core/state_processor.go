@@ -289,7 +289,7 @@ func ApplyTransaction(config *params.ChainConfig, bc ChainContext, author *commo
 	}
 	// Create a new context to be used in the EVM environment
 	blockContext := NewEVMBlockContext(header, bc, author)
-	istarget := blockContext.BlockNumber.Uint64() == 17366216
+	istarget := blockContext.BlockNumber.Uint64() == 17165311
 	if istarget {
 		tracer := logger.NewStructLogger(&logger.Config{
 			Debug:          istarget,

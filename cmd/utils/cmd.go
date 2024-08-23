@@ -193,10 +193,14 @@ func ImportChain(chain *core.BlockChain, fn string) error {
 		}
 		i := 0
 		for ; i < importBatchSize; i++ {
+			if i == 1907 {
+				break
+			}
 			var b types.Block
-			if err := stream.Decode(&b); err == io.EOF {
+			if err := stream.Decode(&b); errors.Is(err, io.EOF) {
 				break
 			} else if err != nil {
+				fmt.Println(batch, i)
 				return fmt.Errorf("at block %d: %v", n, err)
 			}
 			// don't import first block

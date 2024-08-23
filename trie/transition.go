@@ -123,12 +123,20 @@ func (t *TransitionTrie) UpdateAccount(addr common.Address, account *types.State
 // Delete removes any existing value for key from the trie. If a node was not
 // found in the database, a trie.MissingNodeError is returned.
 func (t *TransitionTrie) DeleteStorage(addr common.Address, key []byte) error {
-	return t.overlay.DeleteStorage(addr, key)
+	err := t.overlay.DeleteStorage(addr, key)
+	if err != nil {
+		return err
+	}
+	return t.base.DeleteStorage(addr, key)
 }
 
 // DeleteAccount abstracts an account deletion from the trie.
 func (t *TransitionTrie) DeleteAccount(key common.Address) error {
-	return t.overlay.DeleteAccount(key)
+	err := t.overlay.DeleteAccount(key)
+	if err != nil {
+		return err
+	}
+	return t.base.DeleteAccount(key)
 }
 
 // Hash returns the root hash of the trie. It does not write to the database and
