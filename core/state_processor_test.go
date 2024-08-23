@@ -775,8 +775,8 @@ func TestProcessVerkleInvalidContractCreation(t *testing.T) {
 				if stemStateDiff.SuffixDiffs[0].NewValue == nil {
 					t.Fatalf("missing post state value for BLOCKHASH contract at block #2")
 				}
-				if *stemStateDiff.SuffixDiffs[0].NewValue != common.HexToHash("9707126aaa05384bff8a3b9218e00ba75a6bb8ed0a2110661649ff34546a8380") {
-					t.Fatalf("invalid post state value for BLOCKHASH contract at block #2: 9707126aaa05384bff8a3b9218e00ba75a6bb8ed0a2110661649ff34546a8380 != %x", (*stemStateDiff.SuffixDiffs[0].NewValue)[:])
+				if *stemStateDiff.SuffixDiffs[0].NewValue != common.HexToHash("ac9ab8a7d88cfee11ebcda5f47232c07fcb393c8916e37fa67eb5e315b1f8ef6") {
+					t.Fatalf("invalid post state value for BLOCKHASH contract at block #2: ac9ab8a7d88cfee11ebcda5f47232c07fcb393c8916e37fa67eb5e315b1f8ef6 != %x", (*stemStateDiff.SuffixDiffs[0].NewValue)[:])
 				}
 			} else if suffixDiff.Suffix > 4 {
 				t.Fatalf("invalid suffix diff found for %x in block #2: %d\n", stemStateDiff.Stem, suffixDiff.Suffix)
@@ -1209,7 +1209,7 @@ func TestProcessVerkleSelfDestructInSeparateTx(t *testing.T) {
 
 		// The original balance was 42.
 		var fourtyTwo [16]byte
-		fourtyTwo[0] = 42
+		fourtyTwo[15] = 42
 		if !bytes.Equal((*balanceStateDiff.CurrentValue)[utils.BasicDataBalanceOffset:], fourtyTwo[:]) {
 			t.Fatalf("the pre-state balance before self-destruct must be %x, got %x", fourtyTwo, *balanceStateDiff.CurrentValue)
 		}
@@ -1243,10 +1243,10 @@ func TestProcessVerkleSelfDestructInSeparateTx(t *testing.T) {
 		if balanceStateDiff.NewValue == nil {
 			t.Fatalf("codeHash.NewValue must not be empty")
 		}
-		preStateBalance := binary.LittleEndian.Uint64(balanceStateDiff.CurrentValue[utils.BasicDataBalanceOffset:])
-		postStateBalance := binary.LittleEndian.Uint64(balanceStateDiff.NewValue[utils.BasicDataBalanceOffset:])
+		preStateBalance := binary.BigEndian.Uint64(balanceStateDiff.CurrentValue[utils.BasicDataBalanceOffset-8:])
+		postStateBalance := binary.BigEndian.Uint64(balanceStateDiff.NewValue[utils.BasicDataBalanceOffset-8:])
 		if postStateBalance-preStateBalance != 42 {
-			t.Fatalf("the post-state balance after self-destruct must be 42")
+			t.Fatalf("the post-state balance after self-destruct must be 42, got %d-%d=%d", postStateBalance, preStateBalance, postStateBalance-preStateBalance)
 		}
 	}
 }
@@ -1367,10 +1367,10 @@ func TestProcessVerkleSelfDestructInSameTx(t *testing.T) {
 		if balanceStateDiff.NewValue == nil {
 			t.Fatalf("codeHash.NewValue must not be empty")
 		}
-		preStateBalance := binary.LittleEndian.Uint64(balanceStateDiff.CurrentValue[utils.BasicDataBalanceOffset:])
-		postStateBalance := binary.LittleEndian.Uint64(balanceStateDiff.NewValue[utils.BasicDataBalanceOffset:])
+		preStateBalance := binary.BigEndian.Uint64(balanceStateDiff.CurrentValue[utils.BasicDataBalanceOffset+8:])
+		postStateBalance := binary.BigEndian.Uint64(balanceStateDiff.NewValue[utils.BasicDataBalanceOffset+8:])
 		if postStateBalance-preStateBalance != 42 {
-			t.Fatalf("the post-state balance after self-destruct must be 42")
+			t.Fatalf("the post-state balance after self-destruct must be 42. got %d", postStateBalance)
 		}
 	}
 }
@@ -1483,7 +1483,7 @@ func TestProcessVerkleSelfDestructInSeparateTxWithSelfBeneficiary(t *testing.T) 
 
 		// The original balance was 42.
 		var fourtyTwo [16]byte
-		fourtyTwo[0] = 42
+		fourtyTwo[15] = 42
 		if !bytes.Equal((*balanceStateDiff.CurrentValue)[utils.BasicDataBalanceOffset:], fourtyTwo[:]) {
 			t.Fatalf("the pre-state balance before self-destruct must be 42")
 		}
