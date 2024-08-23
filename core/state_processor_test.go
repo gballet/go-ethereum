@@ -1243,8 +1243,8 @@ func TestProcessVerkleSelfDestructInSeparateTx(t *testing.T) {
 		if balanceStateDiff.NewValue == nil {
 			t.Fatalf("codeHash.NewValue must not be empty")
 		}
-		preStateBalance := binary.BigEndian.Uint64(balanceStateDiff.CurrentValue[utils.BasicDataBalanceOffset-8:])
-		postStateBalance := binary.BigEndian.Uint64(balanceStateDiff.NewValue[utils.BasicDataBalanceOffset-8:])
+		preStateBalance := binary.BigEndian.Uint64(balanceStateDiff.CurrentValue[utils.BasicDataBalanceOffset+8:])
+		postStateBalance := binary.BigEndian.Uint64(balanceStateDiff.NewValue[utils.BasicDataBalanceOffset+8:])
 		if postStateBalance-preStateBalance != 42 {
 			t.Fatalf("the post-state balance after self-destruct must be 42, got %d-%d=%d", postStateBalance, preStateBalance, postStateBalance-preStateBalance)
 		}
