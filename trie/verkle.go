@@ -128,10 +128,6 @@ func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 		return nil, nil
 	}
 
-	if len(values[utils.BasicDataLeafKey]) > 0 {
-		acc.Nonce = binary.BigEndian.Uint64(values[utils.BasicDataLeafKey][utils.BasicDataNonceOffset:])
-	}
-
 	// if the account has been deleted, then values[10] will be 0 and not nil. If it has
 	// been recreated after that, then its code keccak will NOT be 0. So return `nil` if
 	// the nonce, and values[10], and code keccak is 0.
@@ -142,6 +138,8 @@ func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 			return nil, nil
 		}
 	}
+
+	acc.Nonce = binary.BigEndian.Uint64(values[utils.BasicDataLeafKey][utils.BasicDataNonceOffset:])
 	var balance [16]byte
 	copy(balance[:], values[utils.BasicDataLeafKey][utils.BasicDataBalanceOffset:])
 	acc.Balance = new(big.Int).SetBytes(balance[:])

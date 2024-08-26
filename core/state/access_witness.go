@@ -131,11 +131,8 @@ func (aw *AccessWitness) TouchTxOriginAndComputeGas(originAddr []byte) uint64 {
 }
 
 func (aw *AccessWitness) TouchTxExistingAndComputeGas(targetAddr []byte, sendsValue bool) uint64 {
-	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, false)
+	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, sendsValue)
 	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.CodeHashLeafKey, false)
-	if sendsValue {
-		aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, true)
-	}
 
 	// Kaustinen note: we're currently experimenting with stop chargin gas for the origin address
 	// so simple transfer still take 21000 gas. This is to potentially avoid breaking existing tooling.
