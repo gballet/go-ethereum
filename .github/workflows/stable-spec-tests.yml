@@ -1,4 +1,4 @@
-name: Execution Spec Tests Fill and Consume (stable)
+name: Execution Spec Tests - Consume (stable)
 
 on:
   push:

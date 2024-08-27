@@ -1,4 +1,4 @@
-name: Execution Spec Tests Fill and Consume (Verkle genesis & conversion)
+name: Execution Spec Tests - Fill and Consume (branch)
 
 on:
   push:
