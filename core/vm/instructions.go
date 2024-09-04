@@ -630,13 +630,6 @@ func opCreate(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 	}
 
 	value := scope.Stack.pop()
-	if interpreter.evm.chainRules.IsEIP4762 {
-		contractAddress := crypto.CreateAddress(scope.Contract.Address(), interpreter.evm.StateDB.GetNonce(scope.Contract.Address()))
-		statelessGas := interpreter.evm.Accesses.TouchAndChargeContractCreateInit(contractAddress.Bytes()[:], value.Sign() != 0)
-		if !scope.Contract.UseGas(statelessGas) {
-			return nil, ErrExecutionReverted
-		}
-	}
 
 	var (
 		offset, size = scope.Stack.pop(), scope.Stack.pop()
@@ -690,14 +683,6 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 		salt         = scope.Stack.pop()
 		input        = scope.Memory.GetCopy(int64(offset.Uint64()), int64(size.Uint64()))
 	)
-	if interpreter.evm.chainRules.IsEIP4762 {
-		codeAndHash := &codeAndHash{code: input}
-		contractAddress := crypto.CreateAddress2(scope.Contract.Address(), salt.Bytes32(), codeAndHash.Hash().Bytes())
-		statelessGas := interpreter.evm.Accesses.TouchAndChargeContractCreateInit(contractAddress.Bytes()[:], endowment.Sign() != 0)
-		if !scope.Contract.UseGas(statelessGas) {
-			return nil, ErrExecutionReverted
-		}
-	}
 
 	var gas = scope.Contract.Gas
 	// Apply EIP150
