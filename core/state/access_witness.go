@@ -237,7 +237,7 @@ func (aw *AccessWitness) TouchCodeChunksRangeAndChargeGas(contractAddr []byte, s
 	// reason that we do not need the last leaf is the account's code size
 	// is already in the AccessWitness so a stateless verifier can see that
 	// the code from the last leaf is not needed.
-	if size == 0 || startPC > codeLen {
+	if size == 0 || startPC >= codeLen {
 		return 0
 	}
 
