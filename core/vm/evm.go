@@ -453,7 +453,7 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 
 	// Charge the contract creation init gas in verkle mode
 	if evm.chainRules.IsEIP4762 {
-		statelessGas := evm.Accesses.TouchAndChargeContractCreateInit(address.Bytes(), value.Sign() != 0)
+		statelessGas := evm.Accesses.TouchAndChargeContractCreateInit(address.Bytes())
 		if statelessGas > gas {
 			return nil, common.Address{}, gas, ErrOutOfGas
 		}

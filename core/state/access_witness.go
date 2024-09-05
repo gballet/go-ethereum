@@ -112,7 +112,7 @@ func (aw *AccessWitness) TouchAndChargeValueTransfer(callerAddr, targetAddr []by
 
 // TouchAndChargeContractCreateInit charges access costs to initiate
 // a contract creation
-func (aw *AccessWitness) TouchAndChargeContractCreateInit(addr []byte, createSendsValue bool) uint64 {
+func (aw *AccessWitness) TouchAndChargeContractCreateInit(addr []byte) uint64 {
 	var gas uint64
 	gas += aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, true)
 	return gas
