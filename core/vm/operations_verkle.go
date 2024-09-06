@@ -81,6 +81,10 @@ func makeCallVariantGasEIP4762(oldCalculator gasFunc) gasFunc {
 		if _, isPrecompile := evm.precompile(target); isPrecompile {
 			return gas, nil
 		}
+		// The charging for the value transfer is done BEFORE subtracting
+		// the 1/64th gas, as this is considered part of the CALL instruction.
+		// But the message call is part of the subcall, for which only 63/64th
+		// of the gas should be available.
 		wgas := evm.Accesses.TouchAndChargeMessageCall(target.Bytes())
 		if wgas == 0 {
 			wgas = params.WarmStorageReadCostEIP2929
