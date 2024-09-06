@@ -404,6 +404,8 @@ func gasCall(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize
 	}
 
 	if evm.chainRules.IsEIP4762 {
+		// If value is transferred, it is charged before 1/64th
+		// is subtracted from the available gas pool.
 		if transfersValue {
 			gas, overflow = math.SafeAdd(gas, evm.Accesses.TouchAndChargeValueTransfer(contract.Address().Bytes()[:], address.Bytes()[:]))
 			if overflow {
