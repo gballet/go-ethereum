@@ -453,7 +453,7 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 
 	// Charge the contract creation init gas in verkle mode
 	if evm.chainRules.IsEIP4762 {
-		statelessGas := evm.Accesses.TouchAndChargeContractCreateInit(address.Bytes())
+		statelessGas := evm.Accesses.TouchAndChargeContractCreateCheck(address.Bytes())
 		if statelessGas > gas {
 			return nil, common.Address{}, gas, ErrOutOfGas
 		}
@@ -476,6 +476,14 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 		evm.StateDB.SetNonce(address, 1)
 	}
 
+	// Charge the contract creation init gas in verkle mode
+	if evm.chainRules.IsEIP4762 {
+		statelessGas := evm.Accesses.TouchAndChargeContractCreateInit(address.Bytes())
+		if statelessGas > gas {
+			return nil, common.Address{}, gas, ErrOutOfGas
+		}
+		gas = gas - statelessGas
+	}
 	evm.Context.Transfer(evm.StateDB, caller.Address(), address, value)
 
 	// Initialise a new contract and set the code that is to be used by the EVM.

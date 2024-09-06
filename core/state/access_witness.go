@@ -110,11 +110,23 @@ func (aw *AccessWitness) TouchAndChargeValueTransfer(callerAddr, targetAddr []by
 	return gas
 }
 
+// TouchAndChargeContractCreateCheck charges access costs before
+// a contract creation is initiated. It is just reads, because the
+// address collision is done before the transfer, and so no write
+// are guaranteed to happen at this point.
+func (aw *AccessWitness) TouchAndChargeContractCreateCheck(addr []byte) uint64 {
+	var gas uint64
+	gas += aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, false)
+	gas += aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeHashLeafKey, false)
+	return gas
+}
+
 // TouchAndChargeContractCreateInit charges access costs to initiate
-// a contract creation
+// a contract creation.
 func (aw *AccessWitness) TouchAndChargeContractCreateInit(addr []byte) uint64 {
 	var gas uint64
 	gas += aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, true)
+	gas += aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeHashLeafKey, true)
 	return gas
 }
 
