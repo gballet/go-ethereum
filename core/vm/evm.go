@@ -455,7 +455,7 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	if evm.chainRules.IsEIP4762 {
 		statelessGas := evm.Accesses.TouchAndChargeContractCreateCheck(address.Bytes())
 		if statelessGas > gas {
-			return nil, common.Address{}, gas, ErrOutOfGas
+			return nil, common.Address{}, 0, ErrOutOfGas
 		}
 		gas = gas - statelessGas
 	}
@@ -480,7 +480,7 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	if evm.chainRules.IsEIP4762 {
 		statelessGas := evm.Accesses.TouchAndChargeContractCreateInit(address.Bytes())
 		if statelessGas > gas {
-			return nil, common.Address{}, gas, ErrOutOfGas
+			return nil, common.Address{}, 0, ErrOutOfGas
 		}
 		gas = gas - statelessGas
 	}

@@ -732,7 +732,7 @@ func TestProcessVerkleInvalidContractCreation(t *testing.T) {
 			}
 		} else if bytes.Equal(stemStateDiff.Stem[:], common.Hex2Bytes("26f8a45c665b9ca0bf769b213ba9bb14e86d4028a41274ae2a509e71a89d86")) {
 			for _, suffixDiff := range stemStateDiff.SuffixDiffs {
-				if suffixDiff.Suffix != 105 && suffixDiff.Suffix != 0 && suffixDiff.Suffix != 2 && suffixDiff.Suffix != 3 {
+				if suffixDiff.Suffix != 105 && suffixDiff.Suffix != 0 && suffixDiff.Suffix != 1 {
 					t.Fatalf("invalid suffix diff found for %x in block #1: %d\n", stemStateDiff.Stem, suffixDiff.Suffix)
 				}
 			}
