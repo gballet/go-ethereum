@@ -61,7 +61,7 @@ func gasExtCodeSize4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory,
 
 func gasExtCodeHash4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	address := stack.peek().Bytes20()
-	if _, isPrecompile := evm.precompile(address); isPrecompile {
+	if _, isPrecompile := evm.precompile(address); isPrecompile || evm.isSystemContract(address) {
 		return 0, nil
 	}
 	codehashgas := evm.Accesses.TouchCodeHash(address[:], false)
@@ -132,6 +132,10 @@ func gasExtCodeCopyEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Memo
 		return 0, err
 	}
 	addr := common.Address(stack.peek().Bytes20())
+
+	if _, isPrecompile := evm.precompile(addr); isPrecompile {
+		return gas, nil
+	}
 	wgas := evm.Accesses.TouchBasicData(addr[:], false)
 	if wgas == 0 {
 		wgas = params.WarmStorageReadCostEIP2929
