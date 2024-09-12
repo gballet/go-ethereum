@@ -119,7 +119,11 @@ func gasSelfdestructEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Mem
 	if !balanceIsZero {
 		statelessGas += evm.Accesses.TouchBasicData(contractAddr[:], true)
 		if contractAddr != beneficiaryAddr {
-			statelessGas += evm.Accesses.TouchBasicData(beneficiaryAddr[:], true)
+			if evm.StateDB.Exist(beneficiaryAddr) {
+				statelessGas += evm.Accesses.TouchBasicData(beneficiaryAddr[:], true)
+			} else {
+				statelessGas += evm.Accesses.TouchFullAccount(beneficiaryAddr[:], true)
+			}
 		}
 	}
 	return statelessGas, nil
