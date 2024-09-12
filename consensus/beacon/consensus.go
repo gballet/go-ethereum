@@ -358,7 +358,7 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 		state.AddBalance(w.Address, amount)
 
 		// The returned gas is not charged
-		state.Witness().TouchFullAccount(w.Address[:], true)
+		state.Witness().TouchFullAccount(w.Address[:], true, nil)
 	}
 
 	if chain.Config().IsVerkle(header.Number, header.Time) {

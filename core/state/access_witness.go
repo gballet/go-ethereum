@@ -32,12 +32,6 @@ type mode byte
 // UseGasFn is a function that can be used to charge gas for a given amount.
 type UseGasFn func(uint64) bool
 
-// useGasAlwaysTrue is used for gas charging that is included in the intrisic gas cost.
-// Thus, it always returns true.
-func useGasAlwaysTrue(uint64) bool {
-	return true
-}
-
 const (
 	AccessWitnessReadFlag  = mode(1)
 	AccessWitnessWriteFlag = mode(2)
@@ -141,13 +135,13 @@ func (aw *AccessWitness) TouchAndChargeContractCreateInit(addr []byte, useGasFn 
 
 func (aw *AccessWitness) TouchTxOriginAndComputeGas(originAddr []byte) {
 	for i := utils.BasicDataLeafKey; i <= utils.CodeHashLeafKey; i++ {
-		aw.touchAddressAndChargeGas(originAddr, zeroTreeIndex, byte(i), i == utils.BasicDataLeafKey, useGasAlwaysTrue)
+		aw.touchAddressAndChargeGas(originAddr, zeroTreeIndex, byte(i), i == utils.BasicDataLeafKey, nil)
 	}
 }
 
 func (aw *AccessWitness) TouchTxExistingAndComputeGas(targetAddr []byte, sendsValue bool) {
-	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, sendsValue, useGasAlwaysTrue)
-	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.CodeHashLeafKey, false, useGasAlwaysTrue)
+	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, sendsValue, nil)
+	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.CodeHashLeafKey, false, nil)
 }
 
 func (aw *AccessWitness) TouchSlotAndChargeGas(addr []byte, slot common.Hash, isWrite bool, useGasFn UseGasFn) bool {
@@ -198,8 +192,10 @@ func (aw *AccessWitness) touchAddressAndChargeGas(addr []byte, treeIndex uint256
 		gas += params.WitnessChunkFillCost
 	}
 
-	if ok := useGasFn(gas); !ok {
-		return false
+	if useGasFn != nil {
+		if ok := useGasFn(gas); !ok {
+			return false
+		}
 	}
 
 	if branchRead {

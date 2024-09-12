@@ -339,19 +339,6 @@ func (st *StateTransition) preCheck() error {
 	return st.buyGas()
 }
 
-// tryConsumeGas tries to subtract gas from gasPool, setting the result in gasPool
-// if subtracting more gas than remains in gasPool, set gasPool = 0 and return false
-// otherwise, do the subtraction setting the result in gasPool and return true
-func tryConsumeGas(gasPool *uint64, gas uint64) bool {
-	if *gasPool < gas {
-		*gasPool = 0
-		return false
-	}
-
-	*gasPool -= gas
-	return true
-}
-
 // TransitionDb will transition the state by applying the current message and
 // returning the evm execution result with following fields.
 //
@@ -406,16 +393,10 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		targetAddr := msg.To
 		originAddr := msg.From
 
-		statelessGasOrigin := st.evm.Accesses.TouchTxOriginAndComputeGas(originAddr.Bytes())
-		if !tryConsumeGas(&st.gasRemaining, statelessGasOrigin) {
-			return nil, fmt.Errorf("%w: Insufficient funds to cover witness access costs for transaction: have %d, want %d", ErrInsufficientBalanceWitness, st.gasRemaining, gas)
-		}
+		st.evm.Accesses.TouchTxOriginAndComputeGas(originAddr.Bytes())
 
 		if msg.To != nil {
-			statelessGasDest := st.evm.Accesses.TouchTxExistingAndComputeGas(targetAddr.Bytes(), msg.Value.Sign() != 0)
-			if !tryConsumeGas(&st.gasRemaining, statelessGasDest) {
-				return nil, fmt.Errorf("%w: Insufficient funds to cover witness access costs for transaction: have %d, want %d", ErrInsufficientBalanceWitness, st.gasRemaining, gas)
-			}
+			st.evm.Accesses.TouchTxExistingAndComputeGas(targetAddr.Bytes(), msg.Value.Sign() != 0)
 
 			// ensure the code size ends up in the access witness
 			st.evm.StateDB.GetCodeSize(*targetAddr)
@@ -472,7 +453,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 
 		// add the coinbase to the witness iff the fee is greater than 0
 		if rules.IsEIP4762 && fee.Sign() != 0 {
-			st.evm.Accesses.TouchFullAccount(st.evm.Context.Coinbase[:], true)
+			st.evm.Accesses.TouchFullAccount(st.evm.Context.Coinbase[:], true, nil)
 		}
 	}
 

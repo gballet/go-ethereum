@@ -202,12 +202,13 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 	if !evm.StateDB.Exist(addr) {
 		if !isPrecompile && evm.chainRules.IsEIP4762 {
 			// add proof of absence to witness
-			wgas := evm.Accesses.TouchFullAccount(addr.Bytes(), false)
-			if gas < wgas {
+			gc := gasConsumer{availableGas: gas}
+			ok := evm.Accesses.TouchFullAccount(addr.Bytes(), false, gc.consumeGas)
+			if !ok {
 				evm.StateDB.RevertToSnapshot(snapshot)
 				return nil, 0, ErrOutOfGas
 			}
-			gas -= wgas
+			gas = gc.availableGas
 		}
 
 		if !isPrecompile && evm.chainRules.IsEIP158 && value.Sign() == 0 {
@@ -457,7 +458,8 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 
 	// Charge the contract creation init gas in verkle mode
 	if evm.chainRules.IsEIP4762 {
-		statelessGas := evm.Accesses.TouchAndChargeContractCreateCheck(address.Bytes())
+		gc := gasConsumer{availableGas: gas}
+		if !evm.Accesses.TouchAndChargeContractCreateCheck(address.Bytes(), gc.consumeGas){
 		if statelessGas > gas {
 			return nil, common.Address{}, 0, ErrOutOfGas
 		}
@@ -496,8 +498,6 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	contract.SetCodeOptionalHash(&address, codeAndHash)
 	contract.IsDeployment = true
 
-	// Charge the contract creation init gas in verkle mode
-
 	if evm.Config.Tracer != nil {
 		if evm.depth == 0 {
 			evm.Config.Tracer.CaptureStart(evm, caller.Address(), address, true, codeAndHash.code, gas, value)
@@ -529,7 +529,12 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 				err = ErrCodeStoreOutOfGas
 			}
 		} else {
-			if err == nil && len(ret) > 0 && !contract.UseGas(evm.Accesses.TouchCodeChunksRangeAndChargeGas(address.Bytes(), 0, uint64(len(ret)), uint64(len(ret)), true)) {
+			// Contract creation completed, touch the missing fields in the contract
+			if !evm.Accesses.TouchFullAccount(address.Bytes()[:], true, contract.UseGas) {
+				err = ErrCodeStoreOutOfGas
+			}
+
+			if err == nil && len(ret) > 0 && !evm.Accesses.TouchCodeChunksRangeAndChargeGas(address.Bytes(), 0, uint64(len(ret)), uint64(len(ret)), true, contract.UseGas) {
 				err = ErrCodeStoreOutOfGas
 			}
 		}

@@ -343,7 +343,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		// Amount is in gwei, turn into wei
 		amount := new(big.Int).Mul(new(big.Int).SetUint64(w.Amount), big.NewInt(params.GWei))
 		statedb.AddBalance(w.Address, amount)
-		statedb.Witness().TouchFullAccount(w.Address[:], true)
+		statedb.Witness().TouchFullAccount(w.Address[:], true, nil)
 	}
 	if chainConfig.IsVerkle(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) {
 		if err := overlay.OverlayVerkleTransition(statedb, common.Hash{}, chainConfig.OverlayStride); err != nil {
