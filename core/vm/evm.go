@@ -459,11 +459,10 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	// Charge the contract creation init gas in verkle mode
 	if evm.chainRules.IsEIP4762 {
 		gc := gasConsumer{availableGas: gas}
-		if !evm.Accesses.TouchAndChargeContractCreateCheck(address.Bytes(), gc.consumeGas){
-		if statelessGas > gas {
+		if !evm.Accesses.TouchAndChargeContractCreateCheck(address.Bytes(), gc.consumeGas) {
 			return nil, common.Address{}, 0, ErrOutOfGas
 		}
-		gas = gas - statelessGas
+		gas = gc.availableGas
 	}
 	// We add this to the access list _before_ taking a snapshot. Even if the creation fails,
 	// the access-list change should not be rolled back
@@ -484,11 +483,11 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 
 	// Charge the contract creation init gas in verkle mode
 	if evm.chainRules.IsEIP4762 {
-		statelessGas := evm.Accesses.TouchAndChargeContractCreateInit(address.Bytes())
-		if statelessGas > gas {
+		gc := gasConsumer{availableGas: gas}
+		if !evm.Accesses.TouchAndChargeContractCreateInit(address.Bytes(), gc.consumeGas) {
 			return nil, common.Address{}, 0, ErrOutOfGas
 		}
-		gas = gas - statelessGas
+		gas = gc.availableGas
 	}
 	evm.Context.Transfer(evm.StateDB, caller.Address(), address, value)
 

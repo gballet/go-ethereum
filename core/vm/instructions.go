@@ -583,7 +583,7 @@ func opJump(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 	}
 	pos := scope.Stack.pop()
 	if !scope.Contract.validJumpdest(&pos) {
-		if !scope.Contract.UseGas(interpreter.evm.TxContext.Accesses.TouchCodeChunksRangeAndChargeGas(scope.Contract.CodeAddr[:], pos.Uint64(), 1, uint64(len(scope.Contract.Code)), false)) {
+		if !interpreter.evm.TxContext.Accesses.TouchCodeChunksRangeAndChargeGas(scope.Contract.CodeAddr[:], pos.Uint64(), 1, uint64(len(scope.Contract.Code)), false, scope.Contract.UseGas) {
 			return nil, ErrOutOfGas
 		}
 		return nil, ErrInvalidJump
@@ -599,7 +599,7 @@ func opJumpi(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 	pos, cond := scope.Stack.pop(), scope.Stack.pop()
 	if !cond.IsZero() {
 		if !scope.Contract.validJumpdest(&pos) {
-			if !scope.Contract.UseGas(interpreter.evm.TxContext.Accesses.TouchCodeChunksRangeAndChargeGas(scope.Contract.CodeAddr[:], pos.Uint64(), 1, uint64(len(scope.Contract.Code)), false)) {
+			if !interpreter.evm.TxContext.Accesses.TouchCodeChunksRangeAndChargeGas(scope.Contract.CodeAddr[:], pos.Uint64(), 1, uint64(len(scope.Contract.Code)), false, scope.Contract.UseGas) {
 				return nil, ErrOutOfGas
 			}
 			return nil, ErrInvalidJump
