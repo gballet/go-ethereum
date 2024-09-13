@@ -17,6 +17,7 @@
 package core
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 
@@ -131,7 +132,39 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 	if root := statedb.IntermediateRoot(v.config.IsEIP158(header.Number)); header.Root != root {
 		return fmt.Errorf("invalid merkle root (remote: %x local: %x) dberr: %w", header.Root, root, statedb.Error())
 	}
-	// Verify that the advertised root is correct before
+	// In verkle mode, verify the proof.
+	if v.config.IsVerkle(header.Number, header.Time) {
+		// Check that all keys in the witness were used
+		keys := statedb.Witness().Keys()
+		var key [32]byte
+		for _, stemdiff := range block.ExecutionWitness().StateDiff {
+			copy(key[:31], stemdiff.Stem[:])
+			for _, suffixdiff := range stemdiff.SuffixDiffs {
+				key[31] = suffixdiff.Suffix
+
+				var found bool
+				for _, k := range keys {
+					if bytes.Equal(k, key[:]) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					return fmt.Errorf("superfluous key %x could not be found in witness", key)
+				}
+			}
+		}
+
+		// Open the pre-tree to prove the pre-state against
+		parent := v.bc.GetHeaderByNumber(header.Number.Uint64() - 1)
+		if parent == nil {
+			return fmt.Errorf("nil parent header for block %d", header.Number)
+		}
+
+		// Verify the proof
+		trie.DeserializeAndVerifyVerkleProof(block.ExecutionWitness().VerkleProof, parent.Root.Bytes(), block.Root().Bytes(), block.ExecutionWitness().StateDiff)
+
+	} // Verify that the advertised root is correct before
 	// it can be used as an identifier for the conversion
 	// status.
 	statedb.Database().SaveTransitionState(header.Root)
