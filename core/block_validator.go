@@ -136,7 +136,10 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 	if v.config.IsVerkle(header.Number, header.Time) {
 		// Check that all keys in the witness were used
 		keys := statedb.Witness().Keys()
-		var key [32]byte
+		var (
+			key      [32]byte // reconstructed key, to be searched for in witness
+			keycount int      // number of keys found
+		)
 		for _, stemdiff := range block.ExecutionWitness().StateDiff {
 			copy(key[:31], stemdiff.Stem[:])
 			for _, suffixdiff := range stemdiff.SuffixDiffs {
@@ -152,7 +155,16 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 				if !found {
 					return fmt.Errorf("superfluous key %x could not be found in witness", key)
 				}
+				keycount++
 			}
+		}
+
+		// In order to make sure that the provided witness isn't missing any keys,
+		// compare the counts. This will catch incomplete witnesses at the post root,
+		// the key count and the inclusion check should be enough to garantee these
+		// two trees are the same, without executing the block statelessly.
+		if keycount != len(keys) {
+			return fmt.Errorf("locations seem to be missing from the tree: got %d locations, expected %d", keycount, len(keys))
 		}
 
 		// Open the pre-tree to prove the pre-state against
@@ -162,9 +174,12 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 		}
 
 		// Verify the proof
-		trie.DeserializeAndVerifyVerkleProof(block.ExecutionWitness().VerkleProof, parent.Root.Bytes(), block.Root().Bytes(), block.ExecutionWitness().StateDiff)
+		if err := trie.DeserializeAndVerifyVerkleProof(block.ExecutionWitness().VerkleProof, parent.Root.Bytes(), block.Root().Bytes(), block.ExecutionWitness().StateDiff); err != nil {
+			return fmt.Errorf("error verifying proof at block %d: %w", block.NumberU64(), err)
+		}
+	}
 
-	} // Verify that the advertised root is correct before
+	// Verify that the advertised root is correct before
 	// it can be used as an identifier for the conversion
 	// status.
 	statedb.Database().SaveTransitionState(header.Root)
