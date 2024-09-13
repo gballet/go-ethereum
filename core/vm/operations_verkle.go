@@ -50,7 +50,7 @@ func gasBalance4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, mem
 func gasExtCodeSize4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	address := stack.peek().Bytes20()
 	if _, isPrecompile := evm.precompile(address); isPrecompile {
-		return 0, nil
+		return params.WarmStorageReadCostEIP2929, nil
 	}
 	wgas := evm.Accesses.TouchBasicData(address[:], false)
 	if wgas == 0 {
@@ -62,7 +62,7 @@ func gasExtCodeSize4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory,
 func gasExtCodeHash4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	address := stack.peek().Bytes20()
 	if _, isPrecompile := evm.precompile(address); isPrecompile || evm.isSystemContract(address) {
-		return 0, nil
+		return params.WarmStorageReadCostEIP2929, nil
 	}
 	codehashgas := evm.Accesses.TouchCodeHash(address[:], false)
 	if codehashgas == 0 {
@@ -79,6 +79,10 @@ func makeCallVariantGasEIP4762(oldCalculator gasFunc) gasFunc {
 		}
 		target := common.Address(stack.Back(1).Bytes20())
 		if _, isPrecompile := evm.precompile(target); isPrecompile {
+			var overflow bool
+			if gas, overflow = math.SafeAdd(gas, params.WarmStorageReadCostEIP2929); overflow {
+				return 0, ErrGasUintOverflow
+			}
 			return gas, nil
 		}
 		// The charging for the value transfer is done BEFORE subtracting
@@ -138,6 +142,10 @@ func gasExtCodeCopyEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Memo
 	addr := common.Address(stack.peek().Bytes20())
 
 	if _, isPrecompile := evm.precompile(addr); isPrecompile {
+		var overflow bool
+		if gas, overflow = math.SafeAdd(gas, params.WarmStorageReadCostEIP2929); overflow {
+			return 0, ErrGasUintOverflow
+		}
 		return gas, nil
 	}
 	wgas := evm.Accesses.TouchBasicData(addr[:], false)
@@ -145,7 +153,6 @@ func gasExtCodeCopyEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Memo
 		wgas = params.WarmStorageReadCostEIP2929
 	}
 	var overflow bool
-	// We charge (cold-warm), since 'warm' is already charged as constantGas
 	if gas, overflow = math.SafeAdd(gas, wgas); overflow {
 		return 0, ErrGasUintOverflow
 	}
