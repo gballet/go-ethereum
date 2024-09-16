@@ -261,6 +261,12 @@ func opAddress(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 func opBalance(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	slot := scope.Stack.peek()
 	address := common.Address(slot.Bytes20())
+	if interpreter.evm.chainRules.IsVerkle {
+		chargedGas, ok := interpreter.evm.Accesses.TouchBasicData(address[:], false, scope.Contract.UseGas)
+		if !ok || (chargedGas == 0 && !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929)) {
+			return nil, ErrExecutionReverted
+		}
+	}
 	slot.SetFromBig(interpreter.evm.StateDB.GetBalance(address))
 	return nil, nil
 }
@@ -345,6 +351,14 @@ func opExtCodeSize(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	slot := scope.Stack.peek()
 	address := slot.Bytes20()
 	cs := uint64(interpreter.evm.StateDB.GetCodeSize(address))
+	if interpreter.evm.chainRules.IsVerkle {
+		if _, isPrecompile := interpreter.evm.precompile(address); !isPrecompile {
+			chargedGas, ok := interpreter.evm.Accesses.TouchBasicData(address[:], false, scope.Contract.UseGas)
+			if !ok || (chargedGas == 0 && !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929)) {
+				return nil, ErrExecutionReverted
+			}
+		}
+	}
 	slot.SetUint64(cs)
 	return nil, nil
 }
@@ -441,6 +455,14 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 func opExtCodeHash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	slot := scope.Stack.peek()
 	address := common.Address(slot.Bytes20())
+	if interpreter.evm.chainRules.IsVerkle {
+		if _, isPrecompile := interpreter.evm.precompile(address); !isPrecompile {
+			chargedGas, ok := interpreter.evm.Accesses.TouchBasicData(address[:], false, scope.Contract.UseGas)
+			if !ok || (chargedGas == 0 && !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929)) {
+				return nil, ErrExecutionReverted
+			}
+		}
+	}
 	if interpreter.evm.StateDB.Empty(address) {
 		slot.Clear()
 	} else {
@@ -553,8 +575,13 @@ func opMstore8(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 func opSload(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	loc := scope.Stack.peek()
 	hash := common.Hash(loc.Bytes32())
+	if interpreter.evm.chainRules.IsVerkle {
+		chargedGas, ok := interpreter.evm.Accesses.TouchSlotAndChargeGas(scope.Contract.Address().Bytes(), loc.Bytes32(), false, scope.Contract.UseGas)
+		if !ok || (chargedGas == 0 && !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929)) {
+			return nil, ErrExecutionReverted
+		}
+	}
 	val := interpreter.evm.StateDB.GetState(scope.Contract.Address(), hash)
-
 	loc.SetBytes(val.Bytes())
 	return nil, nil
 }
@@ -565,6 +592,13 @@ func opSstore(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 	}
 	loc := scope.Stack.pop()
 	val := scope.Stack.pop()
+	if interpreter.evm.chainRules.IsVerkle {
+		chargedGas, ok := interpreter.evm.Accesses.TouchSlotAndChargeGas(scope.Contract.Address().Bytes(), loc.Bytes32(), true, scope.Contract.UseGas)
+		if !ok || (chargedGas == 0 && !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929)) {
+			return nil, ErrExecutionReverted
+		}
+	}
+
 	interpreter.evm.StateDB.SetState(scope.Contract.Address(), loc.Bytes32(), val.Bytes32())
 	return nil, nil
 }

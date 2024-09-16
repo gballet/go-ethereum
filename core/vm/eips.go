@@ -307,13 +307,13 @@ func enable6780(jt *JumpTable) {
 
 func enable4762(jt *JumpTable) {
 	jt[SSTORE].constantGas = 0
-	jt[SSTORE].dynamicGas = gasSStore4762
+	jt[SSTORE].dynamicGas = nil
 	jt[SLOAD].constantGas = 0
-	jt[SLOAD].dynamicGas = gasSLoad4762
-	jt[BALANCE].dynamicGas = gasBalance4762
+	jt[SLOAD].dynamicGas = nil
+	jt[BALANCE].dynamicGas = nil
 	jt[BALANCE].constantGas = 0
 	jt[EXTCODESIZE].constantGas = 0
-	jt[EXTCODESIZE].dynamicGas = gasExtCodeSize4762
+	jt[EXTCODESIZE].dynamicGas = nil
 	jt[EXTCODEHASH].constantGas = 0
 	jt[EXTCODEHASH].dynamicGas = gasExtCodeHash4762
 	jt[EXTCODECOPY].constantGas = 0

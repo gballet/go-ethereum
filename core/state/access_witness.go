@@ -93,8 +93,7 @@ func (aw *AccessWitness) Copy() *AccessWitness {
 
 func (aw *AccessWitness) TouchFullAccount(addr []byte, isWrite bool, useGasFn UseGasFn) bool {
 	for i := utils.BasicDataLeafKey; i <= utils.CodeHashLeafKey; i++ {
-		ok := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, byte(i), isWrite, useGasFn)
-		if !ok {
+		if _, ok := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, byte(i), isWrite, useGasFn); !ok {
 			return false
 		}
 	}
@@ -102,11 +101,13 @@ func (aw *AccessWitness) TouchFullAccount(addr []byte, isWrite bool, useGasFn Us
 }
 
 func (aw *AccessWitness) TouchAndChargeMessageCall(addr []byte, useGasFn UseGasFn) bool {
-	return aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, false, useGasFn)
+	_, ok := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, false, useGasFn)
+	return ok
 }
 
 func (aw *AccessWitness) TouchAndChargeValueTransfer(callerAddr, targetAddr []byte, useGasFn UseGasFn) bool {
-	return aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, true, useGasFn)
+	_, ok := aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, true, useGasFn)
+	return ok
 }
 
 // TouchAndChargeContractCreateCheck charges access costs before
@@ -114,19 +115,21 @@ func (aw *AccessWitness) TouchAndChargeValueTransfer(callerAddr, targetAddr []by
 // address collision is done before the transfer, and so no write
 // are guaranteed to happen at this point.
 func (aw *AccessWitness) TouchAndChargeContractCreateCheck(addr []byte, useGasFn UseGasFn) bool {
-	if !aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, false, useGasFn) {
+	if _, ok := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, false, useGasFn); !ok {
 		return false
 	}
-	return aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeHashLeafKey, false, useGasFn)
+	_, ok := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeHashLeafKey, false, useGasFn)
+	return ok
 }
 
 // TouchAndChargeContractCreateInit charges access costs to initiate
 // a contract creation.
 func (aw *AccessWitness) TouchAndChargeContractCreateInit(addr []byte, useGasFn UseGasFn) bool {
-	if !aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, true, useGasFn) {
+	if _, ok := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, true, useGasFn); !ok {
 		return false
 	}
-	return aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeHashLeafKey, true, useGasFn)
+	_, ok := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeHashLeafKey, true, useGasFn)
+	return ok
 }
 
 func (aw *AccessWitness) TouchTxOriginAndComputeGas(originAddr []byte) {
@@ -140,12 +143,12 @@ func (aw *AccessWitness) TouchTxExistingAndComputeGas(targetAddr []byte, sendsVa
 	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.CodeHashLeafKey, false, nil)
 }
 
-func (aw *AccessWitness) TouchSlotAndChargeGas(addr []byte, slot common.Hash, isWrite bool, useGasFn UseGasFn) bool {
+func (aw *AccessWitness) TouchSlotAndChargeGas(addr []byte, slot common.Hash, isWrite bool, useGasFn UseGasFn) (uint64, bool) {
 	treeIndex, subIndex := utils.GetTreeKeyStorageSlotTreeIndexes(slot.Bytes())
 	return aw.touchAddressAndChargeGas(addr, *treeIndex, subIndex, isWrite, useGasFn)
 }
 
-func (aw *AccessWitness) touchAddressAndChargeGas(addr []byte, treeIndex uint256.Int, subIndex byte, isWrite bool, useGasFn UseGasFn) bool {
+func (aw *AccessWitness) touchAddressAndChargeGas(addr []byte, treeIndex uint256.Int, subIndex byte, isWrite bool, useGasFn UseGasFn) (uint64, bool) {
 	branchKey := newBranchAccessKey(addr, treeIndex)
 	chunkKey := newChunkAccessKey(branchKey, subIndex)
 
@@ -190,7 +193,7 @@ func (aw *AccessWitness) touchAddressAndChargeGas(addr []byte, treeIndex uint256
 
 	if useGasFn != nil {
 		if ok := useGasFn(gas); !ok {
-			return false
+			return 0, false
 		}
 	}
 
@@ -208,7 +211,7 @@ func (aw *AccessWitness) touchAddressAndChargeGas(addr []byte, treeIndex uint256
 		aw.chunks[chunkKey] |= AccessWitnessWriteFlag
 	}
 
-	return true
+	return gas, true
 }
 
 type branchAccessKey struct {
@@ -258,8 +261,7 @@ func (aw *AccessWitness) TouchCodeChunksRangeAndChargeGas(contractAddr []byte, s
 	for chunkNumber := startPC / 31; chunkNumber <= endPC/31; chunkNumber++ {
 		treeIndex := *uint256.NewInt((chunkNumber + 128) / 256)
 		subIndex := byte((chunkNumber + 128) % 256)
-		ok := aw.touchAddressAndChargeGas(contractAddr, treeIndex, subIndex, isWrite, useGasFn)
-		if !ok {
+		if _, ok := aw.touchAddressAndChargeGas(contractAddr, treeIndex, subIndex, isWrite, useGasFn); !ok {
 			return false
 		}
 	}
@@ -267,10 +269,10 @@ func (aw *AccessWitness) TouchCodeChunksRangeAndChargeGas(contractAddr []byte, s
 	return true
 }
 
-func (aw *AccessWitness) TouchBasicData(addr []byte, isWrite bool, useGasFn UseGasFn) bool {
+func (aw *AccessWitness) TouchBasicData(addr []byte, isWrite bool, useGasFn UseGasFn) (uint64, bool) {
 	return aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, isWrite, useGasFn)
 }
 
-func (aw *AccessWitness) TouchCodeHash(addr []byte, isWrite bool, useGasFn UseGasFn) bool {
+func (aw *AccessWitness) TouchCodeHash(addr []byte, isWrite bool, useGasFn UseGasFn) (uint64, bool) {
 	return aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeHashLeafKey, isWrite, useGasFn)
 }

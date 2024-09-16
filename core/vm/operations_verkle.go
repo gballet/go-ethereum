@@ -22,55 +22,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-func gasSStore4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	gas := evm.Accesses.TouchSlotAndChargeGas(contract.Address().Bytes(), common.Hash(stack.peek().Bytes32()), true)
-	if gas == 0 {
-		gas = params.WarmStorageReadCostEIP2929
-	}
-	return gas, nil
-}
-
-func gasSLoad4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	gas := evm.Accesses.TouchSlotAndChargeGas(contract.Address().Bytes(), common.Hash(stack.peek().Bytes32()), false)
-	if gas == 0 {
-		gas = params.WarmStorageReadCostEIP2929
-	}
-	return gas, nil
-}
-
-func gasBalance4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	address := stack.peek().Bytes20()
-	gas := evm.Accesses.TouchBasicData(address[:], false)
-	if gas == 0 {
-		gas = params.WarmStorageReadCostEIP2929
-	}
-	return gas, nil
-}
-
-func gasExtCodeSize4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	address := stack.peek().Bytes20()
-	if _, isPrecompile := evm.precompile(address); isPrecompile {
-		return params.WarmStorageReadCostEIP2929, nil
-	}
-	wgas := evm.Accesses.TouchBasicData(address[:], false)
-	if wgas == 0 {
-		wgas = params.WarmStorageReadCostEIP2929
-	}
-	return wgas, nil
-}
-
-func gasExtCodeHash4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	address := stack.peek().Bytes20()
-	if _, isPrecompile := evm.precompile(address); isPrecompile || evm.isSystemContract(address) {
-		return params.WarmStorageReadCostEIP2929, nil
-	}
-	codehashgas := evm.Accesses.TouchCodeHash(address[:], false)
-	if codehashgas == 0 {
-		codehashgas = params.WarmStorageReadCostEIP2929
-	}
-	return codehashgas, nil
-}
-
 func makeCallVariantGasEIP4762(oldCalculator gasFunc) gasFunc {
 	return func(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 		gas, err := oldCalculator(evm, contract, stack, mem, memorySize)
