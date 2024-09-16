@@ -24,6 +24,7 @@ import (
 	"math/big"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-verkle"
 	"github.com/holiman/uint256"
 )
@@ -128,5 +129,32 @@ func BenchmarkGetTreeKeyWithEvaluatedAddress(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		_ = GetTreeKeyWithEvaluatedAddess(addrpoint, n, 0)
+	}
+}
+
+func BenchmarkGetTreeKeyStorageSlot(b *testing.B) {
+	var buf [32]byte
+	rand.Read(buf[:])
+	addrpoint := EvaluateAddressPoint(buf[:])
+
+	_ = verkle.GetConfig()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		rand.Read(buf[:])
+		_ = GetTreeKeyStorageSlotWithEvaluatedAddress(addrpoint, buf[:])
+	}
+}
+
+func BenchmarkKeccak(b *testing.B) {
+	var buf [32]byte
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		rand.Read(buf[:])
+		crypto.Keccak256(buf[:])
 	}
 }
