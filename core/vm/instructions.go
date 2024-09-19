@@ -500,7 +500,7 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 			ringIndex := num64 % params.Eip2935BlockHashHistorySize
 			var pnum common.Hash
 			binary.BigEndian.PutUint64(pnum[24:], ringIndex)
-			if !evm.Accesses.TouchSlotAndChargeGas(params.HistoryStorageAddress[:], pnum, false, scope.Contract.UseGas) {
+			if _, ok := evm.Accesses.TouchSlotAndChargeGas(params.HistoryStorageAddress[:], pnum, false, scope.Contract.UseGas); !ok {
 				return nil, ErrExecutionReverted
 			}
 			blockHash := evm.StateDB.GetState(params.HistoryStorageAddress, pnum)
@@ -744,7 +744,29 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 	return nil, nil
 }
 
+func chargeCallVariantEIP4762(evm *EVM, scope *ScopeContext) bool {
+	target := common.Address(scope.Stack.Back(1).Bytes20())
+	if _, isPrecompile := evm.precompile(target); isPrecompile {
+		return true
+	}
+	// The charging for the value transfer is done BEFORE subtracting
+	// the 1/64th gas, as this is considered part of the CALL instruction.
+	// (so before we get to this point)
+	// But the message call is part of the subcall, for which only 63/64th
+	// of the gas should be available.
+	chargedGas, ok := evm.Accesses.TouchAndChargeMessageCall(target.Bytes(), scope.Contract.UseGas)
+	if !ok || (chargedGas == 0 && !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929)) {
+		return false
+	}
+	return true
+
+}
+
 func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	if !chargeCallVariantEIP4762(interpreter.evm, scope) {
+		return nil, ErrExecutionReverted
+	}
+
 	stack := scope.Stack
 	// Pop gas. The actual gas in interpreter.evm.callGasTemp.
 	// We can use this as a temporary value
@@ -786,6 +808,9 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 }
 
 func opCallCode(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	if !chargeCallVariantEIP4762(interpreter.evm, scope) {
+		return nil, ErrExecutionReverted
+	}
 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
 	stack := scope.Stack
 	// We use it as a temporary value
@@ -821,6 +846,9 @@ func opCallCode(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 }
 
 func opDelegateCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	if !chargeCallVariantEIP4762(interpreter.evm, scope) {
+		return nil, ErrExecutionReverted
+	}
 	stack := scope.Stack
 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
 	// We use it as a temporary value
@@ -849,6 +877,9 @@ func opDelegateCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 }
 
 func opStaticCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	if !chargeCallVariantEIP4762(interpreter.evm, scope) {
+		return nil, ErrExecutionReverted
+	}
 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
 	stack := scope.Stack
 	// We use it as a temporary value

@@ -22,40 +22,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
-func makeCallVariantGasEIP4762(oldCalculator gasFunc) gasFunc {
-	return func(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-		gas, err := oldCalculator(evm, contract, stack, mem, memorySize)
-		if err != nil {
-			return 0, err
-		}
-		target := common.Address(stack.Back(1).Bytes20())
-		if _, isPrecompile := evm.precompile(target); isPrecompile {
-			var overflow bool
-			if gas, overflow = math.SafeAdd(gas, params.WarmStorageReadCostEIP2929); overflow {
-				return 0, ErrGasUintOverflow
-			}
-			return gas, nil
-		}
-		// The charging for the value transfer is done BEFORE subtracting
-		// the 1/64th gas, as this is considered part of the CALL instruction.
-		// (so before we get to this point)
-		// But the message call is part of the subcall, for which only 63/64th
-		// of the gas should be available.
-		wgas := evm.Accesses.TouchAndChargeMessageCall(target.Bytes())
-		if wgas == 0 {
-			wgas = params.WarmStorageReadCostEIP2929
-		}
-		return wgas + gas, nil
-	}
-}
-
-var (
-	gasCallEIP4762         = makeCallVariantGasEIP4762(gasCall)
-	gasCallCodeEIP4762     = makeCallVariantGasEIP4762(gasCallCode)
-	gasStaticCallEIP4762   = makeCallVariantGasEIP4762(gasStaticCall)
-	gasDelegateCallEIP4762 = makeCallVariantGasEIP4762(gasDelegateCall)
-)
-
 func gasSelfdestructEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	beneficiaryAddr := common.Address(stack.peek().Bytes20())
 	contractAddr := contract.Address()
