@@ -762,7 +762,7 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 func chargeCallVariantEIP4762(evm *EVM, scope *ScopeContext) bool {
 	target := common.Address(scope.Stack.Back(1).Bytes20())
 	if _, isPrecompile := evm.precompile(target); isPrecompile {
-		return true
+		return scope.Contract.UseGas(params.WarmStorageReadCostEIP2929)
 	}
 	// The charging for the value transfer is done BEFORE subtracting
 	// the 1/64th gas, as this is considered part of the CALL instruction.
