@@ -401,6 +401,17 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 		codeOffset = stack.pop()
 		length     = stack.pop()
 	)
+
+	if interpreter.evm.chainRules.IsVerkle {
+		addr := common.Address(a.Bytes20())
+		if _, isPrecompile := interpreter.evm.precompile(addr); !isPrecompile {
+			chargedGas, ok := interpreter.evm.Accesses.TouchBasicData(addr[:], false, scope.Contract.UseGas)
+			if !ok || (chargedGas == 0 && !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929)) {
+				return nil, ErrExecutionReverted
+			}
+		}
+	}
+
 	uint64CodeOffset, overflow := codeOffset.Uint64WithOverflow()
 	if overflow {
 		uint64CodeOffset = 0xffffffffffffffff
@@ -946,6 +957,41 @@ func opSelfdestruct(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 }
 
 func opSelfdestruct6780(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	if interpreter.evm.chainRules.IsVerkle {
+		beneficiaryAddr := common.Address(scope.Stack.peek().Bytes20())
+		contractAddr := scope.Contract.Address()
+
+		if _, ok := interpreter.evm.Accesses.TouchBasicData(contractAddr[:], false, scope.Contract.UseGas); !ok {
+			return nil, ErrExecutionReverted
+		}
+		balanceIsZero := interpreter.evm.StateDB.GetBalance(contractAddr).Sign() == 0
+
+		if _, isPrecompile := interpreter.evm.precompile(beneficiaryAddr); !(isPrecompile && balanceIsZero) {
+			if contractAddr != beneficiaryAddr {
+				if _, ok := interpreter.evm.Accesses.TouchBasicData(beneficiaryAddr[:], false, scope.Contract.UseGas); !ok {
+					return nil, ErrExecutionReverted
+				}
+			}
+			// Charge write costs if it transfers value
+			if !balanceIsZero {
+				if _, ok := interpreter.evm.Accesses.TouchBasicData(contractAddr[:], true, scope.Contract.UseGas); !ok {
+					return nil, ErrExecutionReverted
+				}
+				if contractAddr != beneficiaryAddr {
+					if interpreter.evm.StateDB.Exist(beneficiaryAddr) {
+						if _, ok := interpreter.evm.Accesses.TouchBasicData(beneficiaryAddr[:], true, scope.Contract.UseGas); !ok {
+							return nil, ErrExecutionReverted
+						}
+					} else {
+						if !interpreter.evm.Accesses.TouchFullAccount(beneficiaryAddr[:], true, scope.Contract.UseGas) {
+							return nil, ErrExecutionReverted
+						}
+					}
+				}
+			}
+		}
+	}
+
 	if interpreter.readOnly {
 		return nil, ErrWriteProtection
 	}
