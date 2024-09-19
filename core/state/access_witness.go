@@ -105,7 +105,11 @@ func (aw *AccessWitness) TouchAndChargeMessageCall(addr []byte, useGasFn UseGasF
 }
 
 func (aw *AccessWitness) TouchAndChargeValueTransfer(callerAddr, targetAddr []byte, useGasFn UseGasFn) bool {
-	_, ok := aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, true, useGasFn)
+	_, ok := aw.touchAddressAndChargeGas(callerAddr, zeroTreeIndex, utils.BasicDataLeafKey, true, useGasFn)
+	if !ok {
+		return false
+	}
+	_, ok = aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, true, useGasFn)
 	return ok
 }
 
