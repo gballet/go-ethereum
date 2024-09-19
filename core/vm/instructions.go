@@ -467,7 +467,11 @@ func opExtCodeHash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	slot := scope.Stack.peek()
 	address := common.Address(slot.Bytes20())
 	if interpreter.evm.chainRules.IsVerkle {
-		if _, isPrecompile := interpreter.evm.precompile(address); !isPrecompile && !interpreter.evm.isSystemContract(address) {
+		if _, isPrecompile := interpreter.evm.precompile(address); isPrecompile || interpreter.evm.isSystemContract(address) {
+			if !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929) {
+				return nil, ErrExecutionReverted
+			}
+		} else {
 			chargedGas, ok := interpreter.evm.Accesses.TouchBasicData(address[:], false, scope.Contract.UseGas)
 			if !ok || (chargedGas == 0 && !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929)) {
 				return nil, ErrExecutionReverted
@@ -774,7 +778,7 @@ func chargeCallVariantEIP4762(evm *EVM, scope *ScopeContext) bool {
 	if err != nil {
 		return false
 	}
-	if scope.Contract.UseGas(evm.callGasTemp) {
+	if !scope.Contract.UseGas(evm.callGasTemp) {
 		return false
 	}
 
