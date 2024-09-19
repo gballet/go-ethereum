@@ -756,6 +756,28 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 }
 
 func chargeCallVariantEIP4762(evm *EVM, scope *ScopeContext) bool {
+	if evm.chainRules.IsEIP4762 {
+		address := common.Address(scope.Stack.Back(1).Bytes20())
+		transfersValue := !scope.Stack.Back(2).IsZero()
+
+		// If value is transferred, it is charged before 1/64th
+		// is subtracted from the available gas pool.
+		if transfersValue {
+			if !evm.Accesses.TouchAndChargeValueTransfer(scope.Contract.Address().Bytes()[:], address.Bytes()[:], scope.Contract.UseGas) {
+				return false
+			}
+		}
+	}
+
+	var err error
+	evm.callGasTemp, err = callGas(evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
+	if err != nil {
+		return false
+	}
+	if scope.Contract.UseGas(evm.callGasTemp) {
+		return false
+	}
+
 	target := common.Address(scope.Stack.Back(1).Bytes20())
 	if _, isPrecompile := evm.precompile(target); isPrecompile {
 		return true
