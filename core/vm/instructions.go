@@ -760,28 +760,6 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 }
 
 func chargeCallVariantEIP4762(evm *EVM, scope *ScopeContext) bool {
-	if evm.chainRules.IsEIP4762 {
-		address := common.Address(scope.Stack.Back(1).Bytes20())
-		transfersValue := !scope.Stack.Back(2).IsZero()
-
-		// If value is transferred, it is charged before 1/64th
-		// is subtracted from the available gas pool.
-		if transfersValue {
-			if !evm.Accesses.TouchAndChargeValueTransfer(scope.Contract.Address().Bytes()[:], address.Bytes()[:], scope.Contract.UseGas) {
-				return false
-			}
-		}
-	}
-
-	var err error
-	evm.callGasTemp, err = callGas(evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
-	if err != nil {
-		return false
-	}
-	if !scope.Contract.UseGas(evm.callGasTemp) {
-		return false
-	}
-
 	target := common.Address(scope.Stack.Back(1).Bytes20())
 	if _, isPrecompile := evm.precompile(target); isPrecompile {
 		return true
@@ -800,6 +778,27 @@ func chargeCallVariantEIP4762(evm *EVM, scope *ScopeContext) bool {
 }
 
 func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	if interpreter.evm.chainRules.IsEIP4762 {
+		address := common.Address(scope.Stack.Back(1).Bytes20())
+		transfersValue := !scope.Stack.Back(2).IsZero()
+
+		// If value is transferred, it is charged before 1/64th
+		// is subtracted from the available gas pool.
+		if transfersValue {
+			if !interpreter.evm.Accesses.TouchAndChargeValueTransfer(scope.Contract.Address().Bytes()[:], address.Bytes()[:], scope.Contract.UseGas) {
+				return nil, ErrExecutionReverted
+			}
+		}
+	}
+
+	var err error
+	interpreter.evm.callGasTemp, err = callGas(interpreter.evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
+	if err != nil {
+		return nil, err
+	}
+	if !scope.Contract.UseGas(interpreter.evm.callGasTemp) {
+		return nil, ErrOutOfGas
+	}
 	if !chargeCallVariantEIP4762(interpreter.evm, scope) {
 		return nil, ErrExecutionReverted
 	}
