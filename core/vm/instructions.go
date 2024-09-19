@@ -408,7 +408,11 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 
 	if interpreter.evm.chainRules.IsVerkle {
 		addr := common.Address(a.Bytes20())
-		if _, isPrecompile := interpreter.evm.precompile(addr); !isPrecompile {
+		if _, isPrecompile := interpreter.evm.precompile(addr); isPrecompile {
+			if !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929) {
+				return nil, ErrExecutionReverted
+			}
+		} else {
 			chargedGas, ok := interpreter.evm.Accesses.TouchBasicData(addr[:], false, scope.Contract.UseGas)
 			if !ok || (chargedGas == 0 && !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929)) {
 				return nil, ErrExecutionReverted
