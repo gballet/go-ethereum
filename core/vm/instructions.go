@@ -480,7 +480,7 @@ func opExtCodeHash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 				return nil, ErrExecutionReverted
 			}
 		} else {
-			chargedGas, ok := interpreter.evm.Accesses.TouchBasicData(address[:], false, scope.Contract.UseGas)
+			chargedGas, ok := interpreter.evm.Accesses.TouchCodeHash(address[:], false, scope.Contract.UseGas)
 			if !ok || (chargedGas == 0 && !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929)) {
 				return nil, ErrExecutionReverted
 			}
