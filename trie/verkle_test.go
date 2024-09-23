@@ -18,10 +18,16 @@ package trie
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/hex"
+	"math"
+	"math/big"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/ethereum/go-verkle"
 )
@@ -377,5 +383,82 @@ func TestGetTreeKeys(t *testing.T) {
 	t.Logf("actualKey=%x", target)
 	if !bytes.Equal(key, target) {
 		t.Fatalf("differing output %x != %x", key, target)
+	}
+}
+
+type randomAccount struct {
+	Account *types.StateAccount
+	CodeLen int
+	Code    []byte
+	Slots   map[common.Hash]common.Hash
+}
+
+// NLeaves is the number of inserted leaves. It's set to a value that corresponds
+// to an upper bound of the amount of leaves that are inserted during the overlay
+// transition.
+const NLeaves = 20000
+
+func genRandomAccountsAndSlots() map[common.Address]randomAccount {
+	ret := make(map[common.Address]randomAccount)
+	count := 0
+	for count < NLeaves {
+		address := common.Address{}
+		count += 2
+		rand.Read(address[:])
+		nonce, _ := rand.Int(rand.Reader, big.NewInt(math.MaxInt64))
+		codeLen, _ := rand.Int(rand.Reader, big.NewInt(24*1024))
+		count += int((codeLen.Int64() + 30) / 31)
+		code := make([]byte, codeLen.Int64())
+		rand.Read(code)
+		slots := map[common.Hash]common.Hash{}
+		nSlots, _ := rand.Int(rand.Reader, big.NewInt(100))
+		for i := 0; i <= int(nSlots.Uint64()); i++ {
+			var nr common.Hash
+			var val common.Hash
+			rand.Read(nr[:])
+			rand.Read(val[:])
+			slots[nr] = val
+			count++
+		}
+		crypto.Keccak256(code)
+		var balance [32]byte
+		rand.Read(balance[16:])
+		account := &types.StateAccount{
+			Nonce:    nonce.Uint64(),
+			Balance:  big.NewInt(0).SetBytes(balance[:]),
+			CodeHash: crypto.Keccak256(code),
+		}
+		ret[address] = randomAccount{
+			Account: account,
+			CodeLen: len(code),
+			Code:    code,
+			Slots:   slots,
+		}
+	}
+	return ret
+}
+
+// BenchmarkBatchLeavesInsert
+func BenchmarkBatchLeavesInsert(b *testing.B) {
+	vt := &VerkleTrie{root: verkle.New(), pointCache: utils.NewPointCache(), db: NewDatabase(rawdb.NewMemoryDatabase())}
+
+	_ = verkle.GetConfig()
+
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		b.StopTimer()
+		accounts := genRandomAccountsAndSlots()
+		b.StartTimer()
+
+		for addr, data := range accounts {
+			vt.UpdateAccount(addr, data.Account, data.CodeLen)
+			vt.UpdateContractCode(addr, common.BytesToHash(data.Account.CodeHash), data.Code)
+			for slot, val := range data.Slots {
+				vt.UpdateStorage(addr, slot[:], val[:])
+			}
+		}
+
+		vt.Commit(false)
 	}
 }
