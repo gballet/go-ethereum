@@ -262,8 +262,7 @@ func opBalance(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 	slot := scope.Stack.peek()
 	address := common.Address(slot.Bytes20())
 	if interpreter.evm.chainRules.IsVerkle {
-		chargedGas, ok := interpreter.evm.Accesses.TouchBasicData(address[:], false, scope.Contract.UseGas)
-		if !ok || (chargedGas == 0 && !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929)) {
+		if !interpreter.evm.Accesses.TouchBasicData(address[:], false, scope.Contract.UseGas, true) {
 			return nil, ErrExecutionReverted
 		}
 	}
@@ -357,8 +356,7 @@ func opExtCodeSize(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 				return nil, ErrExecutionReverted
 			}
 		} else {
-			chargedGas, ok := interpreter.evm.Accesses.TouchBasicData(address[:], false, scope.Contract.UseGas)
-			if !ok || (chargedGas == 0 && !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929)) {
+			if !interpreter.evm.Accesses.TouchBasicData(address[:], false, scope.Contract.UseGas, true) {
 				return nil, ErrExecutionReverted
 			}
 		}
@@ -413,8 +411,7 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 				return nil, ErrExecutionReverted
 			}
 		} else {
-			chargedGas, ok := interpreter.evm.Accesses.TouchBasicData(addr[:], false, scope.Contract.UseGas)
-			if !ok || (chargedGas == 0 && !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929)) {
+			if !interpreter.evm.Accesses.TouchBasicData(addr[:], false, scope.Contract.UseGas, true) {
 				return nil, ErrExecutionReverted
 			}
 		}
@@ -480,8 +477,7 @@ func opExtCodeHash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 				return nil, ErrExecutionReverted
 			}
 		} else {
-			chargedGas, ok := interpreter.evm.Accesses.TouchCodeHash(address[:], false, scope.Contract.UseGas)
-			if !ok || (chargedGas == 0 && !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929)) {
+			if !interpreter.evm.Accesses.TouchCodeHash(address[:], false, scope.Contract.UseGas) {
 				return nil, ErrExecutionReverted
 			}
 		}
@@ -523,7 +519,7 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 			ringIndex := num64 % params.Eip2935BlockHashHistorySize
 			var pnum common.Hash
 			binary.BigEndian.PutUint64(pnum[24:], ringIndex)
-			if _, ok := evm.Accesses.TouchSlotAndChargeGas(params.HistoryStorageAddress[:], pnum, false, scope.Contract.UseGas); !ok {
+			if !evm.Accesses.TouchSlotAndChargeGas(params.HistoryStorageAddress[:], pnum, false, scope.Contract.UseGas, false) {
 				return nil, ErrExecutionReverted
 			}
 			blockHash := evm.StateDB.GetState(params.HistoryStorageAddress, pnum)
@@ -599,8 +595,7 @@ func opSload(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 	loc := scope.Stack.peek()
 	hash := common.Hash(loc.Bytes32())
 	if interpreter.evm.chainRules.IsVerkle {
-		chargedGas, ok := interpreter.evm.Accesses.TouchSlotAndChargeGas(scope.Contract.Address().Bytes(), loc.Bytes32(), false, scope.Contract.UseGas)
-		if !ok || (chargedGas == 0 && !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929)) {
+		if !interpreter.evm.Accesses.TouchSlotAndChargeGas(scope.Contract.Address().Bytes(), loc.Bytes32(), false, scope.Contract.UseGas, true) {
 			return nil, ErrExecutionReverted
 		}
 	}
@@ -616,8 +611,7 @@ func opSstore(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 	loc := scope.Stack.pop()
 	val := scope.Stack.pop()
 	if interpreter.evm.chainRules.IsVerkle {
-		chargedGas, ok := interpreter.evm.Accesses.TouchSlotAndChargeGas(scope.Contract.Address().Bytes(), loc.Bytes32(), true, scope.Contract.UseGas)
-		if !ok || (chargedGas == 0 && !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929)) {
+		if !interpreter.evm.Accesses.TouchSlotAndChargeGas(scope.Contract.Address().Bytes(), loc.Bytes32(), true, scope.Contract.UseGas, true) {
 			return nil, ErrExecutionReverted
 		}
 	}
@@ -777,8 +771,7 @@ func chargeCallVariantEIP4762(evm *EVM, scope *ScopeContext) bool {
 	// (so before we get to this point)
 	// But the message call is part of the subcall, for which only 63/64th
 	// of the gas should be available.
-	chargedGas, ok := evm.Accesses.TouchAndChargeMessageCall(target.Bytes(), scope.Contract.UseGas)
-	if !ok || (chargedGas == 0 && !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929)) {
+	if !evm.Accesses.TouchAndChargeMessageCall(target.Bytes(), scope.Contract.UseGas) {
 		return false
 	}
 	return true
@@ -994,25 +987,25 @@ func opSelfdestruct6780(pc *uint64, interpreter *EVMInterpreter, scope *ScopeCon
 		beneficiaryAddr := common.Address(scope.Stack.peek().Bytes20())
 		contractAddr := scope.Contract.Address()
 
-		if _, ok := interpreter.evm.Accesses.TouchBasicData(contractAddr[:], false, scope.Contract.UseGas); !ok {
+		if !interpreter.evm.Accesses.TouchBasicData(contractAddr[:], false, scope.Contract.UseGas, false) {
 			return nil, ErrExecutionReverted
 		}
 		balanceIsZero := interpreter.evm.StateDB.GetBalance(contractAddr).Sign() == 0
 
 		if _, isPrecompile := interpreter.evm.precompile(beneficiaryAddr); !(isPrecompile && balanceIsZero) {
 			if contractAddr != beneficiaryAddr {
-				if _, ok := interpreter.evm.Accesses.TouchBasicData(beneficiaryAddr[:], false, scope.Contract.UseGas); !ok {
+				if !interpreter.evm.Accesses.TouchBasicData(beneficiaryAddr[:], false, scope.Contract.UseGas, false) {
 					return nil, ErrExecutionReverted
 				}
 			}
 			// Charge write costs if it transfers value
 			if !balanceIsZero {
-				if _, ok := interpreter.evm.Accesses.TouchBasicData(contractAddr[:], true, scope.Contract.UseGas); !ok {
+				if !interpreter.evm.Accesses.TouchBasicData(contractAddr[:], true, scope.Contract.UseGas, false) {
 					return nil, ErrExecutionReverted
 				}
 				if contractAddr != beneficiaryAddr {
 					if interpreter.evm.StateDB.Exist(beneficiaryAddr) {
-						if _, ok := interpreter.evm.Accesses.TouchBasicData(beneficiaryAddr[:], true, scope.Contract.UseGas); !ok {
+						if !interpreter.evm.Accesses.TouchBasicData(beneficiaryAddr[:], true, scope.Contract.UseGas, false) {
 							return nil, ErrExecutionReverted
 						}
 					} else {
