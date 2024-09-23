@@ -2,7 +2,7 @@ name: Execution Spec Tests - Fill and Consume (branch)
 
 on:
   push:
-    branches: [master]
+    branches: [master, kaustinen-with-shapella]
   pull_request:
     branches: [master, kaustinen-with-shapella]
   workflow_dispatch:
