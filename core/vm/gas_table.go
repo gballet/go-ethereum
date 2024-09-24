@@ -403,6 +403,25 @@ func gasCall(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize
 		return 0, ErrGasUintOverflow
 	}
 
+	if evm.chainRules.IsEIP4762 {
+		// If value is transferred, it is charged before 1/64th
+		// is subtracted from the available gas pool.
+		if transfersValue {
+			gas, overflow = math.SafeAdd(gas, evm.Accesses.TouchAndChargeValueTransfer(contract.Address().Bytes()[:], address.Bytes()[:], contract.Gas-gas))
+			if overflow {
+				return 0, ErrGasUintOverflow
+			}
+		}
+	}
+
+	evm.callGasTemp, err = callGas(evm.chainRules.IsEIP150, contract.Gas, gas, stack.Back(0))
+	if err != nil {
+		return 0, err
+	}
+	if gas, overflow = math.SafeAdd(gas, evm.callGasTemp); overflow {
+		return 0, ErrGasUintOverflow
+	}
+
 	return gas, nil
 }
 

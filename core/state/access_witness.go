@@ -18,6 +18,7 @@ package state
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/holiman/uint256"
@@ -28,9 +29,6 @@ import (
 // * the first bit is set if the branch has been edited
 // * the second bit is set if the branch has been read
 type mode byte
-
-// UseGasFn is a function that can be used to charge gas for a given amount.
-type UseGasFn func(uint64) bool
 
 const (
 	AccessWitnessReadFlag  = mode(1)
@@ -91,69 +89,72 @@ func (aw *AccessWitness) Copy() *AccessWitness {
 	return naw
 }
 
-func (aw *AccessWitness) TouchFullAccount(addr []byte, isWrite bool, useGasFn UseGasFn) bool {
+func (aw *AccessWitness) TouchFullAccount(addr []byte, isWrite bool, availableGas uint64) uint64 {
+	var gas uint64
 	for i := utils.BasicDataLeafKey; i <= utils.CodeHashLeafKey; i++ {
-		if _, ok := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, byte(i), isWrite, useGasFn); !ok {
-			return false
+		consumed, wanted := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, byte(i), isWrite, availableGas)
+		if consumed < wanted {
+			return wanted
 		}
+		availableGas -= consumed
+		gas += consumed
 	}
-	return true
+	return gas
 }
 
-func (aw *AccessWitness) TouchAndChargeMessageCall(addr []byte, useGasFn UseGasFn) bool {
-	chargedGas, ok := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, false, useGasFn)
-	return ok && (chargedGas > 0 || useGasFn(params.WarmStorageReadCostEIP2929))
+func (aw *AccessWitness) TouchAndChargeMessageCall(addr []byte, availableGas uint64) uint64 {
+	_, wanted := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, false, availableGas)
+	if wanted == 0 {
+		wanted = params.WarmStorageReadCostEIP2929
+	}
+	return wanted
 }
 
-func (aw *AccessWitness) TouchAndChargeValueTransfer(callerAddr, targetAddr []byte, useGasFn UseGasFn) bool {
-	_, ok := aw.touchAddressAndChargeGas(callerAddr, zeroTreeIndex, utils.BasicDataLeafKey, true, useGasFn)
-	if !ok {
-		return false
-	}
-	_, ok = aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, true, useGasFn)
-	return ok
+func (aw *AccessWitness) TouchAndChargeValueTransfer(callerAddr, targetAddr []byte, availableGas uint64) uint64 {
+	chargedGas, _ := aw.touchAddressAndChargeGas(callerAddr, zeroTreeIndex, utils.BasicDataLeafKey, true, availableGas)
+	chargedGas, _ = aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, true, availableGas-chargedGas)
+	return chargedGas
 }
 
 // TouchAndChargeContractCreateCheck charges access costs before
 // a contract creation is initiated. It is just reads, because the
 // address collision is done before the transfer, and so no write
 // are guaranteed to happen at this point.
-func (aw *AccessWitness) TouchAndChargeContractCreateCheck(addr []byte, useGasFn UseGasFn) bool {
-	if _, ok := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, false, useGasFn); !ok {
-		return false
-	}
-	_, ok := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeHashLeafKey, false, useGasFn)
-	return ok
+func (aw *AccessWitness) TouchAndChargeContractCreateCheck(addr []byte, availableGas uint64) uint64 {
+	gas1, wanted1 := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, false, availableGas)
+	_, wanted2 := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeHashLeafKey, false, availableGas-gas1)
+	return wanted1 + wanted2
 }
 
 // TouchAndChargeContractCreateInit charges access costs to initiate
 // a contract creation.
-func (aw *AccessWitness) TouchAndChargeContractCreateInit(addr []byte, useGasFn UseGasFn) bool {
-	if _, ok := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, true, useGasFn); !ok {
-		return false
-	}
-	_, ok := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeHashLeafKey, true, useGasFn)
-	return ok
+func (aw *AccessWitness) TouchAndChargeContractCreateInit(addr []byte, availableGas uint64) (uint64, uint64) {
+	gas1, wanted1 := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, true, availableGas)
+	gas2, wanted2 := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeHashLeafKey, true, availableGas-gas1)
+	return gas1 + gas2, wanted1 + wanted2
 }
 
 func (aw *AccessWitness) TouchTxOriginAndComputeGas(originAddr []byte) {
 	for i := utils.BasicDataLeafKey; i <= utils.CodeHashLeafKey; i++ {
-		aw.touchAddressAndChargeGas(originAddr, zeroTreeIndex, byte(i), i == utils.BasicDataLeafKey, nil)
+		aw.touchAddressAndChargeGas(originAddr, zeroTreeIndex, byte(i), i == utils.BasicDataLeafKey, math.MaxUint64)
 	}
 }
 
 func (aw *AccessWitness) TouchTxExistingAndComputeGas(targetAddr []byte, sendsValue bool) {
-	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, sendsValue, nil)
-	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.CodeHashLeafKey, false, nil)
+	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, sendsValue, math.MaxUint64)
+	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.CodeHashLeafKey, false, math.MaxUint64)
 }
 
-func (aw *AccessWitness) TouchSlotAndChargeGas(addr []byte, slot common.Hash, isWrite bool, useGasFn UseGasFn, warmCostCharging bool) bool {
+func (aw *AccessWitness) TouchSlotAndChargeGas(addr []byte, slot common.Hash, isWrite bool, availableGas uint64, warmCostCharging bool) uint64 {
 	treeIndex, subIndex := utils.GetTreeKeyStorageSlotTreeIndexes(slot.Bytes())
-	chargedGas, ok := aw.touchAddressAndChargeGas(addr, *treeIndex, subIndex, isWrite, useGasFn)
-	return ok && (!warmCostCharging || chargedGas > 0 || useGasFn(params.WarmStorageReadCostEIP2929))
+	_, wanted := aw.touchAddressAndChargeGas(addr, *treeIndex, subIndex, isWrite, availableGas)
+	if wanted == 0 && warmCostCharging {
+		wanted = params.WarmStorageReadCostEIP2929
+	}
+	return wanted
 }
 
-func (aw *AccessWitness) touchAddressAndChargeGas(addr []byte, treeIndex uint256.Int, subIndex byte, isWrite bool, useGasFn UseGasFn) (uint64, bool) {
+func (aw *AccessWitness) touchAddressAndChargeGas(addr []byte, treeIndex uint256.Int, subIndex byte, isWrite bool, availableGas uint64) (uint64, uint64) {
 	branchKey := newBranchAccessKey(addr, treeIndex)
 	chunkKey := newChunkAccessKey(branchKey, subIndex)
 
@@ -196,10 +197,9 @@ func (aw *AccessWitness) touchAddressAndChargeGas(addr []byte, treeIndex uint256
 		gas += params.WitnessChunkFillCost
 	}
 
-	if useGasFn != nil {
-		if ok := useGasFn(gas); !ok {
-			return 0, false
-		}
+	if availableGas < gas {
+		// consumed != wanted
+		return availableGas, gas
 	}
 
 	if branchRead {
@@ -212,11 +212,11 @@ func (aw *AccessWitness) touchAddressAndChargeGas(addr []byte, treeIndex uint256
 		aw.chunks[chunkKey] = AccessWitnessReadFlag
 	}
 	if chunkWrite {
-		chunkWrite = true
 		aw.chunks[chunkKey] |= AccessWitnessWriteFlag
 	}
 
-	return gas, true
+	// consumed == wanted
+	return gas, gas
 }
 
 type branchAccessKey struct {
@@ -244,7 +244,7 @@ func newChunkAccessKey(branchKey branchAccessKey, leafKey byte) chunkAccessKey {
 }
 
 // touchCodeChunksRangeOnReadAndChargeGas is a helper function to touch every chunk in a code range and charge witness gas costs
-func (aw *AccessWitness) TouchCodeChunksRangeAndChargeGas(contractAddr []byte, startPC, size uint64, codeLen uint64, isWrite bool, useGasFn UseGasFn) bool {
+func (aw *AccessWitness) TouchCodeChunksRangeAndChargeGas(contractAddr []byte, startPC, size uint64, codeLen uint64, isWrite bool, availableGas uint64) (uint64, uint64) {
 	// note that in the case where the copied code is outside the range of the
 	// contract code but touches the last leaf with contract code in it,
 	// we don't include the last leaf of code in the AccessWitness.  The
@@ -252,7 +252,7 @@ func (aw *AccessWitness) TouchCodeChunksRangeAndChargeGas(contractAddr []byte, s
 	// is already in the AccessWitness so a stateless verifier can see that
 	// the code from the last leaf is not needed.
 	if size == 0 || startPC >= codeLen {
-		return true
+		return 0, 0
 	}
 
 	endPC := startPC + size
@@ -263,23 +263,44 @@ func (aw *AccessWitness) TouchCodeChunksRangeAndChargeGas(contractAddr []byte, s
 		endPC -= 1 // endPC is the last bytecode that will be touched.
 	}
 
+	var statelessGasCharged uint64
 	for chunkNumber := startPC / 31; chunkNumber <= endPC/31; chunkNumber++ {
 		treeIndex := *uint256.NewInt((chunkNumber + 128) / 256)
 		subIndex := byte((chunkNumber + 128) % 256)
-		if _, ok := aw.touchAddressAndChargeGas(contractAddr, treeIndex, subIndex, isWrite, useGasFn); !ok {
-			return false
+		consumed, wanted := aw.touchAddressAndChargeGas(contractAddr, treeIndex, subIndex, isWrite, availableGas)
+		// did we OOG ?
+		if wanted > consumed {
+			return statelessGasCharged + consumed, statelessGasCharged + wanted
 		}
+		var overflow bool
+		statelessGasCharged, overflow = math.SafeAdd(statelessGasCharged, consumed)
+		if overflow {
+			panic("overflow when adding gas")
+		}
+		availableGas -= consumed
 	}
 
-	return true
+	return statelessGasCharged, statelessGasCharged
 }
 
-func (aw *AccessWitness) TouchBasicData(addr []byte, isWrite bool, useGasFn UseGasFn, warmCostCharging bool) bool {
-	chargedGas, ok := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, isWrite, useGasFn)
-	return ok && (!warmCostCharging || chargedGas > 0 || useGasFn(params.WarmStorageReadCostEIP2929))
+func (aw *AccessWitness) TouchBasicData(addr []byte, isWrite bool, availableGas uint64, warmCostCharging bool) uint64 {
+	chargedGas, _ := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, isWrite, availableGas)
+	if chargedGas == 0 && availableGas > 0 && warmCostCharging {
+		if availableGas < params.WarmStorageReadCostEIP2929 {
+			return availableGas
+		}
+		chargedGas = params.WarmStorageReadCostEIP2929
+	}
+	return chargedGas
 }
 
-func (aw *AccessWitness) TouchCodeHash(addr []byte, isWrite bool, useGasFn UseGasFn) bool {
-	chargedGas, ok := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeHashLeafKey, isWrite, useGasFn)
-	return ok && (chargedGas > 0 || useGasFn(params.WarmStorageReadCostEIP2929))
+func (aw *AccessWitness) TouchCodeHash(addr []byte, isWrite bool, availableGas uint64) uint64 {
+	chargedGas, _ := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeHashLeafKey, isWrite, availableGas)
+	if chargedGas == 0 && availableGas > 0 {
+		if availableGas < params.WarmStorageReadCostEIP2929 {
+			return availableGas
+		}
+		chargedGas = params.WarmStorageReadCostEIP2929
+	}
+	return chargedGas
 }

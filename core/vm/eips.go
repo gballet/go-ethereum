@@ -307,26 +307,26 @@ func enable6780(jt *JumpTable) {
 
 func enable4762(jt *JumpTable) {
 	jt[SSTORE].constantGas = 0
-	jt[SSTORE].dynamicGas = nil
+	jt[SSTORE].dynamicGas = gasSStore4762
 	jt[SLOAD].constantGas = 0
-	jt[SLOAD].dynamicGas = nil
-	jt[BALANCE].dynamicGas = nil
+	jt[SLOAD].dynamicGas = gasSLoad4762
+	jt[BALANCE].dynamicGas = gasBalance4762
 	jt[BALANCE].constantGas = 0
 	jt[EXTCODESIZE].constantGas = 0
-	jt[EXTCODESIZE].dynamicGas = nil
+	jt[EXTCODESIZE].dynamicGas = gasExtCodeSize4762
 	jt[EXTCODEHASH].constantGas = 0
-	jt[EXTCODEHASH].dynamicGas = nil
+	jt[EXTCODEHASH].dynamicGas = gasExtCodeHash4762
 	jt[EXTCODECOPY].constantGas = 0
-	jt[EXTCODECOPY].dynamicGas = gasExtCodeCopy
-	jt[SELFDESTRUCT].dynamicGas = nil
+	jt[EXTCODECOPY].dynamicGas = gasExtCodeCopyEIP4762
+	jt[SELFDESTRUCT].dynamicGas = gasSelfdestructEIP4762
 	jt[CREATE].constantGas = params.CreateNGasEip4762
 	jt[CREATE2].constantGas = params.CreateNGasEip4762
 	jt[CALL].constantGas = 0
-	jt[CALL].dynamicGas = gasCall
+	jt[CALL].dynamicGas = gasCallEIP4762
 	jt[CALLCODE].constantGas = 0
-	jt[CALLCODE].dynamicGas = gasCallCode
+	jt[CALLCODE].dynamicGas = gasCallCodeEIP4762
 	jt[STATICCALL].constantGas = 0
-	jt[STATICCALL].dynamicGas = gasStaticCall
+	jt[STATICCALL].dynamicGas = gasStaticCallEIP4762
 	jt[DELEGATECALL].constantGas = 0
-	jt[DELEGATECALL].dynamicGas = gasDelegateCall
+	jt[DELEGATECALL].dynamicGas = gasDelegateCallEIP4762
 }
