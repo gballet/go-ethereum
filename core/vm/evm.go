@@ -202,13 +202,12 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 	if !evm.StateDB.Exist(addr) {
 		if !isPrecompile && evm.chainRules.IsEIP4762 {
 			// add proof of absence to witness
-			gc := gasConsumer{availableGas: gas}
-			ok := evm.Accesses.TouchFullAccount(addr.Bytes(), false, gc.consumeGas)
-			if !ok {
+			wgas := evm.Accesses.TouchFullAccount(addr.Bytes(), false, gas)
+			if gas < wgas {
 				evm.StateDB.RevertToSnapshot(snapshot)
 				return nil, 0, ErrOutOfGas
 			}
-			gas = gc.availableGas
+			gas -= wgas
 		}
 
 		if !isPrecompile && evm.chainRules.IsEIP158 && value.Sign() == 0 {
@@ -458,11 +457,11 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 
 	// Charge the contract creation init gas in verkle mode
 	if evm.chainRules.IsEIP4762 {
-		gc := gasConsumer{availableGas: gas}
-		if !evm.Accesses.TouchAndChargeContractCreateCheck(address.Bytes(), gc.consumeGas) {
+		statelessGas := evm.Accesses.TouchAndChargeContractCreateCheck(address.Bytes(), gas)
+		if statelessGas > gas {
 			return nil, common.Address{}, 0, ErrOutOfGas
 		}
-		gas = gc.availableGas
+		gas -= statelessGas
 	}
 	// We add this to the access list _before_ taking a snapshot. Even if the creation fails,
 	// the access-list change should not be rolled back
@@ -483,11 +482,11 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 
 	// Charge the contract creation init gas in verkle mode
 	if evm.chainRules.IsEIP4762 {
-		gc := gasConsumer{availableGas: gas}
-		if !evm.Accesses.TouchAndChargeContractCreateInit(address.Bytes(), gc.consumeGas) {
+		consumed, wanted := evm.Accesses.TouchAndChargeContractCreateInit(address.Bytes(), gas)
+		if consumed < wanted {
 			return nil, common.Address{}, 0, ErrOutOfGas
 		}
-		gas = gc.availableGas
+		gas -= consumed
 	}
 	evm.Context.Transfer(evm.StateDB, caller.Address(), address, value)
 
@@ -528,7 +527,9 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 				err = ErrCodeStoreOutOfGas
 			}
 		} else {
-			if len(ret) > 0 && !evm.Accesses.TouchCodeChunksRangeAndChargeGas(address.Bytes(), 0, uint64(len(ret)), uint64(len(ret)), true, contract.UseGas) {
+			consumed, wanted := evm.Accesses.TouchCodeChunksRangeAndChargeGas(address.Bytes(), 0, uint64(len(ret)), uint64(len(ret)), true, contract.Gas)
+			contract.UseGas(consumed) // consumed <= contract.Gas, so no return value check is needed
+			if err == nil && len(ret) > 0 && (consumed < wanted) {
 				err = ErrCodeStoreOutOfGas
 			}
 		}

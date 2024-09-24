@@ -22,6 +22,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
@@ -358,7 +359,7 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 		state.AddBalance(w.Address, amount)
 
 		// The returned gas is not charged
-		state.Witness().TouchFullAccount(w.Address[:], true, nil)
+		state.Witness().TouchFullAccount(w.Address[:], true, math.MaxUint64)
 	}
 
 	if chain.Config().IsVerkle(header.Number, header.Time) {
