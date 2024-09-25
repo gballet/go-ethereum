@@ -402,7 +402,7 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 			self: AccountRef(addr),
 		}
 		paddedCodeCopy, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(code, uint64CodeOffset, length.Uint64())
-		statelessGas, wanted := interpreter.evm.Accesses.TouchCodeChunksRangeAndChargeGas(addr[:], copyOffset, nonPaddedCopyLength, uint64(len(contract.Code)), false, contract.Gas)
+		statelessGas, wanted := interpreter.evm.Accesses.TouchCodeChunksRangeAndChargeGas(addr[:], copyOffset, nonPaddedCopyLength, uint64(len(contract.Code)), false, scope.Contract.Gas)
 		scope.Contract.UseGas(statelessGas) // statelessGas <= contract.Gas, so no need to check the return value
 		if statelessGas < wanted {
 			return nil, ErrOutOfGas
