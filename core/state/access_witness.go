@@ -111,9 +111,9 @@ func (aw *AccessWitness) TouchAndChargeMessageCall(addr []byte, availableGas uin
 }
 
 func (aw *AccessWitness) TouchAndChargeValueTransfer(callerAddr, targetAddr []byte, availableGas uint64) uint64 {
-	chargedGas, _ := aw.touchAddressAndChargeGas(callerAddr, zeroTreeIndex, utils.BasicDataLeafKey, true, availableGas)
-	chargedGas, _ = aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, true, availableGas-chargedGas)
-	return chargedGas
+	chargedGas1, _ := aw.touchAddressAndChargeGas(callerAddr, zeroTreeIndex, utils.BasicDataLeafKey, true, availableGas)
+	chargedGas2, _ := aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, true, availableGas-chargedGas1)
+	return chargedGas1 + chargedGas2
 }
 
 // TouchAndChargeContractCreateCheck charges access costs before
