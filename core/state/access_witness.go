@@ -284,8 +284,8 @@ func (aw *AccessWitness) TouchCodeChunksRangeAndChargeGas(contractAddr []byte, s
 }
 
 func (aw *AccessWitness) TouchBasicData(addr []byte, isWrite bool, availableGas uint64, warmCostCharging bool) uint64 {
-	chargedGas, _ := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, isWrite, availableGas)
-	if chargedGas == 0 && availableGas > 0 && warmCostCharging {
+	chargedGas, wanted := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.BasicDataLeafKey, isWrite, availableGas)
+	if wanted == 0 && warmCostCharging {
 		if availableGas < params.WarmStorageReadCostEIP2929 {
 			return availableGas
 		}
@@ -295,8 +295,8 @@ func (aw *AccessWitness) TouchBasicData(addr []byte, isWrite bool, availableGas 
 }
 
 func (aw *AccessWitness) TouchCodeHash(addr []byte, isWrite bool, availableGas uint64) uint64 {
-	chargedGas, _ := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeHashLeafKey, isWrite, availableGas)
-	if chargedGas == 0 && availableGas > 0 {
+	chargedGas, wanted := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeHashLeafKey, isWrite, availableGas)
+	if wanted == 0 {
 		if availableGas < params.WarmStorageReadCostEIP2929 {
 			return availableGas
 		}
