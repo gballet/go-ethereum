@@ -17,6 +17,7 @@
 package core
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 
@@ -131,6 +132,53 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 	if root := statedb.IntermediateRoot(v.config.IsEIP158(header.Number)); header.Root != root {
 		return fmt.Errorf("invalid merkle root (remote: %x local: %x) dberr: %w", header.Root, root, statedb.Error())
 	}
+	// In verkle mode, verify the proof.
+	if v.config.IsVerkle(header.Number, header.Time) {
+		// Check that all keys in the witness were used
+		keys := statedb.Witness().Keys()
+		var (
+			key      [32]byte // reconstructed key, to be searched for in witness
+			keycount int      // number of keys found
+		)
+		for _, stemdiff := range block.ExecutionWitness().StateDiff {
+			copy(key[:31], stemdiff.Stem[:])
+			for _, suffixdiff := range stemdiff.SuffixDiffs {
+				key[31] = suffixdiff.Suffix
+
+				var found bool
+				for _, k := range keys {
+					if bytes.Equal(k, key[:]) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					return fmt.Errorf("superfluous key %x could not be found in witness", key)
+				}
+				keycount++
+			}
+		}
+
+		// In order to make sure that the provided witness isn't missing any keys,
+		// compare the counts. This will catch incomplete witnesses at the post root,
+		// the key count and the inclusion check should be enough to garantee these
+		// two trees are the same, without executing the block statelessly.
+		if keycount != len(keys) {
+			return fmt.Errorf("locations seem to be missing from the tree: got %d locations, expected %d", keycount, len(keys))
+		}
+
+		// Open the pre-tree to prove the pre-state against
+		parent := v.bc.GetHeaderByNumber(header.Number.Uint64() - 1)
+		if parent == nil {
+			return fmt.Errorf("nil parent header for block %d", header.Number)
+		}
+
+		// Verify the proof
+		if err := trie.DeserializeAndVerifyVerkleProof(block.ExecutionWitness().VerkleProof, parent.Root.Bytes(), block.Root().Bytes(), block.ExecutionWitness().StateDiff); err != nil {
+			return fmt.Errorf("error verifying proof at block %d: %w", block.NumberU64(), err)
+		}
+	}
+
 	// Verify that the advertised root is correct before
 	// it can be used as an identifier for the conversion
 	// status.
