@@ -451,6 +451,7 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 			codeHash := crypto.Keccak256Hash(acc.Code)
 			rawdb.WriteCode(codeWriter, codeHash, acc.Code)
 		}
+		statedb.Commit(0, false)
 
 		return statedb
 	}
