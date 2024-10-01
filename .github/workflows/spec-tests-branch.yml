@@ -4,7 +4,7 @@ on:
   push:
     branches: [master]
   pull_request:
-    branches: [master, kaustinen-with-shapella]
+    branches: [master, kaustinen-with-shapella, jsign-witness-fix]
   workflow_dispatch:
 
 env:
