@@ -4,7 +4,7 @@ on:
   push:
     branches: [master]
   pull_request:
-    branches: [master, kaustinen-with-shapella]
+    branches: [master, kaustinen-with-shapella, jsign-witness-fix]
   workflow_dispatch:
 
 env:
@@ -71,13 +71,9 @@ jobs:
           extract: true
       - name: Clone execution-spec-tests and consume tests
         run: |
-          git clone https://github.com/ethereum/execution-spec-tests
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          git clone https://github.com/ethereum/execution-spec-tests  -b ${{ env.FIXTURES_TAG }} --depth 1
           cd execution-spec-tests
-          git checkout 250a064ba38cd92cad02691f4f7c2ecbefedd954
-          python3 -m venv venv
-          . venv/bin/activate
-          pip install --upgrade pip
-          pip install -e ".[docs,lint,test]"
-          solc-select use 0.8.24 --always-install
-          consume direct --input=../fixtures -n auto
+          uv sync
+          uv run consume direct --input=../fixtures -n auto
         shell: bash
