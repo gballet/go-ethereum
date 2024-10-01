@@ -61,17 +61,14 @@ jobs:
 
       - name: Clone execution-spec-tests and fill tests
         run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
           git clone https://github.com/${{ env.EEST_USER }}/execution-spec-tests -b ${{ env.EEST_BRANCH }}
           cd execution-spec-tests
-          python3 -m venv venv
-          . venv/bin/activate
-          pip install --upgrade pip
-          pip install -e ".[docs,lint,test]"
-          solc-select use 0.8.24 --always-install
+          uv sync
           if [ "${{ matrix.test-type }}" == "genesis" ]; then
-            fill --fork Verkle --output=../fixtures-${{ matrix.test-type }} -v -m blockchain_test -n auto
+            uv run fill --fork Verkle --output=../fixtures-${{ matrix.test-type }} -v -m blockchain_test -n auto
           else
-            fill --from Shanghai --until EIP6800Transition --output=../fixtures-${{ matrix.test-type }} -v -m blockchain_test -n auto
+            uv run fill --from Shanghai --until EIP6800Transition --output=../fixtures-${{ matrix.test-type }} -v -m blockchain_test -n auto
           fi
         shell: bash
 
@@ -107,12 +104,9 @@ jobs:
 
       - name: Clone execution-spec-tests and consume tests
         run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
           git clone https://github.com/${{ env.EEST_USER }}/execution-spec-tests -b ${{ env.EEST_BRANCH }}
           cd execution-spec-tests
-          python3 -m venv venv
-          . venv/bin/activate
-          pip install --upgrade pip
-          pip install -e ".[docs,lint,test]"
-          solc-select use 0.8.24 --always-install
-          consume direct --input=../fixtures-${{ matrix.test-type }} -n auto
+          uv sync
+          uv run consume direct --input=../fixtures-${{ matrix.test-type }} -n auto
         shell: bash
