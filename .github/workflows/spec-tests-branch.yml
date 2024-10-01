@@ -62,7 +62,7 @@ jobs:
       - name: Clone execution-spec-tests and fill tests
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
-          git clone https://github.com/${{ env.EEST_USER }}/execution-spec-tests -b ${{ env.EEST_BRANCH }}
+          git clone https://github.com/${{ env.EEST_USER }}/execution-spec-tests -b ${{ env.EEST_BRANCH }} --depth 1
           cd execution-spec-tests
           uv sync
           if [ "${{ matrix.test-type }}" == "genesis" ]; then

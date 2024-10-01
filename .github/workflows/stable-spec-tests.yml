@@ -75,5 +75,5 @@ jobs:
           git clone https://github.com/ethereum/execution-spec-tests  -b ${{ env.FIXTURES_TAG }} --depth 1
           cd execution-spec-tests
           uv sync
-          uv run consume direct --input=../fixtures -n auto
+          uv run consume direct --evm-bin="${{ github.workspace }}/bin/evm" --input=../fixtures -n auto
         shell: bash
