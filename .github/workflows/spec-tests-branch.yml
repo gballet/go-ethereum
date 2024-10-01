@@ -66,9 +66,9 @@ jobs:
           cd execution-spec-tests
           uv sync
           if [ "${{ matrix.test-type }}" == "genesis" ]; then
-            uv run fill --fork Verkle --output=../fixtures-${{ matrix.test-type }} -v -m blockchain_test -n auto
+            uv run fill --evm-bin="${{ github.workspace }}/bin/evm" --fork Verkle --output=../fixtures-${{ matrix.test-type }} -v -m blockchain_test -n auto
           else
-            uv run fill --from Shanghai --until EIP6800Transition --output=../fixtures-${{ matrix.test-type }} -v -m blockchain_test -n auto
+            uv run fill --evm-bin="${{ github.workspace }}/bin/evm" --from Shanghai --until EIP6800Transition --output=../fixtures-${{ matrix.test-type }} -v -m blockchain_test -n auto
           fi
         shell: bash
 
