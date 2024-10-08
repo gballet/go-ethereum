@@ -991,9 +991,10 @@ func opSelfdestruct6780(pc *uint64, interpreter *EVMInterpreter, scope *ScopeCon
 		if !interpreter.evm.Accesses.TouchBasicData(contractAddr[:], false, scope.Contract.UseGas, false) {
 			return nil, ErrExecutionReverted
 		}
-		balanceIsZero := interpreter.evm.StateDB.GetBalance(contractAddr).Sign() == 0
 
-		if _, isPrecompile := interpreter.evm.precompile(beneficiaryAddr); !(isPrecompile && balanceIsZero) {
+		balanceIsZero := interpreter.evm.StateDB.GetBalance(contractAddr).Sign() == 0
+		_, isPrecompile := interpreter.evm.precompile(beneficiaryAddr)
+		if (!isPrecompile && !interpreter.evm.isSystemContract(beneficiaryAddr)) || !balanceIsZero {
 			if contractAddr != beneficiaryAddr {
 				if !interpreter.evm.Accesses.TouchBasicData(beneficiaryAddr[:], false, scope.Contract.UseGas, false) {
 					return nil, ErrExecutionReverted
