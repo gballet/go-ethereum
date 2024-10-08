@@ -763,7 +763,7 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 
 func chargeCallVariantEIP4762(evm *EVM, scope *ScopeContext) bool {
 	target := common.Address(scope.Stack.Back(1).Bytes20())
-	if _, isPrecompile := evm.precompile(target); isPrecompile {
+	if _, isPrecompile := evm.precompile(target); isPrecompile || evm.isSystemContract(target) {
 		return scope.Contract.UseGas(params.WarmStorageReadCostEIP2929)
 	}
 	// The charging for the value transfer is done BEFORE subtracting
@@ -1078,7 +1078,7 @@ func opPush1(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 			// touch next chunk if PUSH1 is at the boundary. if so, *pc has
 			// advanced past this boundary.
 			codeAddr := scope.Contract.CodeAddr
-			if !interpreter.evm.Accesses.TouchCodeChunksRangeAndChargeGas(codeAddr[:], *pc+1, uint64(1), uint64(len(scope.Contract.Code)), false, scope.Contract.UseGas) {
+			if !interpreter.evm.Accesses.TouchCodeChunksRangeAndChargeGas(codeAddr[:], *pc, uint64(1), uint64(len(scope.Contract.Code)), false, scope.Contract.UseGas) {
 				scope.Contract.Gas = 0
 				return nil, ErrOutOfGas
 			}
