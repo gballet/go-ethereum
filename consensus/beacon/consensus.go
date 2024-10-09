@@ -362,12 +362,14 @@ func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.
 	}
 
 	// Withdrawals processing.
-	for _, w := range body.Withdrawals {
-		if auraEngine, ok := beacon.ethone.(*aura.AuRa); ok {
+	if auraEngine, ok := beacon.ethone.(*aura.AuRa); ok {
+		if body.Withdrawals != nil {
 			if err := auraEngine.ExecuteSystemWithdrawals(body.Withdrawals); err != nil {
 				panic(err)
 			}
-		} else {
+		}
+	} else {
+		for _, w := range body.Withdrawals {
 			// Convert amount from gwei to wei.
 			amount := new(uint256.Int).SetUint64(w.Amount)
 			amount = amount.Mul(amount, uint256.NewInt(params.GWei))
