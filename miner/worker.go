@@ -175,7 +175,6 @@ func (miner *Miner) prepareWork(genParams *generateParams) (*environment, error)
 	if err != nil {
 		return nil, err
 	}
-	state.StartPrefetcher("miner")
 
 	b, ok := miner.engine.(*beacon.Beacon)
 	if ok {
