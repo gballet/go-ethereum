@@ -263,7 +263,7 @@ func opBalance(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 	address := common.Address(slot.Bytes20())
 	if interpreter.evm.chainRules.IsVerkle {
 		if !interpreter.evm.Accesses.TouchBasicData(address[:], false, scope.Contract.UseGas, true) {
-			return nil, ErrExecutionReverted
+			return nil, ErrOutOfGas
 		}
 	}
 	slot.SetFromBig(interpreter.evm.StateDB.GetBalance(address))
@@ -353,11 +353,11 @@ func opExtCodeSize(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	if interpreter.evm.chainRules.IsVerkle {
 		if _, isPrecompile := interpreter.evm.precompile(address); isPrecompile {
 			if !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929) {
-				return nil, ErrExecutionReverted
+				return nil, ErrOutOfGas
 			}
 		} else {
 			if !interpreter.evm.Accesses.TouchBasicData(address[:], false, scope.Contract.UseGas, true) {
-				return nil, ErrExecutionReverted
+				return nil, ErrOutOfGas
 			}
 		}
 	}
@@ -408,11 +408,11 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 		addr := common.Address(a.Bytes20())
 		if _, isPrecompile := interpreter.evm.precompile(addr); isPrecompile {
 			if !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929) {
-				return nil, ErrExecutionReverted
+				return nil, ErrOutOfGas
 			}
 		} else {
 			if !interpreter.evm.Accesses.TouchBasicData(addr[:], false, scope.Contract.UseGas, true) {
-				return nil, ErrExecutionReverted
+				return nil, ErrOutOfGas
 			}
 		}
 	}
@@ -474,11 +474,11 @@ func opExtCodeHash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	if interpreter.evm.chainRules.IsVerkle {
 		if _, isPrecompile := interpreter.evm.precompile(address); isPrecompile || interpreter.evm.isSystemContract(address) {
 			if !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929) {
-				return nil, ErrExecutionReverted
+				return nil, ErrOutOfGas
 			}
 		} else {
 			if !interpreter.evm.Accesses.TouchCodeHash(address[:], false, scope.Contract.UseGas) {
-				return nil, ErrExecutionReverted
+				return nil, ErrOutOfGas
 			}
 		}
 	}
@@ -520,7 +520,7 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 			var pnum common.Hash
 			binary.BigEndian.PutUint64(pnum[24:], ringIndex)
 			if !evm.Accesses.TouchSlotAndChargeGas(params.HistoryStorageAddress[:], pnum, false, scope.Contract.UseGas, false) {
-				return nil, ErrExecutionReverted
+				return nil, ErrOutOfGas
 			}
 			blockHash := evm.StateDB.GetState(params.HistoryStorageAddress, pnum)
 			num.SetBytes(blockHash.Bytes())
@@ -596,7 +596,7 @@ func opSload(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 	hash := common.Hash(loc.Bytes32())
 	if interpreter.evm.chainRules.IsVerkle {
 		if !interpreter.evm.Accesses.TouchSlotAndChargeGas(scope.Contract.Address().Bytes(), loc.Bytes32(), false, scope.Contract.UseGas, true) {
-			return nil, ErrExecutionReverted
+			return nil, ErrOutOfGas
 		}
 	}
 	val := interpreter.evm.StateDB.GetState(scope.Contract.Address(), hash)
@@ -612,7 +612,7 @@ func opSstore(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 	val := scope.Stack.pop()
 	if interpreter.evm.chainRules.IsVerkle {
 		if !interpreter.evm.Accesses.TouchSlotAndChargeGas(scope.Contract.Address().Bytes(), loc.Bytes32(), true, scope.Contract.UseGas, true) {
-			return nil, ErrExecutionReverted
+			return nil, ErrOutOfGas
 		}
 	}
 
@@ -787,7 +787,7 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 		// is subtracted from the available gas pool.
 		if transfersValue {
 			if !interpreter.evm.Accesses.TouchAndChargeValueTransfer(scope.Contract.Address().Bytes()[:], address.Bytes()[:], scope.Contract.UseGas) {
-				return nil, ErrExecutionReverted
+				return nil, ErrOutOfGas
 			}
 		}
 	}
@@ -802,7 +802,7 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 	}
 
 	if interpreter.evm.chainRules.IsEIP4762 && !chargeCallVariantEIP4762(interpreter.evm, scope) {
-		return nil, ErrExecutionReverted
+		return nil, ErrOutOfGas
 	}
 
 	stack := scope.Stack
@@ -847,7 +847,7 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 
 func opCallCode(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	if interpreter.evm.chainRules.IsEIP4762 && !chargeCallVariantEIP4762(interpreter.evm, scope) {
-		return nil, ErrExecutionReverted
+		return nil, ErrOutOfGas
 	}
 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
 	stack := scope.Stack
@@ -885,7 +885,7 @@ func opCallCode(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 
 func opDelegateCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	if interpreter.evm.chainRules.IsEIP4762 && !chargeCallVariantEIP4762(interpreter.evm, scope) {
-		return nil, ErrExecutionReverted
+		return nil, ErrOutOfGas
 	}
 	stack := scope.Stack
 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
@@ -916,7 +916,7 @@ func opDelegateCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 
 func opStaticCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	if interpreter.evm.chainRules.IsEIP4762 && !chargeCallVariantEIP4762(interpreter.evm, scope) {
-		return nil, ErrExecutionReverted
+		return nil, ErrOutOfGas
 	}
 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
 	stack := scope.Stack
@@ -989,7 +989,7 @@ func opSelfdestruct6780(pc *uint64, interpreter *EVMInterpreter, scope *ScopeCon
 		contractAddr := scope.Contract.Address()
 
 		if !interpreter.evm.Accesses.TouchBasicData(contractAddr[:], false, scope.Contract.UseGas, false) {
-			return nil, ErrExecutionReverted
+			return nil, ErrOutOfGas
 		}
 
 		balanceIsZero := interpreter.evm.StateDB.GetBalance(contractAddr).Sign() == 0
@@ -998,22 +998,22 @@ func opSelfdestruct6780(pc *uint64, interpreter *EVMInterpreter, scope *ScopeCon
 		if (!isPrecompile && !isSystemContract) || !balanceIsZero {
 			if contractAddr != beneficiaryAddr {
 				if !interpreter.evm.Accesses.TouchBasicData(beneficiaryAddr[:], false, scope.Contract.UseGas, false) {
-					return nil, ErrExecutionReverted
+					return nil, ErrOutOfGas
 				}
 			}
 			// Charge write costs if it transfers value
 			if !balanceIsZero {
 				if !interpreter.evm.Accesses.TouchBasicData(contractAddr[:], true, scope.Contract.UseGas, false) {
-					return nil, ErrExecutionReverted
+					return nil, ErrOutOfGas
 				}
 				if contractAddr != beneficiaryAddr {
 					if interpreter.evm.StateDB.Exist(beneficiaryAddr) {
 						if !interpreter.evm.Accesses.TouchBasicData(beneficiaryAddr[:], true, scope.Contract.UseGas, false) {
-							return nil, ErrExecutionReverted
+							return nil, ErrOutOfGas
 						}
 					} else {
 						if !interpreter.evm.Accesses.TouchFullAccount(beneficiaryAddr[:], true, scope.Contract.UseGas) {
-							return nil, ErrExecutionReverted
+							return nil, ErrOutOfGas
 						}
 					}
 				}
