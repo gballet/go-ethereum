@@ -792,16 +792,16 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 		}
 	}
 
+	if interpreter.evm.chainRules.IsEIP4762 && !chargeCallVariantEIP4762(interpreter.evm, scope) {
+		return nil, ErrOutOfGas
+	}
+
 	var err error
 	interpreter.evm.callGasTemp, err = callGas(interpreter.evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
 	if err != nil {
 		return nil, err
 	}
 	if !scope.Contract.UseGas(interpreter.evm.callGasTemp) {
-		return nil, ErrOutOfGas
-	}
-
-	if interpreter.evm.chainRules.IsEIP4762 && !chargeCallVariantEIP4762(interpreter.evm, scope) {
 		return nil, ErrOutOfGas
 	}
 
@@ -849,6 +849,15 @@ func opCallCode(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	if interpreter.evm.chainRules.IsEIP4762 && !chargeCallVariantEIP4762(interpreter.evm, scope) {
 		return nil, ErrOutOfGas
 	}
+	var err error
+	interpreter.evm.callGasTemp, err = callGas(interpreter.evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
+	if err != nil {
+		return nil, err
+	}
+	if !scope.Contract.UseGas(interpreter.evm.callGasTemp) {
+		return nil, ErrOutOfGas
+	}
+
 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
 	stack := scope.Stack
 	// We use it as a temporary value
@@ -887,6 +896,15 @@ func opDelegateCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 	if interpreter.evm.chainRules.IsEIP4762 && !chargeCallVariantEIP4762(interpreter.evm, scope) {
 		return nil, ErrOutOfGas
 	}
+	var err error
+	interpreter.evm.callGasTemp, err = callGas(interpreter.evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
+	if err != nil {
+		return nil, err
+	}
+	if !scope.Contract.UseGas(interpreter.evm.callGasTemp) {
+		return nil, ErrOutOfGas
+	}
+
 	stack := scope.Stack
 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
 	// We use it as a temporary value
@@ -918,6 +936,15 @@ func opStaticCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) 
 	if interpreter.evm.chainRules.IsEIP4762 && !chargeCallVariantEIP4762(interpreter.evm, scope) {
 		return nil, ErrOutOfGas
 	}
+	var err error
+	interpreter.evm.callGasTemp, err = callGas(interpreter.evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
+	if err != nil {
+		return nil, err
+	}
+	if !scope.Contract.UseGas(interpreter.evm.callGasTemp) {
+		return nil, ErrOutOfGas
+	}
+
 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
 	stack := scope.Stack
 	// We use it as a temporary value
