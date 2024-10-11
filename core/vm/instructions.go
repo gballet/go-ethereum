@@ -490,7 +490,7 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 			blockHash, statelessGas := getBlockHashFromContract(num64, evm.StateDB, evm.Accesses)
 			if interpreter.evm.chainRules.IsEIP4762 {
 				if !scope.Contract.UseGas(statelessGas) {
-					return nil, ErrExecutionReverted
+					return nil, ErrOutOfGas
 				}
 			}
 			num.SetBytes(blockHash.Bytes())
@@ -955,7 +955,7 @@ func opPush1(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 			// touch next chunk if PUSH1 is at the boundary. if so, *pc has
 			// advanced past this boundary.
 			codeAddr := scope.Contract.CodeAddr
-			statelessGas, wanted := interpreter.evm.Accesses.TouchCodeChunksRangeAndChargeGas(codeAddr[:], *pc+1, uint64(1), uint64(len(scope.Contract.Code)), false, scope.Contract.Gas)
+			statelessGas, wanted := interpreter.evm.Accesses.TouchCodeChunksRangeAndChargeGas(codeAddr[:], *pc, uint64(1), uint64(len(scope.Contract.Code)), false, scope.Contract.Gas)
 			scope.Contract.UseGas(statelessGas)
 			if statelessGas < wanted {
 				return nil, ErrOutOfGas

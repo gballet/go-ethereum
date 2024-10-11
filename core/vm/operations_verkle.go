@@ -58,7 +58,9 @@ func makeCallVariantGasEIP4762(oldCalculator gasFunc) gasFunc {
 			return 0, err
 		}
 		target := common.Address(stack.Back(1).Bytes20())
-		if _, isPrecompile := evm.precompile(target); isPrecompile {
+		_, isPrecompile := evm.precompile(target)
+		isSystemContract := evm.isSystemContract(target)
+		if isPrecompile || isSystemContract {
 			var overflow bool
 			if gas, overflow = math.SafeAdd(gas, params.WarmStorageReadCostEIP2929); overflow {
 				return 0, ErrGasUintOverflow
@@ -88,8 +90,10 @@ func gasSelfdestructEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Mem
 
 	statelessGas := evm.Accesses.TouchBasicData(contractAddr[:], false, contract.Gas, false)
 	balanceIsZero := evm.StateDB.GetBalance(contractAddr).Sign() == 0
+	_, isPrecompile := evm.precompile(beneficiaryAddr)
+	isSystemContract := evm.isSystemContract(beneficiaryAddr)
 
-	if _, isPrecompile := evm.precompile(beneficiaryAddr); isPrecompile && balanceIsZero {
+	if (isPrecompile || isSystemContract) && balanceIsZero {
 		return statelessGas, nil
 	}
 
