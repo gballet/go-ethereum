@@ -20,6 +20,7 @@ import (
 	"encoding/binary"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
@@ -778,6 +779,27 @@ func chargeCallVariantEIP4762(evm *EVM, scope *ScopeContext) bool {
 
 }
 
+func getMemSize(operation *operation, stack *Stack) (uint64, error) {
+	// All ops with a dynamic memory usage also has a dynamic gas cost.
+	var memorySize uint64
+	// calculate the new memory size and expand the memory to fit
+	// the operation
+	// Memory check needs to be done prior to evaluating the dynamic gas portion,
+	// to detect calculation overflows
+	if operation.memorySize != nil {
+		memSize, overflow := operation.memorySize(stack)
+		if overflow {
+			return 0, ErrGasUintOverflow
+		}
+		// memory is expanded in words of 32 bytes. Gas
+		// is also calculated in words.
+		if memorySize, overflow = math.SafeMul(toWordSize(memSize), 32); overflow {
+			return 0, ErrGasUintOverflow
+		}
+	}
+	return memorySize, nil
+}
+
 func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	if interpreter.evm.chainRules.IsEIP4762 {
 		address := common.Address(scope.Stack.Back(1).Bytes20())
@@ -795,8 +817,15 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 	if interpreter.evm.chainRules.IsEIP4762 && !chargeCallVariantEIP4762(interpreter.evm, scope) {
 		return nil, ErrOutOfGas
 	}
+	memSize, err := getMemSize(interpreter.table[CALL], scope.Stack)
+	if err != nil {
+		return nil, err
+	}
+	dynamicCost, err := gasCall(interpreter.evm, scope.Contract, scope.Stack, scope.Memory, memSize)
+	if err != nil || !scope.Contract.UseGas(dynamicCost) {
+		return nil, ErrOutOfGas
+	}
 
-	var err error
 	interpreter.evm.callGasTemp, err = callGas(interpreter.evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
 	if err != nil {
 		return nil, err
@@ -849,7 +878,14 @@ func opCallCode(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	if interpreter.evm.chainRules.IsEIP4762 && !chargeCallVariantEIP4762(interpreter.evm, scope) {
 		return nil, ErrOutOfGas
 	}
-	var err error
+	memSize, err := getMemSize(interpreter.table[CALLCODE], scope.Stack)
+	if err != nil {
+		return nil, err
+	}
+	dynamicCost, err := gasCallCode(interpreter.evm, scope.Contract, scope.Stack, scope.Memory, memSize)
+	if err != nil || !scope.Contract.UseGas(dynamicCost) {
+		return nil, ErrOutOfGas
+	}
 	interpreter.evm.callGasTemp, err = callGas(interpreter.evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
 	if err != nil {
 		return nil, err
@@ -896,7 +932,14 @@ func opDelegateCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 	if interpreter.evm.chainRules.IsEIP4762 && !chargeCallVariantEIP4762(interpreter.evm, scope) {
 		return nil, ErrOutOfGas
 	}
-	var err error
+	memSize, err := getMemSize(interpreter.table[DELEGATECALL], scope.Stack)
+	if err != nil {
+		return nil, err
+	}
+	dynamicCost, err := gasDelegateCall(interpreter.evm, scope.Contract, scope.Stack, scope.Memory, memSize)
+	if err != nil || !scope.Contract.UseGas(dynamicCost) {
+		return nil, ErrOutOfGas
+	}
 	interpreter.evm.callGasTemp, err = callGas(interpreter.evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
 	if err != nil {
 		return nil, err
@@ -936,7 +979,15 @@ func opStaticCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) 
 	if interpreter.evm.chainRules.IsEIP4762 && !chargeCallVariantEIP4762(interpreter.evm, scope) {
 		return nil, ErrOutOfGas
 	}
-	var err error
+
+	memSize, err := getMemSize(interpreter.table[STATICCALL], scope.Stack)
+	if err != nil {
+		return nil, err
+	}
+	dynamicCost, err := gasCall(interpreter.evm, scope.Contract, scope.Stack, scope.Memory, memSize)
+	if err != nil || !scope.Contract.UseGas(dynamicCost) {
+		return nil, ErrOutOfGas
+	}
 	interpreter.evm.callGasTemp, err = callGas(interpreter.evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
 	if err != nil {
 		return nil, err
