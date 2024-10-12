@@ -233,7 +233,8 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 				in.evm.Config.Tracer.CaptureState(pc, op, gasCopy, cost, callContext, in.returnData, in.evm.depth, err)
 				logged = true
 			}
-			if memorySize > 0 {
+			// TODO(hack): remove if conditions
+			if op != CALL && op != CALLCODE && op != DELEGATECALL && op != STATICCALL && memorySize > 0 {
 				mem.Resize(memorySize)
 			}
 		} else if debug {

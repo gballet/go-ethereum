@@ -825,6 +825,9 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 	if err != nil || !scope.Contract.UseGas(dynamicCost) {
 		return nil, ErrOutOfGas
 	}
+	if memSize > 0 {
+		scope.Memory.Resize(memSize)
+	}
 
 	interpreter.evm.callGasTemp, err = callGas(interpreter.evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
 	if err != nil {
@@ -886,6 +889,9 @@ func opCallCode(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	if err != nil || !scope.Contract.UseGas(dynamicCost) {
 		return nil, ErrOutOfGas
 	}
+	if memSize > 0 {
+		scope.Memory.Resize(memSize)
+	}
 	interpreter.evm.callGasTemp, err = callGas(interpreter.evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
 	if err != nil {
 		return nil, err
@@ -940,6 +946,9 @@ func opDelegateCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 	if err != nil || !scope.Contract.UseGas(dynamicCost) {
 		return nil, ErrOutOfGas
 	}
+	if memSize > 0 {
+		scope.Memory.Resize(memSize)
+	}
 	interpreter.evm.callGasTemp, err = callGas(interpreter.evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
 	if err != nil {
 		return nil, err
@@ -987,6 +996,9 @@ func opStaticCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) 
 	dynamicCost, err := gasCall(interpreter.evm, scope.Contract, scope.Stack, scope.Memory, memSize)
 	if err != nil || !scope.Contract.UseGas(dynamicCost) {
 		return nil, ErrOutOfGas
+	}
+	if memSize > 0 {
+		scope.Memory.Resize(memSize)
 	}
 	interpreter.evm.callGasTemp, err = callGas(interpreter.evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
 	if err != nil {
