@@ -801,9 +801,9 @@ func getMemSize(operation *operation, stack *Stack) (uint64, error) {
 }
 
 func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	transfersValue := !scope.Stack.Back(2).IsZero()
 	if interpreter.evm.chainRules.IsEIP4762 {
 		address := common.Address(scope.Stack.Back(1).Bytes20())
-		transfersValue := !scope.Stack.Back(2).IsZero()
 
 		// If value is transferred, it is charged before 1/64th
 		// is subtracted from the available gas pool.
@@ -814,7 +814,7 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 		}
 	}
 
-	if interpreter.evm.chainRules.IsEIP4762 && !chargeCallVariantEIP4762(interpreter.evm, scope) {
+	if interpreter.evm.chainRules.IsEIP4762 && !transfersValue && !chargeCallVariantEIP4762(interpreter.evm, scope) {
 		return nil, ErrOutOfGas
 	}
 	memSize, err := getMemSize(interpreter.table[CALL], scope.Stack)
