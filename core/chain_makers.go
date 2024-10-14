@@ -431,6 +431,12 @@ func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine
 			keyvals = append(keyvals, block.ExecutionWitness().StateDiff)
 			proots = append(proots, parent.Root())
 
+			// quick check that we are self-consistent
+			err = trie.DeserializeAndVerifyVerkleProof(block.ExecutionWitness().VerkleProof, block.ExecutionWitness().ParentStateRoot[:], block.Root().Bytes(), block.ExecutionWitness().StateDiff)
+			if err != nil {
+				panic(err)
+			}
+
 			return block, b.receipts
 		}
 		return nil, nil

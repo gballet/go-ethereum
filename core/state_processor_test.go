@@ -29,6 +29,7 @@ import (
 	//"os"
 	"testing"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -475,6 +476,10 @@ func TestProcessVerkle(t *testing.T) {
 					Balance: big.NewInt(1000000000000000000), // 1 ether
 					Nonce:   0,
 				},
+				params.HistoryStorageAddress: GenesisAccount{
+					Balance: big.NewInt(0),
+					Nonce:   1,
+				},
 			},
 		}
 		loggerCfg = &logger.Config{}
@@ -601,6 +606,13 @@ func TestProcessVerkle(t *testing.T) {
 	//rlp.Encode(&buf, chain[1])
 	//f.Write(buf.Bytes())
 	//fmt.Printf("root= %x\n", chain[0].Root())
+
+	// check the proof for the 1st block
+	err = trie.DeserializeAndVerifyVerkleProof(proofs[0], genesis.Root().Bytes(), chain[0].Root().Bytes(), keyvals[0])
+	if err != nil {
+		spew.Dump(genesis.Root().Bytes(), proofs[0])
+		t.Fatal(err)
+	}
 	// check the proof for the last block
 	err = trie.DeserializeAndVerifyVerkleProof(proofs[1], chain[0].Root().Bytes(), chain[1].Root().Bytes(), keyvals[1])
 	if err != nil {
@@ -667,6 +679,10 @@ func TestProcessVerkleInvalidContractCreation(t *testing.T) {
 				},
 				account2: GenesisAccount{
 					Balance: big.NewInt(1000000000000000000), // 1 ether
+					Nonce:   1,
+				},
+				params.HistoryStorageAddress: GenesisAccount{
+					Balance: big.NewInt(0),
 					Nonce:   1,
 				},
 			},
@@ -775,8 +791,8 @@ func TestProcessVerkleInvalidContractCreation(t *testing.T) {
 				if stemStateDiff.SuffixDiffs[0].NewValue == nil {
 					t.Fatalf("missing post state value for BLOCKHASH contract at block #2")
 				}
-				if *stemStateDiff.SuffixDiffs[0].NewValue != common.HexToHash("ac9ab8a7d88cfee11ebcda5f47232c07fcb393c8916e37fa67eb5e315b1f8ef6") {
-					t.Fatalf("invalid post state value for BLOCKHASH contract at block #2: ac9ab8a7d88cfee11ebcda5f47232c07fcb393c8916e37fa67eb5e315b1f8ef6 != %x", (*stemStateDiff.SuffixDiffs[0].NewValue)[:])
+				if *stemStateDiff.SuffixDiffs[0].NewValue != common.HexToHash("0788c2c0f23aa07eb8bf76fe6c1ca9064a4821c1fd0af803913da488a58dba54") {
+					t.Fatalf("invalid post state value for BLOCKHASH contract at block #2: 0788c2c0f23aa07eb8bf76fe6c1ca9064a4821c1fd0af803913da488a58dba54 != %x", (*stemStateDiff.SuffixDiffs[0].NewValue)[:])
 				}
 			} else if suffixDiff.Suffix > 4 {
 				t.Fatalf("invalid suffix diff found for %x in block #2: %d\n", stemStateDiff.Stem, suffixDiff.Suffix)
@@ -826,6 +842,10 @@ func TestProcessVerkleContractWithEmptyCode(t *testing.T) {
 				account2: GenesisAccount{
 					Balance: big.NewInt(1000000000000000000), // 1 ether
 					Nonce:   3,
+				},
+				params.HistoryStorageAddress: GenesisAccount{
+					Balance: big.NewInt(0),
+					Nonce:   1,
 				},
 			},
 		}
@@ -921,6 +941,10 @@ func TestProcessVerklExtCodeHashOpcode(t *testing.T) {
 				account2: GenesisAccount{
 					Balance: big.NewInt(1000000000000000000), // 1 ether
 					Nonce:   3,
+				},
+				params.HistoryStorageAddress: GenesisAccount{
+					Balance: big.NewInt(0),
+					Nonce:   1,
 				},
 			},
 		}
@@ -1053,6 +1077,10 @@ func TestProcessVerkleBalanceOpcode(t *testing.T) {
 					Balance: big.NewInt(1000000000000000000), // 1 ether
 					Nonce:   3,
 				},
+				params.HistoryStorageAddress: GenesisAccount{
+					Balance: big.NewInt(0),
+					Nonce:   1,
+				},
 			},
 		}
 	)
@@ -1147,6 +1175,10 @@ func TestProcessVerkleSelfDestructInSeparateTx(t *testing.T) {
 				account2: GenesisAccount{
 					Balance: big.NewInt(1000000000000000000), // 1 ether
 					Nonce:   3,
+				},
+				params.HistoryStorageAddress: GenesisAccount{
+					Balance: big.NewInt(0),
+					Nonce:   1,
 				},
 			},
 		}
@@ -1295,6 +1327,10 @@ func TestProcessVerkleSelfDestructInSameTx(t *testing.T) {
 					Balance: big.NewInt(1000000000000000000), // 1 ether
 					Nonce:   3,
 				},
+				params.HistoryStorageAddress: GenesisAccount{
+					Balance: big.NewInt(0),
+					Nonce:   1,
+				},
 			},
 		}
 	)
@@ -1419,6 +1455,10 @@ func TestProcessVerkleSelfDestructInSeparateTxWithSelfBeneficiary(t *testing.T) 
 					Balance: big.NewInt(1000000000000000000), // 1 ether
 					Nonce:   3,
 				},
+				params.HistoryStorageAddress: GenesisAccount{
+					Balance: big.NewInt(0),
+					Nonce:   1,
+				},
 			},
 		}
 	)
@@ -1539,6 +1579,10 @@ func TestProcessVerkleSelfDestructInSameTxWithSelfBeneficiary(t *testing.T) {
 				account2: GenesisAccount{
 					Balance: big.NewInt(1000000000000000000), // 1 ether
 					Nonce:   3,
+				},
+				params.HistoryStorageAddress: GenesisAccount{
+					Balance: big.NewInt(0),
+					Nonce:   1,
 				},
 			},
 		}
