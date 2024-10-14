@@ -110,8 +110,8 @@ func (aw *AccessWitness) TouchAndChargeValueTransfer(callerAddr, targetAddr []by
 	if !ok {
 		return false
 	}
-	_, ok = aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, true, useGasFn)
-	return ok
+	chargedGas, ok := aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, true, useGasFn)
+	return ok && (chargedGas > 0 || useGasFn(params.WarmStorageReadCostEIP2929))
 }
 
 // TouchAndChargeContractCreateCheck charges access costs before
