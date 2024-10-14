@@ -200,10 +200,9 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 	debug := evm.Config.Tracer != nil
 
 	if !evm.StateDB.Exist(addr) {
-		if !isPrecompile && evm.chainRules.IsEIP4762 {
-			// add proof of absence to witness
+		if !isPrecompile && evm.chainRules.IsEIP4762 && value.Sign() != 0 {
 			gc := gasConsumer{availableGas: gas}
-			ok := evm.Accesses.TouchFullAccount(addr.Bytes(), false, gc.consumeGas)
+			ok := evm.Accesses.TouchCodeHash(addr.Bytes(), true, gc.consumeGas)
 			if !ok {
 				evm.StateDB.RevertToSnapshot(snapshot)
 				return nil, 0, ErrOutOfGas
