@@ -200,10 +200,15 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 	debug := evm.Config.Tracer != nil
 
 	if !evm.StateDB.Exist(addr) {
-		if !isPrecompile && evm.chainRules.IsEIP4762 {
-			// add proof of absence to witness
+		if !isPrecompile && evm.chainRules.IsEIP4762 && value.Sign() != 0 {
 			gc := gasConsumer{availableGas: gas}
-			ok := evm.Accesses.TouchFullAccount(addr.Bytes(), false, gc.consumeGas)
+			// At this point, the read costs have already been charged, either because this
+			// is a direct tx call, in which case it's covered by the intrinsic gas, or because
+			// of a CALL instruction, in which case BASIC_DATA has been added to the access
+			// list in write mode. If there is enough gas paying for the addition of the code
+			// hash leaf to the access list, then account creation will proceed unimpaired. 
+			// Thus, only pay for the creation of the code hash leaf here.
+			ok := evm.Accesses.TouchCodeHash(addr.Bytes(), true, gc.consumeGas)
 			if !ok {
 				evm.StateDB.RevertToSnapshot(snapshot)
 				return nil, 0, ErrOutOfGas
