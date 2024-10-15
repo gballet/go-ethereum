@@ -817,18 +817,21 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 	if interpreter.evm.chainRules.IsEIP4762 && !transfersValue && !chargeCallVariantEIP4762(interpreter.evm, scope) {
 		return nil, ErrOutOfGas
 	}
-	memSize, err := getMemSize(interpreter.table[CALL], scope.Stack)
-	if err != nil {
-		return nil, err
-	}
-	dynamicCost, err := gasCall(interpreter.evm, scope.Contract, scope.Stack, scope.Memory, memSize)
-	if err != nil || !scope.Contract.UseGas(dynamicCost) {
-		return nil, ErrOutOfGas
-	}
-	if memSize > 0 {
-		scope.Memory.Resize(memSize)
+	if interpreter.evm.chainRules.IsEIP4762 {
+		memSize, err := getMemSize(interpreter.table[CALL], scope.Stack)
+		if err != nil {
+			return nil, err
+		}
+		dynamicCost, err := gasCall(interpreter.evm, scope.Contract, scope.Stack, scope.Memory, memSize)
+		if err != nil || !scope.Contract.UseGas(dynamicCost) {
+			return nil, ErrOutOfGas
+		}
+		if memSize > 0 {
+			scope.Memory.Resize(memSize)
+		}
 	}
 
+	var err error
 	interpreter.evm.callGasTemp, err = callGas(interpreter.evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
 	if err != nil {
 		return nil, err
@@ -881,17 +884,20 @@ func opCallCode(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	if interpreter.evm.chainRules.IsEIP4762 && !chargeCallVariantEIP4762(interpreter.evm, scope) {
 		return nil, ErrOutOfGas
 	}
-	memSize, err := getMemSize(interpreter.table[CALLCODE], scope.Stack)
-	if err != nil {
-		return nil, err
+	if interpreter.evm.chainRules.IsEIP4762 {
+		memSize, err := getMemSize(interpreter.table[CALLCODE], scope.Stack)
+		if err != nil {
+			return nil, err
+		}
+		dynamicCost, err := gasCallCode(interpreter.evm, scope.Contract, scope.Stack, scope.Memory, memSize)
+		if err != nil || !scope.Contract.UseGas(dynamicCost) {
+			return nil, ErrOutOfGas
+		}
+		if memSize > 0 {
+			scope.Memory.Resize(memSize)
+		}
 	}
-	dynamicCost, err := gasCallCode(interpreter.evm, scope.Contract, scope.Stack, scope.Memory, memSize)
-	if err != nil || !scope.Contract.UseGas(dynamicCost) {
-		return nil, ErrOutOfGas
-	}
-	if memSize > 0 {
-		scope.Memory.Resize(memSize)
-	}
+	var err error
 	interpreter.evm.callGasTemp, err = callGas(interpreter.evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
 	if err != nil {
 		return nil, err
@@ -938,17 +944,20 @@ func opDelegateCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 	if interpreter.evm.chainRules.IsEIP4762 && !chargeCallVariantEIP4762(interpreter.evm, scope) {
 		return nil, ErrOutOfGas
 	}
-	memSize, err := getMemSize(interpreter.table[DELEGATECALL], scope.Stack)
-	if err != nil {
-		return nil, err
+	if interpreter.evm.chainRules.IsEIP4762 {
+		memSize, err := getMemSize(interpreter.table[DELEGATECALL], scope.Stack)
+		if err != nil {
+			return nil, err
+		}
+		dynamicCost, err := gasDelegateCall(interpreter.evm, scope.Contract, scope.Stack, scope.Memory, memSize)
+		if err != nil || !scope.Contract.UseGas(dynamicCost) {
+			return nil, ErrOutOfGas
+		}
+		if memSize > 0 {
+			scope.Memory.Resize(memSize)
+		}
 	}
-	dynamicCost, err := gasDelegateCall(interpreter.evm, scope.Contract, scope.Stack, scope.Memory, memSize)
-	if err != nil || !scope.Contract.UseGas(dynamicCost) {
-		return nil, ErrOutOfGas
-	}
-	if memSize > 0 {
-		scope.Memory.Resize(memSize)
-	}
+	var err error
 	interpreter.evm.callGasTemp, err = callGas(interpreter.evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
 	if err != nil {
 		return nil, err
@@ -989,17 +998,20 @@ func opStaticCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) 
 		return nil, ErrOutOfGas
 	}
 
-	memSize, err := getMemSize(interpreter.table[STATICCALL], scope.Stack)
-	if err != nil {
-		return nil, err
+	if interpreter.evm.chainRules.IsEIP4762 {
+		memSize, err := getMemSize(interpreter.table[STATICCALL], scope.Stack)
+		if err != nil {
+			return nil, err
+		}
+		dynamicCost, err := gasStaticCall(interpreter.evm, scope.Contract, scope.Stack, scope.Memory, memSize)
+		if err != nil || !scope.Contract.UseGas(dynamicCost) {
+			return nil, ErrOutOfGas
+		}
+		if memSize > 0 {
+			scope.Memory.Resize(memSize)
+		}
 	}
-	dynamicCost, err := gasCall(interpreter.evm, scope.Contract, scope.Stack, scope.Memory, memSize)
-	if err != nil || !scope.Contract.UseGas(dynamicCost) {
-		return nil, ErrOutOfGas
-	}
-	if memSize > 0 {
-		scope.Memory.Resize(memSize)
-	}
+	var err error
 	interpreter.evm.callGasTemp, err = callGas(interpreter.evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
 	if err != nil {
 		return nil, err
