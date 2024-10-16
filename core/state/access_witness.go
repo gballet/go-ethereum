@@ -144,7 +144,7 @@ func (aw *AccessWitness) TouchTxOriginAndComputeGas(originAddr []byte) {
 
 func (aw *AccessWitness) TouchTxExistingAndComputeGas(targetAddr []byte, sendsValue bool) {
 	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, sendsValue, nil)
-	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.CodeHashLeafKey, false, nil)
+	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.CodeHashLeafKey, sendsValue, nil)
 }
 
 func (aw *AccessWitness) TouchSlotAndChargeGas(addr []byte, slot common.Hash, isWrite bool, useGasFn UseGasFn, warmCostCharging bool) bool {
