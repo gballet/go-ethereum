@@ -396,7 +396,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 		st.evm.Accesses.TouchTxOriginAndComputeGas(originAddr.Bytes())
 
 		if msg.To != nil {
-			st.evm.Accesses.TouchTxTarget(targetAddr.Bytes())
+			st.evm.Accesses.TouchTxTarget(targetAddr.Bytes(), msg.Value.Sign() != 0)
 
 			// ensure the code size ends up in the access witness
 			st.evm.StateDB.GetCodeSize(*targetAddr)

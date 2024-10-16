@@ -142,8 +142,8 @@ func (aw *AccessWitness) TouchTxOriginAndComputeGas(originAddr []byte) {
 	}
 }
 
-func (aw *AccessWitness) TouchTxTarget(targetAddr []byte) {
-	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, true, nil)
+func (aw *AccessWitness) TouchTxTarget(targetAddr []byte, sendsValue bool) {
+	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, sendsValue, nil)
 	// Note that we do a write-event in CodeHash without distinguishing if the tx target account
 	// exists or not. Pre-7702, there's no situation in which an existing codeHash can be mutated, thus
 	// doing a write-event shouldn't cause an observable difference in gas usage.
