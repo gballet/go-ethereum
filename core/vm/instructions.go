@@ -352,7 +352,8 @@ func opExtCodeSize(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	address := slot.Bytes20()
 	cs := uint64(interpreter.evm.StateDB.GetCodeSize(address))
 	if interpreter.evm.chainRules.IsVerkle {
-		if _, isPrecompile := interpreter.evm.precompile(address); isPrecompile {
+		isSystemContract := interpreter.evm.isSystemContract(address)
+		if _, isPrecompile := interpreter.evm.precompile(address); isPrecompile || isSystemContract {
 			if !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929) {
 				return nil, ErrOutOfGas
 			}
@@ -407,7 +408,8 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 
 	if interpreter.evm.chainRules.IsVerkle {
 		addr := common.Address(a.Bytes20())
-		if _, isPrecompile := interpreter.evm.precompile(addr); isPrecompile {
+		isSystemContract := interpreter.evm.isSystemContract(addr)
+		if _, isPrecompile := interpreter.evm.precompile(addr); isPrecompile || isSystemContract {
 			if !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929) {
 				return nil, ErrOutOfGas
 			}
