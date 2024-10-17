@@ -144,12 +144,7 @@ func (aw *AccessWitness) TouchTxOriginAndComputeGas(originAddr []byte) {
 
 func (aw *AccessWitness) TouchTxTarget(targetAddr []byte, sendsValue bool) {
 	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, sendsValue, nil)
-	// Note that we do a write-event in CodeHash without distinguishing if the tx target account
-	// exists or not. Pre-7702, there's no situation in which an existing codeHash can be mutated, thus
-	// doing a write-event shouldn't cause an observable difference in gas usage.
-	// TODO(7702): re-check this in the spec and implementation to be sure is a correct solution after
-	// EIP-7702 is implemented.
-	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.CodeHashLeafKey, true, nil)
+	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.CodeHashLeafKey, false, nil)
 }
 
 func (aw *AccessWitness) TouchSlotAndChargeGas(addr []byte, slot common.Hash, isWrite bool, useGasFn UseGasFn, warmCostCharging bool) bool {

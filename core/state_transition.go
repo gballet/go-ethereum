@@ -397,6 +397,9 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 
 		if msg.To != nil {
 			st.evm.Accesses.TouchTxTarget(targetAddr.Bytes(), msg.Value.Sign() != 0)
+			if !st.state.Exist(*targetAddr) {
+				st.evm.Accesses.TouchCodeHash(targetAddr.Bytes(), true, nil, false)
+			}
 
 			// ensure the code size ends up in the access witness
 			st.evm.StateDB.GetCodeSize(*targetAddr)
