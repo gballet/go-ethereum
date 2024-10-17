@@ -284,7 +284,7 @@ func (aw *AccessWitness) TouchBasicData(addr []byte, isWrite bool, useGasFn UseG
 	return ok && (!warmCostCharging || chargedGas > 0 || useGasFn(params.WarmStorageReadCostEIP2929))
 }
 
-func (aw *AccessWitness) TouchCodeHash(addr []byte, isWrite bool, useGasFn UseGasFn) bool {
+func (aw *AccessWitness) TouchCodeHash(addr []byte, isWrite bool, useGasFn UseGasFn, warmCostCharging bool) bool {
 	chargedGas, ok := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeHashLeafKey, isWrite, useGasFn)
-	return ok && (chargedGas > 0 || useGasFn(params.WarmStorageReadCostEIP2929))
+	return ok && (!warmCostCharging || chargedGas > 0 || useGasFn(params.WarmStorageReadCostEIP2929))
 }
