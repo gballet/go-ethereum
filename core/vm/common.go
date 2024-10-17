@@ -92,3 +92,15 @@ func allZero(b []byte) bool {
 	}
 	return true
 }
+
+type gasConsumer struct {
+	availableGas uint64
+}
+
+func (gc *gasConsumer) consumeGas(gas uint64) bool {
+	if gc.availableGas < gas {
+		return false
+	}
+	gc.availableGas -= gas
+	return true
+}

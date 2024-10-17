@@ -20,7 +20,7 @@ import (
 	"encoding/binary"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
@@ -262,6 +262,11 @@ func opAddress(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 func opBalance(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	slot := scope.Stack.peek()
 	address := common.Address(slot.Bytes20())
+	if interpreter.evm.chainRules.IsVerkle {
+		if !interpreter.evm.Accesses.TouchBasicData(address[:], false, scope.Contract.UseGas, true) {
+			return nil, ErrOutOfGas
+		}
+	}
 	slot.SetFromBig(interpreter.evm.StateDB.GetBalance(address))
 	return nil, nil
 }
@@ -346,6 +351,18 @@ func opExtCodeSize(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	slot := scope.Stack.peek()
 	address := slot.Bytes20()
 	cs := uint64(interpreter.evm.StateDB.GetCodeSize(address))
+	if interpreter.evm.chainRules.IsVerkle {
+		isSystemContract := interpreter.evm.isSystemContract(address)
+		if _, isPrecompile := interpreter.evm.precompile(address); isPrecompile || isSystemContract {
+			if !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929) {
+				return nil, ErrOutOfGas
+			}
+		} else {
+			if !interpreter.evm.Accesses.TouchBasicData(address[:], false, scope.Contract.UseGas, true) {
+				return nil, ErrOutOfGas
+			}
+		}
+	}
 	slot.SetUint64(cs)
 	return nil, nil
 }
@@ -371,8 +388,7 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	codeAddr := scope.Contract.CodeAddr
 	paddedCodeCopy, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(scope.Contract.Code, uint64CodeOffset, length.Uint64())
 	if interpreter.evm.chainRules.IsEIP4762 && !scope.Contract.IsDeployment {
-		statelessGas := interpreter.evm.Accesses.TouchCodeChunksRangeAndChargeGas(codeAddr[:], copyOffset, nonPaddedCopyLength, uint64(len(scope.Contract.Code)), false)
-		if !scope.Contract.UseGas(statelessGas) {
+		if !interpreter.evm.Accesses.TouchCodeChunksRangeAndChargeGas(codeAddr[:], copyOffset, nonPaddedCopyLength, uint64(len(scope.Contract.Code)), false, scope.Contract.UseGas) {
 			scope.Contract.Gas = 0
 			return nil, ErrOutOfGas
 		}
@@ -389,6 +405,21 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 		codeOffset = stack.pop()
 		length     = stack.pop()
 	)
+
+	if interpreter.evm.chainRules.IsVerkle {
+		addr := common.Address(a.Bytes20())
+		isSystemContract := interpreter.evm.isSystemContract(addr)
+		if _, isPrecompile := interpreter.evm.precompile(addr); isPrecompile || isSystemContract {
+			if !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929) {
+				return nil, ErrOutOfGas
+			}
+		} else {
+			if !interpreter.evm.Accesses.TouchBasicData(addr[:], false, scope.Contract.UseGas, true) {
+				return nil, ErrOutOfGas
+			}
+		}
+	}
+
 	uint64CodeOffset, overflow := codeOffset.Uint64WithOverflow()
 	if overflow {
 		uint64CodeOffset = 0xffffffffffffffff
@@ -401,8 +432,7 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 			self: AccountRef(addr),
 		}
 		paddedCodeCopy, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(code, uint64CodeOffset, length.Uint64())
-		statelessGas := interpreter.evm.Accesses.TouchCodeChunksRangeAndChargeGas(addr[:], copyOffset, nonPaddedCopyLength, uint64(len(contract.Code)), false)
-		if !scope.Contract.UseGas(statelessGas) {
+		if !interpreter.evm.Accesses.TouchCodeChunksRangeAndChargeGas(addr[:], copyOffset, nonPaddedCopyLength, uint64(len(contract.Code)), false, scope.Contract.UseGas) {
 			scope.Contract.Gas = 0
 			return nil, ErrOutOfGas
 		}
@@ -444,6 +474,17 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 func opExtCodeHash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	slot := scope.Stack.peek()
 	address := common.Address(slot.Bytes20())
+	if interpreter.evm.chainRules.IsVerkle {
+		if _, isPrecompile := interpreter.evm.precompile(address); isPrecompile || interpreter.evm.isSystemContract(address) {
+			if !scope.Contract.UseGas(params.WarmStorageReadCostEIP2929) {
+				return nil, ErrOutOfGas
+			}
+		} else {
+			if !interpreter.evm.Accesses.TouchCodeHash(address[:], false, scope.Contract.UseGas, true) {
+				return nil, ErrOutOfGas
+			}
+		}
+	}
 	if interpreter.evm.StateDB.Empty(address) {
 		slot.Clear()
 	} else {
@@ -456,14 +497,6 @@ func opGasprice(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	v, _ := uint256.FromBig(interpreter.evm.GasPrice)
 	scope.Stack.push(v)
 	return nil, nil
-}
-
-func getBlockHashFromContract(number uint64, statedb StateDB, witness *state.AccessWitness) (common.Hash, uint64) {
-	ringIndex := number % params.Eip2935BlockHashHistorySize
-	var pnum common.Hash
-	binary.BigEndian.PutUint64(pnum[24:], ringIndex)
-	statelessGas := witness.TouchSlotAndChargeGas(params.HistoryStorageAddress[:], pnum, false)
-	return statedb.GetState(params.HistoryStorageAddress, pnum), statelessGas
 }
 
 func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
@@ -486,12 +519,13 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 	if num64 >= lower && num64 < upper {
 		// if Verkle is active, read it from the history contract (EIP 2935).
 		if evm.chainRules.IsVerkle {
-			blockHash, statelessGas := getBlockHashFromContract(num64, evm.StateDB, evm.Accesses)
-			if interpreter.evm.chainRules.IsEIP4762 {
-				if !scope.Contract.UseGas(statelessGas) {
-					return nil, ErrExecutionReverted
-				}
+			ringIndex := num64 % params.Eip2935BlockHashHistorySize
+			var pnum common.Hash
+			binary.BigEndian.PutUint64(pnum[24:], ringIndex)
+			if !evm.Accesses.TouchSlotAndChargeGas(params.HistoryStorageAddress[:], pnum, false, scope.Contract.UseGas, false) {
+				return nil, ErrOutOfGas
 			}
+			blockHash := evm.StateDB.GetState(params.HistoryStorageAddress, pnum)
 			num.SetBytes(blockHash.Bytes())
 		} else {
 			num.SetBytes(interpreter.evm.Context.GetHash(num64).Bytes())
@@ -563,8 +597,12 @@ func opMstore8(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 func opSload(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	loc := scope.Stack.peek()
 	hash := common.Hash(loc.Bytes32())
+	if interpreter.evm.chainRules.IsVerkle {
+		if !interpreter.evm.Accesses.TouchSlotAndChargeGas(scope.Contract.Address().Bytes(), loc.Bytes32(), false, scope.Contract.UseGas, true) {
+			return nil, ErrOutOfGas
+		}
+	}
 	val := interpreter.evm.StateDB.GetState(scope.Contract.Address(), hash)
-
 	loc.SetBytes(val.Bytes())
 	return nil, nil
 }
@@ -575,6 +613,12 @@ func opSstore(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 	}
 	loc := scope.Stack.pop()
 	val := scope.Stack.pop()
+	if interpreter.evm.chainRules.IsVerkle {
+		if !interpreter.evm.Accesses.TouchSlotAndChargeGas(scope.Contract.Address().Bytes(), loc.Bytes32(), true, scope.Contract.UseGas, true) {
+			return nil, ErrOutOfGas
+		}
+	}
+
 	interpreter.evm.StateDB.SetState(scope.Contract.Address(), loc.Bytes32(), val.Bytes32())
 	return nil, nil
 }
@@ -585,7 +629,7 @@ func opJump(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 	}
 	pos := scope.Stack.pop()
 	if !scope.Contract.validJumpdest(&pos) {
-		if !scope.Contract.UseGas(interpreter.evm.TxContext.Accesses.TouchCodeChunksRangeAndChargeGas(scope.Contract.CodeAddr[:], pos.Uint64(), 1, uint64(len(scope.Contract.Code)), false)) {
+		if !interpreter.evm.TxContext.Accesses.TouchCodeChunksRangeAndChargeGas(scope.Contract.CodeAddr[:], pos.Uint64(), 1, uint64(len(scope.Contract.Code)), false, scope.Contract.UseGas) {
 			return nil, ErrOutOfGas
 		}
 		return nil, ErrInvalidJump
@@ -601,7 +645,7 @@ func opJumpi(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 	pos, cond := scope.Stack.pop(), scope.Stack.pop()
 	if !cond.IsZero() {
 		if !scope.Contract.validJumpdest(&pos) {
-			if !scope.Contract.UseGas(interpreter.evm.TxContext.Accesses.TouchCodeChunksRangeAndChargeGas(scope.Contract.CodeAddr[:], pos.Uint64(), 1, uint64(len(scope.Contract.Code)), false)) {
+			if !interpreter.evm.TxContext.Accesses.TouchCodeChunksRangeAndChargeGas(scope.Contract.CodeAddr[:], pos.Uint64(), 1, uint64(len(scope.Contract.Code)), false, scope.Contract.UseGas) {
 				return nil, ErrOutOfGas
 			}
 			return nil, ErrInvalidJump
@@ -720,7 +764,84 @@ func opCreate2(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 	return nil, nil
 }
 
+func chargeCallVariantEIP4762(evm *EVM, scope *ScopeContext) bool {
+	target := common.Address(scope.Stack.Back(1).Bytes20())
+	if _, isPrecompile := evm.precompile(target); isPrecompile || evm.isSystemContract(target) {
+		return scope.Contract.UseGas(params.WarmStorageReadCostEIP2929)
+	}
+	// The charging for the value transfer is done BEFORE subtracting
+	// the 1/64th gas, as this is considered part of the CALL instruction.
+	// (so before we get to this point)
+	// But the message call is part of the subcall, for which only 63/64th
+	// of the gas should be available.
+	if !evm.Accesses.TouchAndChargeMessageCall(target.Bytes(), scope.Contract.UseGas) {
+		return false
+	}
+	return true
+
+}
+
+func getMemSize(operation *operation, stack *Stack) (uint64, error) {
+	// All ops with a dynamic memory usage also has a dynamic gas cost.
+	var memorySize uint64
+	// calculate the new memory size and expand the memory to fit
+	// the operation
+	// Memory check needs to be done prior to evaluating the dynamic gas portion,
+	// to detect calculation overflows
+	if operation.memorySize != nil {
+		memSize, overflow := operation.memorySize(stack)
+		if overflow {
+			return 0, ErrGasUintOverflow
+		}
+		// memory is expanded in words of 32 bytes. Gas
+		// is also calculated in words.
+		if memorySize, overflow = math.SafeMul(toWordSize(memSize), 32); overflow {
+			return 0, ErrGasUintOverflow
+		}
+	}
+	return memorySize, nil
+}
+
 func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	transfersValue := !scope.Stack.Back(2).IsZero()
+	if interpreter.evm.chainRules.IsEIP4762 {
+		address := common.Address(scope.Stack.Back(1).Bytes20())
+
+		// If value is transferred, it is charged before 1/64th
+		// is subtracted from the available gas pool.
+		if transfersValue {
+			if !interpreter.evm.Accesses.TouchAndChargeValueTransfer(scope.Contract.Address().Bytes()[:], address.Bytes()[:], scope.Contract.UseGas) {
+				return nil, ErrOutOfGas
+			}
+		}
+	}
+
+	if interpreter.evm.chainRules.IsEIP4762 && !transfersValue && !chargeCallVariantEIP4762(interpreter.evm, scope) {
+		return nil, ErrOutOfGas
+	}
+	if interpreter.evm.chainRules.IsEIP4762 {
+		memSize, err := getMemSize(interpreter.table[CALL], scope.Stack)
+		if err != nil {
+			return nil, err
+		}
+		dynamicCost, err := gasCall(interpreter.evm, scope.Contract, scope.Stack, scope.Memory, memSize)
+		if err != nil || !scope.Contract.UseGas(dynamicCost) {
+			return nil, ErrOutOfGas
+		}
+		if memSize > 0 {
+			scope.Memory.Resize(memSize)
+		}
+	}
+
+	var err error
+	interpreter.evm.callGasTemp, err = callGas(interpreter.evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
+	if err != nil {
+		return nil, err
+	}
+	if !scope.Contract.UseGas(interpreter.evm.callGasTemp) {
+		return nil, ErrOutOfGas
+	}
+
 	stack := scope.Stack
 	// Pop gas. The actual gas in interpreter.evm.callGasTemp.
 	// We can use this as a temporary value
@@ -762,6 +883,31 @@ func opCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 }
 
 func opCallCode(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	if interpreter.evm.chainRules.IsEIP4762 && !chargeCallVariantEIP4762(interpreter.evm, scope) {
+		return nil, ErrOutOfGas
+	}
+	if interpreter.evm.chainRules.IsEIP4762 {
+		memSize, err := getMemSize(interpreter.table[CALLCODE], scope.Stack)
+		if err != nil {
+			return nil, err
+		}
+		dynamicCost, err := gasCallCode(interpreter.evm, scope.Contract, scope.Stack, scope.Memory, memSize)
+		if err != nil || !scope.Contract.UseGas(dynamicCost) {
+			return nil, ErrOutOfGas
+		}
+		if memSize > 0 {
+			scope.Memory.Resize(memSize)
+		}
+	}
+	var err error
+	interpreter.evm.callGasTemp, err = callGas(interpreter.evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
+	if err != nil {
+		return nil, err
+	}
+	if !scope.Contract.UseGas(interpreter.evm.callGasTemp) {
+		return nil, ErrOutOfGas
+	}
+
 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
 	stack := scope.Stack
 	// We use it as a temporary value
@@ -797,6 +943,31 @@ func opCallCode(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 }
 
 func opDelegateCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	if interpreter.evm.chainRules.IsEIP4762 && !chargeCallVariantEIP4762(interpreter.evm, scope) {
+		return nil, ErrOutOfGas
+	}
+	if interpreter.evm.chainRules.IsEIP4762 {
+		memSize, err := getMemSize(interpreter.table[DELEGATECALL], scope.Stack)
+		if err != nil {
+			return nil, err
+		}
+		dynamicCost, err := gasDelegateCall(interpreter.evm, scope.Contract, scope.Stack, scope.Memory, memSize)
+		if err != nil || !scope.Contract.UseGas(dynamicCost) {
+			return nil, ErrOutOfGas
+		}
+		if memSize > 0 {
+			scope.Memory.Resize(memSize)
+		}
+	}
+	var err error
+	interpreter.evm.callGasTemp, err = callGas(interpreter.evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
+	if err != nil {
+		return nil, err
+	}
+	if !scope.Contract.UseGas(interpreter.evm.callGasTemp) {
+		return nil, ErrOutOfGas
+	}
+
 	stack := scope.Stack
 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
 	// We use it as a temporary value
@@ -825,6 +996,32 @@ func opDelegateCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 }
 
 func opStaticCall(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	if interpreter.evm.chainRules.IsEIP4762 && !chargeCallVariantEIP4762(interpreter.evm, scope) {
+		return nil, ErrOutOfGas
+	}
+
+	if interpreter.evm.chainRules.IsEIP4762 {
+		memSize, err := getMemSize(interpreter.table[STATICCALL], scope.Stack)
+		if err != nil {
+			return nil, err
+		}
+		dynamicCost, err := gasStaticCall(interpreter.evm, scope.Contract, scope.Stack, scope.Memory, memSize)
+		if err != nil || !scope.Contract.UseGas(dynamicCost) {
+			return nil, ErrOutOfGas
+		}
+		if memSize > 0 {
+			scope.Memory.Resize(memSize)
+		}
+	}
+	var err error
+	interpreter.evm.callGasTemp, err = callGas(interpreter.evm.chainRules.IsEIP150, scope.Contract.Gas, 0, scope.Stack.Back(0))
+	if err != nil {
+		return nil, err
+	}
+	if !scope.Contract.UseGas(interpreter.evm.callGasTemp) {
+		return nil, ErrOutOfGas
+	}
+
 	// Pop gas. The actual gas is in interpreter.evm.callGasTemp.
 	stack := scope.Stack
 	// We use it as a temporary value
@@ -891,6 +1088,43 @@ func opSelfdestruct(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 }
 
 func opSelfdestruct6780(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
+	if interpreter.evm.chainRules.IsVerkle {
+		beneficiaryAddr := common.Address(scope.Stack.peek().Bytes20())
+		contractAddr := scope.Contract.Address()
+
+		if !interpreter.evm.Accesses.TouchBasicData(contractAddr[:], false, scope.Contract.UseGas, false) {
+			return nil, ErrOutOfGas
+		}
+
+		balanceIsZero := interpreter.evm.StateDB.GetBalance(contractAddr).Sign() == 0
+		_, isPrecompile := interpreter.evm.precompile(beneficiaryAddr)
+		isSystemContract := interpreter.evm.isSystemContract(beneficiaryAddr)
+		if (!isPrecompile && !isSystemContract) || !balanceIsZero {
+			if contractAddr != beneficiaryAddr {
+				if !interpreter.evm.Accesses.TouchBasicData(beneficiaryAddr[:], false, scope.Contract.UseGas, false) {
+					return nil, ErrOutOfGas
+				}
+			}
+			// Charge write costs if it transfers value
+			if !balanceIsZero {
+				if !interpreter.evm.Accesses.TouchBasicData(contractAddr[:], true, scope.Contract.UseGas, false) {
+					return nil, ErrOutOfGas
+				}
+				if contractAddr != beneficiaryAddr {
+					if interpreter.evm.StateDB.Exist(beneficiaryAddr) {
+						if !interpreter.evm.Accesses.TouchBasicData(beneficiaryAddr[:], true, scope.Contract.UseGas, false) {
+							return nil, ErrOutOfGas
+						}
+					} else {
+						if !interpreter.evm.Accesses.TouchFullAccount(beneficiaryAddr[:], true, scope.Contract.UseGas) {
+							return nil, ErrOutOfGas
+						}
+					}
+				}
+			}
+		}
+	}
+
 	if interpreter.readOnly {
 		return nil, ErrWriteProtection
 	}
@@ -950,8 +1184,7 @@ func opPush1(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 			// touch next chunk if PUSH1 is at the boundary. if so, *pc has
 			// advanced past this boundary.
 			codeAddr := scope.Contract.CodeAddr
-			statelessGas := interpreter.evm.Accesses.TouchCodeChunksRangeAndChargeGas(codeAddr[:], *pc+1, uint64(1), uint64(len(scope.Contract.Code)), false)
-			if !scope.Contract.UseGas(statelessGas) {
+			if !interpreter.evm.Accesses.TouchCodeChunksRangeAndChargeGas(codeAddr[:], *pc, uint64(1), uint64(len(scope.Contract.Code)), false, scope.Contract.UseGas) {
 				scope.Contract.Gas = 0
 				return nil, ErrOutOfGas
 			}
@@ -979,8 +1212,7 @@ func makePush(size uint64, pushByteSize int) executionFunc {
 
 		if !scope.Contract.IsDeployment && interpreter.evm.chainRules.IsVerkle {
 			codeAddr := scope.Contract.CodeAddr
-			statelessGas := interpreter.evm.Accesses.TouchCodeChunksRangeAndChargeGas(codeAddr[:], uint64(startMin), uint64(pushByteSize), uint64(len(scope.Contract.Code)), false)
-			if !scope.Contract.UseGas(statelessGas) {
+			if !interpreter.evm.Accesses.TouchCodeChunksRangeAndChargeGas(codeAddr[:], uint64(startMin), uint64(pushByteSize), uint64(len(scope.Contract.Code)), false, scope.Contract.UseGas) {
 				scope.Contract.Gas = 0
 				return nil, ErrOutOfGas
 			}
