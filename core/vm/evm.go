@@ -206,9 +206,9 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 			// is a direct tx call, in which case it's covered by the intrinsic gas, or because
 			// of a CALL instruction, in which case BASIC_DATA has been added to the access
 			// list in write mode. If there is enough gas paying for the addition of the code
-			// hash leaf to the access list, then account creation will proceed unimpaired. 
+			// hash leaf to the access list, then account creation will proceed unimpaired.
 			// Thus, only pay for the creation of the code hash leaf here.
-			ok := evm.Accesses.TouchCodeHash(addr.Bytes(), true, gc.consumeGas)
+			ok := evm.Accesses.TouchCodeHash(addr.Bytes(), true, gc.consumeGas, false)
 			if !ok {
 				evm.StateDB.RevertToSnapshot(snapshot)
 				return nil, 0, ErrOutOfGas
