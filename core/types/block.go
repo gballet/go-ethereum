@@ -73,6 +73,20 @@ func (ew *ExecutionWitness) Copy() *ExecutionWitness {
 	}
 }
 
+func (ew *ExecutionWitness) Equal(other *ExecutionWitness) error {
+	// Compare ew and other on every field
+	if err := ew.StateDiff.Equal(other.StateDiff); err != nil {
+		return fmt.Errorf("StateDiff mismatch: %v", err)
+	}
+	if err := ew.VerkleProof.Equal(other.VerkleProof); err != nil {
+		return fmt.Errorf("VerkleProof mismatch: %v", err)
+	}
+	if ew.ParentStateRoot != other.ParentStateRoot {
+		return fmt.Errorf("ParentStateRoot mismatch: %v != %v", ew.ParentStateRoot, other.ParentStateRoot)
+	}
+	return nil
+}
+
 //go:generate go run github.com/fjl/gencodec -type Header -field-override headerMarshaling -out gen_header_json.go
 //go:generate go run ../../rlp/rlpgen -type Header -out gen_header_rlp.go
 

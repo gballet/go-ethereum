@@ -1,6 +1,8 @@
 module github.com/ethereum/go-ethereum
 
-go 1.19
+go 1.22
+
+toolchain go1.22.1
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v0.3.0
@@ -131,3 +133,5 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
+
+replace github.com/ethereum/go-verkle => github.com/ethereum/go-verkle v0.1.1-0.20241021165427-bc7fa641294f
