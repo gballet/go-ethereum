@@ -81,9 +81,11 @@ func (ew *ExecutionWitness) Equal(other *ExecutionWitness) error {
 	if err := ew.VerkleProof.Equal(other.VerkleProof); err != nil {
 		return fmt.Errorf("VerkleProof mismatch: %v", err)
 	}
-	if ew.ParentStateRoot != other.ParentStateRoot {
-		return fmt.Errorf("ParentStateRoot mismatch: %v != %v", ew.ParentStateRoot, other.ParentStateRoot)
-	}
+	// TODO(jsign): commented until execution-spec-test includes parent state root
+	// in the witness.
+	// if ew.ParentStateRoot != other.ParentStateRoot {
+	// 	return fmt.Errorf("ParentStateRoot mismatch: %v != %v", ew.ParentStateRoot, other.ParentStateRoot)
+	// }
 	return nil
 }
 
@@ -447,6 +449,10 @@ func (b *Block) SetVerkleProof(vp *verkle.VerkleProof, statediff verkle.StateDif
 			IPAProof: &verkle.IPAProof{},
 		}
 	}
+}
+
+func (b *Block) SetExecutionWitness(ew *ExecutionWitness) {
+	b.header.ExecutionWitness = ew
 }
 
 type writeCounter uint64
