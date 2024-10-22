@@ -19,6 +19,7 @@ package core
 import (
 	"bytes"
 	"crypto/ecdsa"
+
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -45,6 +46,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie/utils"
+	"github.com/ethereum/go-verkle"
 
 	//"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
@@ -442,6 +444,62 @@ var (
 	intrinsicCodeWithExtCodeCopyGas, _ = IntrinsicGas(codeWithExtCodeCopy, nil, true, true, true, true)
 )
 
+// deserializeAndVerifyVerkleProof is a helper function that rebuilds the pre-tree from the proof, inserts
+// the post values inside the tree, checks that the roots match, and then ensure that the proof verifies.
+func deserializeAndVerifyVerkleProof(vp *verkle.VerkleProof, preStateRoot []byte, postStateRoot []byte, statediff verkle.StateDiff) error {
+	// TODO: check that `OtherStems` have expected length and values.
+
+	proof, err := verkle.DeserializeProof(vp, statediff)
+	if err != nil {
+		return fmt.Errorf("verkle proof deserialization error: %w", err)
+	}
+
+	rootC := new(verkle.Point)
+	rootC.SetBytes(preStateRoot)
+	pretree, err := verkle.PreStateTreeFromProof(proof, rootC)
+	if err != nil {
+		return fmt.Errorf("error rebuilding the pre-tree from proof: %w", err)
+	}
+	// TODO this should not be necessary, remove it
+	// after the new proof generation code has stabilized.
+	for _, stemdiff := range statediff {
+		for _, suffixdiff := range stemdiff.SuffixDiffs {
+			var key [32]byte
+			copy(key[:31], stemdiff.Stem[:])
+			key[31] = suffixdiff.Suffix
+
+			val, err := pretree.Get(key[:], nil)
+			if err != nil {
+				return fmt.Errorf("could not find key %x in tree rebuilt from proof: %w", key, err)
+			}
+			if len(val) > 0 {
+				if !bytes.Equal(val, suffixdiff.CurrentValue[:]) {
+					return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, *suffixdiff.CurrentValue)
+				}
+			} else {
+				if suffixdiff.CurrentValue != nil && len(suffixdiff.CurrentValue) != 0 {
+					return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, *suffixdiff.CurrentValue)
+				}
+			}
+		}
+	}
+
+	// TODO: this is necessary to verify that the post-values are the correct ones.
+	// But all this can be avoided with a even faster way. The EVM block execution can
+	// keep track of the written keys, and compare that list with this post-values list.
+	// This can avoid regenerating the post-tree which is somewhat expensive.
+	posttree, err := verkle.PostStateTreeFromStateDiff(pretree, statediff)
+	if err != nil {
+		return fmt.Errorf("error rebuilding the post-tree from proof: %w", err)
+	}
+	regeneratedPostTreeRoot := posttree.Commitment().Bytes()
+	if !bytes.Equal(regeneratedPostTreeRoot[:], postStateRoot) {
+		return fmt.Errorf("post tree root mismatch: %x != %x", regeneratedPostTreeRoot, postStateRoot)
+	}
+
+	return verkle.VerifyVerkleProofWithPreState(proof, pretree)
+}
+
 func TestProcessVerkle(t *testing.T) {
 	var (
 		config = &params.ChainConfig{
@@ -614,7 +672,7 @@ func TestProcessVerkle(t *testing.T) {
 		t.Fatal(err)
 	}
 	// check the proof for the last block
-	err = trie.DeserializeAndVerifyVerkleProof(proofs[1], chain[0].Root().Bytes(), chain[1].Root().Bytes(), keyvals[1])
+	err = deserializeAndVerifyVerkleProof(proofs[1], chain[0].Root().Bytes(), chain[1].Root().Bytes(), keyvals[1])
 	if err != nil {
 		t.Fatal(err)
 	}

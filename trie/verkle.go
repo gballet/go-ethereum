@@ -282,76 +282,32 @@ func (trie *VerkleTrie) IsVerkle() bool {
 	return true
 }
 
-func ProveAndSerialize(pretrie, posttrie *VerkleTrie, keys [][]byte, resolver verkle.NodeResolverFn) (*verkle.VerkleProof, verkle.StateDiff, error) {
+func AddPostValuesToProof(keys [][]byte, postroot *VerkleTrie, proof *verkle.Proof) error {
+	proof.PostValues = make([][]byte, len(keys))
+	if postroot != nil {
+		// keys were sorted already in the above GetcommitmentsForMultiproof.
+		// Set the post values, if they are untouched, leave them `nil`
+		for i := range keys {
+			val, err := postroot.root.Get(keys[i], nil)
+			if err != nil {
+				return fmt.Errorf("error getting post-state value for key %x: %w", keys[i], err)
+			}
+			if !bytes.Equal(proof.PreValues[i], val) {
+				proof.PostValues[i] = val
+			}
+		}
+	}
+
+	return nil
+}
+
+func Prove(pretrie, posttrie *VerkleTrie, keys [][]byte, resolver verkle.NodeResolverFn) (*verkle.Proof, error) {
 	var postroot verkle.VerkleNode
 	if posttrie != nil {
 		postroot = posttrie.root
 	}
 	proof, _, _, _, err := verkle.MakeVerkleMultiProof(pretrie.root, postroot, keys, resolver)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	p, kvps, err := verkle.SerializeProof(proof)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return p, kvps, nil
-}
-
-func DeserializeAndVerifyVerkleProof(vp *verkle.VerkleProof, preStateRoot []byte, postStateRoot []byte, statediff verkle.StateDiff) error {
-	// TODO: check that `OtherStems` have expected length and values.
-
-	proof, err := verkle.DeserializeProof(vp, statediff)
-	if err != nil {
-		return fmt.Errorf("verkle proof deserialization error: %w", err)
-	}
-
-	rootC := new(verkle.Point)
-	rootC.SetBytes(preStateRoot)
-	pretree, err := verkle.PreStateTreeFromProof(proof, rootC)
-	if err != nil {
-		return fmt.Errorf("error rebuilding the pre-tree from proof: %w", err)
-	}
-	// TODO this should not be necessary, remove it
-	// after the new proof generation code has stabilized.
-	for _, stemdiff := range statediff {
-		for _, suffixdiff := range stemdiff.SuffixDiffs {
-			var key [32]byte
-			copy(key[:31], stemdiff.Stem[:])
-			key[31] = suffixdiff.Suffix
-
-			val, err := pretree.Get(key[:], nil)
-			if err != nil {
-				return fmt.Errorf("could not find key %x in tree rebuilt from proof: %w", key, err)
-			}
-			if len(val) > 0 {
-				if !bytes.Equal(val, suffixdiff.CurrentValue[:]) {
-					return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, *suffixdiff.CurrentValue)
-				}
-			} else {
-				if suffixdiff.CurrentValue != nil && len(suffixdiff.CurrentValue) != 0 {
-					return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, *suffixdiff.CurrentValue)
-				}
-			}
-		}
-	}
-
-	// TODO: this is necessary to verify that the post-values are the correct ones.
-	// But all this can be avoided with a even faster way. The EVM block execution can
-	// keep track of the written keys, and compare that list with this post-values list.
-	// This can avoid regenerating the post-tree which is somewhat expensive.
-	posttree, err := verkle.PostStateTreeFromStateDiff(pretree, statediff)
-	if err != nil {
-		return fmt.Errorf("error rebuilding the post-tree from proof: %w", err)
-	}
-	regeneratedPostTreeRoot := posttree.Commitment().Bytes()
-	if !bytes.Equal(regeneratedPostTreeRoot[:], postStateRoot) {
-		return fmt.Errorf("post tree root mismatch: %x != %x", regeneratedPostTreeRoot, postStateRoot)
-	}
-
-	return verkle.VerifyVerkleProofWithPreState(proof, pretree)
+	return proof, err
 }
 
 // ChunkedCode represents a sequence of 32-bytes chunks of code (31 bytes of which
