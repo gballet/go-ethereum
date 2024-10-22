@@ -4,11 +4,12 @@ on:
   push:
     branches: [master]
   pull_request:
-    branches: [master, kaustinen-with-shapella]
+    branches:
+      [master, kaustinen-with-shapella, witness-charging-order-with-limits]
   workflow_dispatch:
 
 env:
-  FIXTURES_TAG: "verkle@v0.0.5"
+  FIXTURES_TAG: "verkle@v0.0.6"
 
 jobs:
   setup:
