@@ -55,27 +55,29 @@ func gasExtCodeHash4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory,
 
 func makeCallVariantGasEIP4762(oldCalculator gasFunc) gasFunc {
 	return func(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-		gas, err := oldCalculator(evm, contract, stack, mem, memorySize)
-		if err != nil {
-			return 0, err
-		}
 		target := common.Address(stack.Back(1).Bytes20())
+
 		_, isPrecompile := evm.precompile(target)
 		isSystemContract := evm.isSystemContract(target)
 		if isPrecompile || isSystemContract {
-			var overflow bool
-			if gas, overflow = math.SafeAdd(gas, params.WarmStorageReadCostEIP2929); overflow {
-				return 0, ErrGasUintOverflow
-			}
-			return gas, nil
+			return params.WarmStorageReadCostEIP2929, nil
 		}
+
 		// The charging for the value transfer is done BEFORE subtracting
 		// the 1/64th gas, as this is considered part of the CALL instruction.
 		// (so before we get to this point)
 		// But the message call is part of the subcall, for which only 63/64th
 		// of the gas should be available.
-		wgas := evm.Accesses.TouchAndChargeMessageCall(target.Bytes(), contract.Gas-gas)
-		return wgas + gas, nil
+		wantedWitnessGas := evm.Accesses.TouchAndChargeMessageCall(target.Bytes(), contract.Gas)
+		if wantedWitnessGas > contract.Gas {
+			return wantedWitnessGas, nil
+		}
+
+		gas, err := oldCalculator(evm, contract, stack, mem, memorySize)
+		if err != nil {
+			return 0, err
+		}
+		return wantedWitnessGas + gas, nil
 	}
 }
 
