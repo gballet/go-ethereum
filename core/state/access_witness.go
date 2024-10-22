@@ -94,7 +94,7 @@ func (aw *AccessWitness) TouchFullAccount(addr []byte, isWrite bool, availableGa
 	for i := utils.BasicDataLeafKey; i <= utils.CodeHashLeafKey; i++ {
 		consumed, wanted := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, byte(i), isWrite, availableGas)
 		if consumed < wanted {
-			return wanted
+			return wanted + gas
 		}
 		availableGas -= consumed
 		gas += consumed
