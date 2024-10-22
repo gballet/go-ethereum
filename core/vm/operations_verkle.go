@@ -73,26 +73,27 @@ func makeCallVariantGasEIP4762(oldCalculator gasFunc) gasFunc {
 			witnessGas = wantedValueTransferWitnessGas
 		} else if isPrecompile || isSystemContract {
 			witnessGas = params.WarmStorageReadCostEIP2929
-		}
-
-		// The charging for the value transfer is done BEFORE subtracting
-		// the 1/64th gas, as this is considered part of the CALL instruction.
-		// (so before we get to this point)
-		// But the message call is part of the subcall, for which only 63/64th
-		// of the gas should be available.
-		wantedMessageCallWitnessGas := evm.Accesses.TouchAndChargeMessageCall(target.Bytes(), contract.Gas-witnessGas)
-		var overflow bool
-		if witnessGas, overflow = math.SafeAdd(witnessGas, wantedMessageCallWitnessGas); overflow {
-			return 0, ErrGasUintOverflow
-		}
-		if witnessGas > contract.Gas {
-			return witnessGas, nil
+		} else {
+			// The charging for the value transfer is done BEFORE subtracting
+			// the 1/64th gas, as this is considered part of the CALL instruction.
+			// (so before we get to this point)
+			// But the message call is part of the subcall, for which only 63/64th
+			// of the gas should be available.
+			wantedMessageCallWitnessGas := evm.Accesses.TouchAndChargeMessageCall(target.Bytes(), contract.Gas-witnessGas)
+			var overflow bool
+			if witnessGas, overflow = math.SafeAdd(witnessGas, wantedMessageCallWitnessGas); overflow {
+				return 0, ErrGasUintOverflow
+			}
+			if witnessGas > contract.Gas {
+				return witnessGas, nil
+			}
 		}
 
 		gas, err := oldCalculator(evm, contract, stack, mem, memorySize)
 		if err != nil {
 			return 0, err
 		}
+		var overflow bool
 		if gas, overflow = math.SafeAdd(gas, witnessGas); overflow {
 			return 0, ErrGasUintOverflow
 		}
