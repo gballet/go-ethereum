@@ -89,10 +89,12 @@ func makeCallVariantGasEIP4762(oldCalculator gasFunc) gasFunc {
 			}
 		}
 
+		contract.Gas -= witnessGas
 		gas, err := oldCalculator(evm, contract, stack, mem, memorySize)
 		if err != nil {
 			return 0, err
 		}
+		contract.Gas += witnessGas
 		var overflow bool
 		if gas, overflow = math.SafeAdd(gas, witnessGas); overflow {
 			return 0, ErrGasUintOverflow
@@ -131,10 +133,12 @@ func makeCallVariantGasEIP4762WithoutTransfer(oldCalculator gasFunc) gasFunc {
 			}
 		}
 
+		contract.Gas -= witnessGas
 		gas, err := oldCalculator(evm, contract, stack, mem, memorySize)
 		if err != nil {
 			return 0, err
 		}
+		contract.Gas += witnessGas
 		var overflow bool
 		if gas, overflow = math.SafeAdd(gas, witnessGas); overflow {
 			return 0, ErrGasUintOverflow
