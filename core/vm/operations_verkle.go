@@ -37,7 +37,9 @@ func gasBalance4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, mem
 
 func gasExtCodeSize4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	address := stack.peek().Bytes20()
-	if _, isPrecompile := evm.precompile(address); isPrecompile {
+	isSystemContract := evm.isSystemContract(address)
+	_, isPrecompile := evm.precompile(address)
+	if isPrecompile || isSystemContract {
 		return params.WarmStorageReadCostEIP2929, nil
 	}
 	return evm.Accesses.TouchBasicData(address[:], false, contract.Gas, true), nil
@@ -48,7 +50,7 @@ func gasExtCodeHash4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory,
 	if _, isPrecompile := evm.precompile(address); isPrecompile || evm.isSystemContract(address) {
 		return params.WarmStorageReadCostEIP2929, nil
 	}
-	return evm.Accesses.TouchCodeHash(address[:], false, contract.Gas), nil
+	return evm.Accesses.TouchCodeHash(address[:], false, contract.Gas, true), nil
 }
 
 func makeCallVariantGasEIP4762(oldCalculator gasFunc) gasFunc {
@@ -126,7 +128,9 @@ func gasExtCodeCopyEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Memo
 	}
 	addr := common.Address(stack.peek().Bytes20())
 
-	if _, isPrecompile := evm.precompile(addr); isPrecompile {
+	isSystemContract := evm.isSystemContract(addr)
+	_, isPrecompile := evm.precompile(addr)
+	if isPrecompile || isSystemContract {
 		var overflow bool
 		if gas, overflow = math.SafeAdd(gas, params.WarmStorageReadCostEIP2929); overflow {
 			return 0, ErrGasUintOverflow

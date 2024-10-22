@@ -113,6 +113,9 @@ func (aw *AccessWitness) TouchAndChargeMessageCall(addr []byte, availableGas uin
 func (aw *AccessWitness) TouchAndChargeValueTransfer(callerAddr, targetAddr []byte, availableGas uint64) uint64 {
 	chargedGas1, _ := aw.touchAddressAndChargeGas(callerAddr, zeroTreeIndex, utils.BasicDataLeafKey, true, availableGas)
 	chargedGas2, _ := aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, true, availableGas-chargedGas1)
+	if chargedGas1+chargedGas2 == 0 {
+		return params.WarmStorageReadCostEIP2929
+	}
 	return chargedGas1 + chargedGas2
 }
 
@@ -140,9 +143,14 @@ func (aw *AccessWitness) TouchTxOriginAndComputeGas(originAddr []byte) {
 	}
 }
 
-func (aw *AccessWitness) TouchTxExistingAndComputeGas(targetAddr []byte, sendsValue bool) {
+func (aw *AccessWitness) TouchTxTarget(targetAddr []byte, sendsValue, doesntExist bool) {
 	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.BasicDataLeafKey, sendsValue, math.MaxUint64)
-	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.CodeHashLeafKey, false, math.MaxUint64)
+	// Note that we do a write-event in CodeHash without distinguishing if the tx target account
+	// exists or not. Pre-7702, there's no situation in which an existing codeHash can be mutated, thus
+	// doing a write-event shouldn't cause an observable difference in gas usage.
+	// TODO(7702): re-check this in the spec and implementation to be sure is a correct solution after
+	// EIP-7702 is implemented.
+	aw.touchAddressAndChargeGas(targetAddr, zeroTreeIndex, utils.CodeHashLeafKey, doesntExist, math.MaxUint64)
 }
 
 func (aw *AccessWitness) TouchSlotAndChargeGas(addr []byte, slot common.Hash, isWrite bool, availableGas uint64, warmCostCharging bool) uint64 {
@@ -294,9 +302,9 @@ func (aw *AccessWitness) TouchBasicData(addr []byte, isWrite bool, availableGas 
 	return wanted
 }
 
-func (aw *AccessWitness) TouchCodeHash(addr []byte, isWrite bool, availableGas uint64) uint64 {
+func (aw *AccessWitness) TouchCodeHash(addr []byte, isWrite bool, availableGas uint64, chargeWarmCosts bool) uint64 {
 	_, wanted := aw.touchAddressAndChargeGas(addr, zeroTreeIndex, utils.CodeHashLeafKey, isWrite, availableGas)
-	if wanted == 0 {
+	if wanted == 0 && chargeWarmCosts {
 		if availableGas < params.WarmStorageReadCostEIP2929 {
 			return availableGas
 		}
