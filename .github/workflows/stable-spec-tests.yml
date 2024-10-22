@@ -4,11 +4,11 @@ on:
   push:
     branches: [master]
   pull_request:
-    branches: [master, kaustinen-with-shapella, jsign-witness-fix]
+    branches: [master, kaustinen-with-shapella]
   workflow_dispatch:
 
 env:
-  FIXTURES_TAG: "verkle@v0.0.4"
+  FIXTURES_TAG: "verkle@v0.0.5"
 
 jobs:
   setup:
