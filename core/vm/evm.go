@@ -536,7 +536,7 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 		} else {
 			consumed, wanted := evm.Accesses.TouchCodeChunksRangeAndChargeGas(address.Bytes(), 0, uint64(len(ret)), uint64(len(ret)), true, contract.Gas)
 			contract.UseGas(consumed) // consumed <= contract.Gas, so no return value check is needed
-			if err == nil && len(ret) > 0 && (consumed < wanted) {
+			if len(ret) > 0 && (consumed < wanted) {
 				err = ErrCodeStoreOutOfGas
 			}
 		}
