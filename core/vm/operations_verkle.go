@@ -89,16 +89,14 @@ func makeCallVariantGasEIP4762(oldCalculator gasFunc, withTransferCosts bool) ga
 		}
 
 		contract.Gas -= witnessGas
+		// if the operation fails, adds witness gas to the gas before returning the error
 		gas, err := oldCalculator(evm, contract, stack, mem, memorySize)
-		if err != nil {
-			return 0, err
-		}
-		contract.Gas += witnessGas
+		contract.Gas += witnessGas // restore witness gas so that it can be charged at the callsite
 		var overflow bool
 		if gas, overflow = math.SafeAdd(gas, witnessGas); overflow {
 			return 0, ErrGasUintOverflow
 		}
-		return gas, nil
+		return gas, err
 	}
 }
 
