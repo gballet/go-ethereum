@@ -62,7 +62,7 @@ func (n *BlockNonce) UnmarshalText(input []byte) error {
 type ExecutionWitness struct {
 	StateDiff       verkle.StateDiff    `json:"stateDiff"`
 	VerkleProof     *verkle.VerkleProof `json:"verkleProof"`
-	ParentStateRoot common.Hash         `json:"parentStateRoot"`
+	ParentStateRoot common.Hash         `json:"parentRoot"`
 }
 
 func (ew *ExecutionWitness) Copy() *ExecutionWitness {
