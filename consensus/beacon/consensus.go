@@ -405,8 +405,16 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 		proot     common.Hash
 	)
 	if chain.Config().IsVerkle(header.Number, header.Time) {
+		parent := chain.GetHeaderByNumber(header.Number.Uint64() - 1)
+		if parent == nil {
+			return nil, fmt.Errorf("nil parent header for block %d", header.Number)
+		}
+		// Load transition state at beginning of block, because
+		// OpenTrie needs to know what the conversion status is.
+		state.Database().LoadTransitionState(parent.Root)
+
 		var err error
-		proot, stateDiff, proof, err = BuildVerkleProof(chain, header, state)
+		proot, stateDiff, proof, err = BuildVerkleProof(header, state, parent.Root)
 		if err != nil {
 			return nil, fmt.Errorf("error building verkle proof: %w", err)
 		}
@@ -420,24 +428,13 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	return block, nil
 }
 
-func BuildVerkleProof(chain consensus.ChainHeaderReader, header *types.Header, state *state.StateDB) (common.Hash, verkle.StateDiff, *verkle.VerkleProof, error) {
+func BuildVerkleProof(header *types.Header, state *state.StateDB, parentRoot common.Hash) (common.Hash, verkle.StateDiff, *verkle.VerkleProof, error) {
 	var (
 		proof     *verkle.VerkleProof
 		stateDiff verkle.StateDiff
 	)
 
-	// Open the pre-tree to prove the pre-state against
-	parent := chain.GetHeaderByNumber(header.Number.Uint64() - 1)
-	if parent == nil {
-		return common.Hash{}, nil, nil, fmt.Errorf("nil parent header for block %d", header.Number)
-	}
-	parentRoot := parent.Root
-
-	// Load transition state at beginning of block, because
-	// OpenTrie needs to know what the conversion status is.
-	state.Database().LoadTransitionState(parent.Root)
-
-	preTrie, err := state.Database().OpenTrie(parent.Root)
+	preTrie, err := state.Database().OpenTrie(parentRoot)
 	if err != nil {
 		return common.Hash{}, nil, nil, fmt.Errorf("error opening pre-state tree root: %w", err)
 	}

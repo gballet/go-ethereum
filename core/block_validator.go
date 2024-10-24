@@ -137,7 +137,11 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 	// test filling. When running these tests, geth decides when inserting some blocks that it is a side chain
 	// and the execution witness is lost. This is a workaround to avoid failing the tests until fixed.
 	if v.bc.Config().IsVerkle(header.Number, header.Time) && block.ExecutionWitness() != nil {
-		proot, stateDiff, proof, err := beacon.BuildVerkleProof(v.bc, header, statedb)
+		parent := v.bc.GetHeaderByNumber(header.Number.Uint64() - 1)
+		if parent == nil {
+			return fmt.Errorf("nil parent header for block %d", header.Number)
+		}
+		proot, stateDiff, proof, err := beacon.BuildVerkleProof(header, statedb, parent.Root)
 		if err != nil {
 			return fmt.Errorf("error building verkle proof: %w", err)
 		}
