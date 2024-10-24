@@ -172,7 +172,7 @@ func gasExtCodeCopyEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Memo
 		}
 		return gas, nil
 	}
-	wgas := evm.Accesses.TouchBasicData(addr[:], false, contract.Gas, true)
+	wgas := evm.Accesses.TouchBasicData(addr[:], false, contract.Gas-gas, true)
 	var overflow bool
 	if gas, overflow = math.SafeAdd(gas, wgas); overflow {
 		return 0, ErrGasUintOverflow
