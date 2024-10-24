@@ -81,11 +81,9 @@ func (ew *ExecutionWitness) Equal(other *ExecutionWitness) error {
 	if err := ew.VerkleProof.Equal(other.VerkleProof); err != nil {
 		return fmt.Errorf("VerkleProof mismatch: %v", err)
 	}
-	// TODO(jsign): commented until execution-spec-test includes parent state root
-	// in the witness.
-	// if ew.ParentStateRoot != other.ParentStateRoot {
-	// 	return fmt.Errorf("ParentStateRoot mismatch: %v != %v", ew.ParentStateRoot, other.ParentStateRoot)
-	// }
+	if ew.ParentStateRoot != other.ParentStateRoot {
+		return fmt.Errorf("ParentStateRoot mismatch: %v != %v", ew.ParentStateRoot, other.ParentStateRoot)
+	}
 	return nil
 }
 
