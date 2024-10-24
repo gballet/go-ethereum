@@ -164,18 +164,17 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		return h
 	}
 	var (
-		statedb     = MakePreState(rawdb.NewMemoryDatabase(), chainConfig, pre, chainConfig.IsVerkle(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp))
-		vtrpre      *trie.VerkleTrie
-		signer      = types.MakeSigner(chainConfig, new(big.Int).SetUint64(pre.Env.Number), pre.Env.Timestamp)
-		gaspool     = new(core.GasPool)
-		blockHash   = common.Hash{0x13, 0x37}
-		rejectedTxs []*rejectedTx
-		includedTxs types.Transactions
-		gasUsed     = uint64(0)
-		receipts    = make(types.Receipts, 0)
-		txIndex     = 0
+		parentRoot, statedb = MakePreState(rawdb.NewMemoryDatabase(), chainConfig, pre, chainConfig.IsVerkle(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp))
+		vtrpre              *trie.VerkleTrie
+		signer              = types.MakeSigner(chainConfig, new(big.Int).SetUint64(pre.Env.Number), pre.Env.Timestamp)
+		gaspool             = new(core.GasPool)
+		blockHash           = common.Hash{0x13, 0x37}
+		rejectedTxs         []*rejectedTx
+		includedTxs         types.Transactions
+		gasUsed             = uint64(0)
+		receipts            = make(types.Receipts, 0)
+		txIndex             = 0
 	)
-	parentRoot := statedb.GetTrie().Hash()
 
 	gaspool.AddGas(pre.Env.GasLimit)
 	vmContext := vm.BlockContext{
@@ -429,7 +428,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	return statedb, execRs, nil
 }
 
-func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prestate, verkle bool) *state.StateDB {
+func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prestate, verkle bool) (common.Hash, *state.StateDB) {
 	// Start with generating the MPT DB, which should be empty if it's post-verkle transition
 	sdb := state.NewDatabaseWithConfig(db, &trie.Config{Preimages: true, Verkle: false})
 
@@ -455,11 +454,12 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 			codeHash := crypto.Keccak256Hash(acc.Code)
 			rawdb.WriteCode(codeWriter, codeHash, acc.Code)
 		}
-		if _, err := statedb.Commit(0, false); err != nil {
+		root, err := statedb.Commit(0, false)
+		if err != nil {
 			panic(err)
 		}
 
-		return statedb
+		return root, statedb
 	}
 
 	// MPT pre is the same as the pre state for first conversion block
@@ -479,12 +479,13 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		panic(err)
 	}
 
+	parentRoot := mptRoot
 	// If verkle mode started, establish the conversion
 	if verkle {
 		// If the current tree is a VerkleTrie, it means the state conversion has ended.
 		// We don't need to continue with conversion setups and can return early.
 		if _, ok := statedb.GetTrie().(*trie.VerkleTrie); ok {
-			return statedb
+			return parentRoot, statedb
 		}
 
 		rawdb.WritePreimages(sdb.DiskDB(), statedb.Preimages())
@@ -554,6 +555,9 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		}
 
 		root, _ := statedb.Commit(0, false)
+		if pre.VKT != nil {
+			parentRoot = root
+		}
 
 		// recreate the verkle db with the tree root, but this time with the mpt snapshot,
 		// so that the conversion can proceed.
@@ -571,7 +575,7 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 	if statedb.Database().InTransition() || statedb.Database().Transitioned() {
 		log.Info("at end of makestate", "in transition", statedb.Database().InTransition(), "during", statedb.Database().Transitioned(), "account hash", statedb.Database().GetCurrentAccountHash())
 	}
-	return statedb
+	return parentRoot, statedb
 }
 
 func rlpHash(x interface{}) (h common.Hash) {

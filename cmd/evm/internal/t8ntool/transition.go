@@ -163,6 +163,8 @@ func Transition(ctx *cli.Context) error {
 	)
 	// Figure out the prestate alloc
 	if allocStr == stdinSelector || vktStr == stdinSelector || envStr == stdinSelector || txStr == stdinSelector {
+		// f, _ := os.Open("/home/ignacio/code/execution-spec-tests/fxtest/shanghai__eip3855_push0__test_push0__test_push0_contract_during_call_contexts/fork_EIP6800Transition_blockchain_test_call/0/stdin.txt")
+		// decoder := json.NewDecoder(f)
 		decoder := json.NewDecoder(os.Stdin)
 		if err := decoder.Decode(inputData); err != nil {
 			return NewError(ErrorJson, fmt.Errorf("failed unmarshaling stdin: %v", err))
