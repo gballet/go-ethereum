@@ -371,9 +371,19 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 			default:
 				return nil, nil, fmt.Errorf("invalid tree type in proof generation: %v", tr)
 			}
-			vktProof, vktStateDiff, err = trie.ProveAndSerialize(vtrpre, proofTrie, keys, vtrpre.FlatdbNodeResolver)
+
+			proof, err := trie.Prove(vtrpre, proofTrie, keys, vtrpre.FlatdbNodeResolver)
 			if err != nil {
 				return nil, nil, fmt.Errorf("error generating verkle proof for block %d: %w", pre.Env.Number, err)
+			}
+
+			err = trie.AddPostValuesToProof(keys, proofTrie, proof)
+			if err != nil {
+				return nil, nil, fmt.Errorf("error adding post values to proof: %w", err)
+			}
+			vktProof, vktStateDiff, err = verkle.SerializeProof(proof)
+			if err != nil {
+				return nil, nil, fmt.Errorf("error serializing proof: %w", err)
 			}
 		}
 	}
