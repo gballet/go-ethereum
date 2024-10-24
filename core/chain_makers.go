@@ -17,6 +17,7 @@
 package core
 
 import (
+	"bytes"
 	"fmt"
 	"math/big"
 
@@ -365,6 +366,62 @@ func GenerateChainWithGenesis(genesis *Genesis, engine consensus.Engine, n int, 
 	return db, blocks, receipts
 }
 
+// deserializeAndVerifyVerkleProof is a helper function that rebuilds the pre-tree from the proof, inserts
+// the post values inside the tree, checks that the roots match, and then ensure that the proof verifies.
+func deserializeAndVerifyVerkleProof(vp *verkle.VerkleProof, preStateRoot []byte, postStateRoot []byte, statediff verkle.StateDiff) error {
+	// TODO: check that `OtherStems` have expected length and values.
+
+	proof, err := verkle.DeserializeProof(vp, statediff)
+	if err != nil {
+		return fmt.Errorf("verkle proof deserialization error: %w", err)
+	}
+
+	rootC := new(verkle.Point)
+	rootC.SetBytes(preStateRoot)
+	pretree, err := verkle.PreStateTreeFromProof(proof, rootC)
+	if err != nil {
+		return fmt.Errorf("error rebuilding the pre-tree from proof: %w", err)
+	}
+	// TODO this should not be necessary, remove it
+	// after the new proof generation code has stabilized.
+	for _, stemdiff := range statediff {
+		for _, suffixdiff := range stemdiff.SuffixDiffs {
+			var key [32]byte
+			copy(key[:31], stemdiff.Stem[:])
+			key[31] = suffixdiff.Suffix
+
+			val, err := pretree.Get(key[:], nil)
+			if err != nil {
+				return fmt.Errorf("could not find key %x in tree rebuilt from proof: %w", key, err)
+			}
+			if len(val) > 0 {
+				if !bytes.Equal(val, suffixdiff.CurrentValue[:]) {
+					return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, *suffixdiff.CurrentValue)
+				}
+			} else {
+				if suffixdiff.CurrentValue != nil && len(suffixdiff.CurrentValue) != 0 {
+					return fmt.Errorf("could not find correct value at %x in tree rebuilt from proof: %x != %x", key, val, *suffixdiff.CurrentValue)
+				}
+			}
+		}
+	}
+
+	// TODO: this is necessary to verify that the post-values are the correct ones.
+	// But all this can be avoided with a even faster way. The EVM block execution can
+	// keep track of the written keys, and compare that list with this post-values list.
+	// This can avoid regenerating the post-tree which is somewhat expensive.
+	posttree, err := verkle.PostStateTreeFromStateDiff(pretree, statediff)
+	if err != nil {
+		return fmt.Errorf("error rebuilding the post-tree from proof: %w", err)
+	}
+	regeneratedPostTreeRoot := posttree.Commitment().Bytes()
+	if !bytes.Equal(regeneratedPostTreeRoot[:], postStateRoot) {
+		return fmt.Errorf("post tree root mismatch: %x != %x", regeneratedPostTreeRoot, postStateRoot)
+	}
+
+	return verkle.VerifyVerkleProofWithPreState(proof, pretree)
+}
+
 func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine consensus.Engine, diskdb ethdb.Database, n int, gen func(int, *BlockGen)) ([]*types.Block, []types.Receipts, []*verkle.VerkleProof, []verkle.StateDiff, []common.Hash) {
 	if config == nil {
 		config = params.TestChainConfig
@@ -432,7 +489,7 @@ func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine
 			proots = append(proots, parent.Root())
 
 			// quick check that we are self-consistent
-			err = trie.DeserializeAndVerifyVerkleProof(block.ExecutionWitness().VerkleProof, block.ExecutionWitness().ParentStateRoot[:], block.Root().Bytes(), block.ExecutionWitness().StateDiff)
+			err = deserializeAndVerifyVerkleProof(block.ExecutionWitness().VerkleProof, block.ExecutionWitness().ParentStateRoot[:], block.Root().Bytes(), block.ExecutionWitness().StateDiff)
 			if err != nil {
 				panic(err)
 			}
