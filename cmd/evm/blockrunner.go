@@ -64,6 +64,7 @@ func blockTestCmd(ctx *cli.Context) error {
 		return err
 	}
 	for i, test := range tests {
+		fmt.Printf("Running %s\n", i)
 		if err := test.Run(true, tracer); err != nil {
 			return fmt.Errorf("test %v: %w", i, err)
 		}

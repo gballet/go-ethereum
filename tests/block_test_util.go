@@ -61,10 +61,11 @@ type btJSON struct {
 }
 
 type btBlock struct {
-	BlockHeader     *btHeader
-	ExpectException string
-	Rlp             string
-	UncleHeaders    []*btHeader
+	BlockHeader      *btHeader
+	ExpectException  string
+	Rlp              string
+	UncleHeaders     []*btHeader
+	ExecutionWitness types.ExecutionWitness `json:"witness"`
 }
 
 //go:generate go run github.com/fjl/gencodec -type btHeader -field-override btHeaderMarshaling -out gen_btheader.go
@@ -200,6 +201,7 @@ func (t *BlockTest) insertBlocks(blockchain *core.BlockChain) ([]btBlock, error)
 				return nil, fmt.Errorf("block RLP decoding failed when expected to succeed: %v", err)
 			}
 		}
+
 		// RLP decoding worked, try to insert into chain:
 		blocks := types.Blocks{cb}
 		i, err := blockchain.InsertChain(blocks)
@@ -328,6 +330,9 @@ func (bb *btBlock) decode() (*types.Block, error) {
 		return nil, err
 	}
 	var b types.Block
-	err = rlp.DecodeBytes(data, &b)
-	return &b, err
+	if err := rlp.DecodeBytes(data, &b); err != nil {
+		return nil, err
+	}
+	b.SetExecutionWitness(&bb.ExecutionWitness)
+	return &b, nil
 }

@@ -400,80 +400,89 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	state.Database().SaveTransitionState(header.Root)
 
 	var (
-		p     *verkle.VerkleProof
-		k     verkle.StateDiff
-		keys  = state.Witness().Keys()
-		proot common.Hash
+		proof     *verkle.VerkleProof
+		stateDiff verkle.StateDiff
+		proot     common.Hash
 	)
 	if chain.Config().IsVerkle(header.Number, header.Time) {
-		// Open the pre-tree to prove the pre-state against
 		parent := chain.GetHeaderByNumber(header.Number.Uint64() - 1)
 		if parent == nil {
 			return nil, fmt.Errorf("nil parent header for block %d", header.Number)
 		}
-		proot = parent.Root
-
 		// Load transition state at beginning of block, because
 		// OpenTrie needs to know what the conversion status is.
 		state.Database().LoadTransitionState(parent.Root)
 
-		if chain.Config().ProofInBlocks {
-			preTrie, err := state.Database().OpenTrie(parent.Root)
-			if err != nil {
-				return nil, fmt.Errorf("error opening pre-state tree root: %w", err)
-			}
-
-			var okpre, okpost bool
-			var vtrpre, vtrpost *trie.VerkleTrie
-			switch pre := preTrie.(type) {
-			case *trie.VerkleTrie:
-				vtrpre, okpre = preTrie.(*trie.VerkleTrie)
-				switch tr := state.GetTrie().(type) {
-				case *trie.VerkleTrie:
-					vtrpost = tr
-					okpost = true
-				// This is to handle a situation right at the start of the conversion:
-				// the post trie is a transition tree when the pre tree is an empty
-				// verkle tree.
-				case *trie.TransitionTrie:
-					vtrpost = tr.Overlay()
-					okpost = true
-				default:
-					okpost = false
-				}
-			case *trie.TransitionTrie:
-				vtrpre = pre.Overlay()
-				okpre = true
-				post, _ := state.GetTrie().(*trie.TransitionTrie)
-				vtrpost = post.Overlay()
-				okpost = true
-			default:
-				// This should only happen for the first block of the
-				// conversion, when the previous tree is a merkle tree.
-				//  Logically, the "previous" verkle tree is an empty tree.
-				okpre = true
-				vtrpre = trie.NewVerkleTrie(verkle.New(), state.Database().TrieDB(), utils.NewPointCache(), false)
-				post := state.GetTrie().(*trie.TransitionTrie)
-				vtrpost = post.Overlay()
-				okpost = true
-			}
-			if okpre && okpost {
-				if len(keys) > 0 {
-					p, k, err = trie.ProveAndSerialize(vtrpre, vtrpost, keys, vtrpre.FlatdbNodeResolver)
-					if err != nil {
-						return nil, fmt.Errorf("error generating verkle proof for block %d: %w", header.Number, err)
-					}
-				}
-			}
+		var err error
+		proot, stateDiff, proof, err = BuildVerkleProof(header, state, parent.Root)
+		if err != nil {
+			return nil, fmt.Errorf("error building verkle proof: %w", err)
 		}
 	}
 
 	// Assemble and return the final block.
 	block := types.NewBlockWithWithdrawals(header, txs, uncles, receipts, withdrawals, trie.NewStackTrie(nil))
 	if chain.Config().IsVerkle(header.Number, header.Time) && chain.Config().ProofInBlocks {
-		block.SetVerkleProof(p, k, proot)
+		block.SetVerkleProof(proof, stateDiff, proot)
 	}
 	return block, nil
+}
+
+func BuildVerkleProof(header *types.Header, state *state.StateDB, parentRoot common.Hash) (common.Hash, verkle.StateDiff, *verkle.VerkleProof, error) {
+	var (
+		proof     *verkle.VerkleProof
+		stateDiff verkle.StateDiff
+	)
+
+	preTrie, err := state.Database().OpenTrie(parentRoot)
+	if err != nil {
+		return common.Hash{}, nil, nil, fmt.Errorf("error opening pre-state tree root: %w", err)
+	}
+
+	var okpre, okpost bool
+	var vtrpre, vtrpost *trie.VerkleTrie
+	switch pre := preTrie.(type) {
+	case *trie.VerkleTrie:
+		vtrpre, okpre = preTrie.(*trie.VerkleTrie)
+		switch tr := state.GetTrie().(type) {
+		case *trie.VerkleTrie:
+			vtrpost = tr
+			okpost = true
+		// This is to handle a situation right at the start of the conversion:
+		// the post trie is a transition tree when the pre tree is an empty
+		// verkle tree.
+		case *trie.TransitionTrie:
+			vtrpost = tr.Overlay()
+			okpost = true
+		default:
+			okpost = false
+		}
+	case *trie.TransitionTrie:
+		vtrpre = pre.Overlay()
+		okpre = true
+		post, _ := state.GetTrie().(*trie.TransitionTrie)
+		vtrpost = post.Overlay()
+		okpost = true
+	default:
+		// This should only happen for the first block of the
+		// conversion, when the previous tree is a merkle tree.
+		//  Logically, the "previous" verkle tree is an empty tree.
+		okpre = true
+		vtrpre = trie.NewVerkleTrie(verkle.New(), state.Database().TrieDB(), utils.NewPointCache(), false)
+		post := state.GetTrie().(*trie.TransitionTrie)
+		vtrpost = post.Overlay()
+		okpost = true
+	}
+	if okpre && okpost {
+		keys := state.Witness().Keys()
+		if len(keys) > 0 {
+			proof, stateDiff, err = trie.ProveAndSerialize(vtrpre, vtrpost, keys, vtrpre.FlatdbNodeResolver)
+			if err != nil {
+				return common.Hash{}, nil, nil, fmt.Errorf("error generating verkle proof for block %d: %w", header.Number, err)
+			}
+		}
+	}
+	return parentRoot, stateDiff, proof, nil
 }
 
 // Seal generates a new sealing request for the given input block and pushes

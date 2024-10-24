@@ -62,7 +62,7 @@ func (n *BlockNonce) UnmarshalText(input []byte) error {
 type ExecutionWitness struct {
 	StateDiff       verkle.StateDiff    `json:"stateDiff"`
 	VerkleProof     *verkle.VerkleProof `json:"verkleProof"`
-	ParentStateRoot common.Hash         `json:"parentStateRoot"`
+	ParentStateRoot common.Hash         `json:"parentRoot"`
 }
 
 func (ew *ExecutionWitness) Copy() *ExecutionWitness {
@@ -71,6 +71,20 @@ func (ew *ExecutionWitness) Copy() *ExecutionWitness {
 		VerkleProof:     ew.VerkleProof.Copy(),
 		ParentStateRoot: ew.ParentStateRoot,
 	}
+}
+
+func (ew *ExecutionWitness) Equal(other *ExecutionWitness) error {
+	// Compare ew and other on every field
+	if err := ew.StateDiff.Equal(other.StateDiff); err != nil {
+		return fmt.Errorf("StateDiff mismatch: %v", err)
+	}
+	if err := ew.VerkleProof.Equal(other.VerkleProof); err != nil {
+		return fmt.Errorf("VerkleProof mismatch: %v", err)
+	}
+	if ew.ParentStateRoot != other.ParentStateRoot {
+		return fmt.Errorf("ParentStateRoot mismatch: %v != %v", ew.ParentStateRoot, other.ParentStateRoot)
+	}
+	return nil
 }
 
 //go:generate go run github.com/fjl/gencodec -type Header -field-override headerMarshaling -out gen_header_json.go
@@ -433,6 +447,10 @@ func (b *Block) SetVerkleProof(vp *verkle.VerkleProof, statediff verkle.StateDif
 			IPAProof: &verkle.IPAProof{},
 		}
 	}
+}
+
+func (b *Block) SetExecutionWitness(ew *ExecutionWitness) {
+	b.header.ExecutionWitness = ew
 }
 
 type writeCounter uint64

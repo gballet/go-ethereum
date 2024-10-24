@@ -71,12 +71,13 @@ func TestReproduceTree(t *testing.T) {
 	}
 	root.Commit()
 
-	proof, Cs, zis, yis, err := verkle.MakeVerkleMultiProof(root, nil, append(presentKeys, absentKeys...), nil)
+	proof, Cs, _, _, err := verkle.MakeVerkleMultiProof(root, nil, append(presentKeys, absentKeys...), nil)
 	if err != nil {
 		t.Fatalf("could not create proof: %v", err)
 	}
-	cfg := verkle.GetConfig()
-	if ok, err := verkle.VerifyVerkleProof(proof, Cs, zis, yis, cfg); !ok || err != nil {
+	vktProof, statediff, err := verkle.SerializeProof(proof)
+	preStateRoot := root.Commit().Bytes()
+	if err := verkle.Verify(vktProof, preStateRoot[:], nil, statediff); err != nil {
 		t.Fatalf("could not verify proof: %v", err)
 	}
 
@@ -294,9 +295,13 @@ func TestReproduceCondrieuStemAggregationInProofOfAbsence(t *testing.T) {
 	}
 	root.Commit()
 
-	proof, Cs, zis, yis, _ := verkle.MakeVerkleMultiProof(root, nil, append(presentKeys, absentKeys...), nil)
-	cfg := verkle.GetConfig()
-	if ok, err := verkle.VerifyVerkleProof(proof, Cs, zis, yis, cfg); !ok || err != nil {
+	proof, Cs, _, _, _ := verkle.MakeVerkleMultiProof(root, nil, append(presentKeys, absentKeys...), nil)
+	vktProof, statediff, err := verkle.SerializeProof(proof)
+	if err != nil {
+		t.Fatalf("could not serialize proof: %v", err)
+	}
+	preStateRoot := root.Commit().Bytes()
+	if err := verkle.Verify(vktProof, preStateRoot[:], nil, statediff); err != nil {
 		t.Fatal("could not verify proof")
 	}
 
@@ -340,9 +345,13 @@ func TestReproduceCondrieuPoAStemConflictWithAnotherStem(t *testing.T) {
 	}
 	root.Commit()
 
-	proof, Cs, zis, yis, _ := verkle.MakeVerkleMultiProof(root, nil, append(presentKeys, absentKeys...), nil)
-	cfg := verkle.GetConfig()
-	if ok, err := verkle.VerifyVerkleProof(proof, Cs, zis, yis, cfg); !ok || err != nil {
+	proof, Cs, _, _, _ := verkle.MakeVerkleMultiProof(root, nil, append(presentKeys, absentKeys...), nil)
+	vktProof, stateDiff, err := verkle.SerializeProof(proof)
+	if err != nil {
+		t.Fatalf("could not serialize proof: %v", err)
+	}
+	preStateRoot := root.Commit().Bytes()
+	if err := verkle.Verify(vktProof, preStateRoot[:], nil, stateDiff); err != nil {
 		t.Fatal("could not verify proof")
 	}
 
