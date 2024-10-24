@@ -69,6 +69,7 @@ type ExecutionResult struct {
 	// Verkle witness
 	VerkleProof *verkle.VerkleProof `json:"verkleProof,omitempty"`
 	StateDiff   verkle.StateDiff    `json:"stateDiff,omitempty"`
+	ParentRoot  common.Hash         `json:"parentRoot,omitempty"`
 
 	// Values to test the verkle conversion
 	CurrentAccountAddress *common.Address `json:"currentConversionAddress,omitempty" gencodec:"optional"`
@@ -391,6 +392,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		BaseFee:     (*math.HexOrDecimal256)(vmContext.BaseFee),
 		VerkleProof: vktProof,
 		StateDiff:   vktStateDiff,
+		ParentRoot:  pre.Env.BlockHashes[math.HexOrDecimal64(pre.Env.Number-1)],
 	}
 	if pre.Env.Withdrawals != nil {
 		h := types.DeriveSha(types.Withdrawals(pre.Env.Withdrawals), trie.NewStackTrie(nil))
