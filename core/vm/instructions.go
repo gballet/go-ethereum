@@ -20,7 +20,6 @@ import (
 	"encoding/binary"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -459,11 +458,11 @@ func opGasprice(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	return nil, nil
 }
 
-func getBlockHashFromContract(number uint64, statedb StateDB, witness *state.AccessWitness) (common.Hash, uint64) {
+func getBlockHashFromContract(number uint64, statedb StateDB, witness *state.AccessWitness, availableGas uint64) (common.Hash, uint64) {
 	ringIndex := number % params.Eip2935BlockHashHistorySize
 	var pnum common.Hash
 	binary.BigEndian.PutUint64(pnum[24:], ringIndex)
-	statelessGas := witness.TouchSlotAndChargeGas(params.HistoryStorageAddress[:], pnum, false, math.MaxUint64, false)
+	statelessGas := witness.TouchSlotAndChargeGas(params.HistoryStorageAddress[:], pnum, false, availableGas, false)
 	return statedb.GetState(params.HistoryStorageAddress, pnum), statelessGas
 }
 
@@ -487,7 +486,7 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 	if num64 >= lower && num64 < upper {
 		// if Verkle is active, read it from the history contract (EIP 2935).
 		if evm.chainRules.IsVerkle {
-			blockHash, statelessGas := getBlockHashFromContract(num64, evm.StateDB, evm.Accesses)
+			blockHash, statelessGas := getBlockHashFromContract(num64, evm.StateDB, evm.Accesses, scope.Contract.Gas)
 			if interpreter.evm.chainRules.IsEIP4762 {
 				if !scope.Contract.UseGas(statelessGas) {
 					return nil, ErrOutOfGas

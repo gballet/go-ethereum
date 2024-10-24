@@ -111,7 +111,12 @@ func gasSelfdestructEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Mem
 	beneficiaryAddr := common.Address(stack.peek().Bytes20())
 	contractAddr := contract.Address()
 
-	statelessGas := evm.Accesses.TouchBasicData(contractAddr[:], false, contract.Gas, false)
+	wanted := evm.Accesses.TouchBasicData(contractAddr[:], false, contract.Gas, false)
+	if wanted > contract.Gas {
+		return wanted, nil
+	}
+	statelessGas := wanted
+
 	balanceIsZero := evm.StateDB.GetBalance(contractAddr).Sign() == 0
 	_, isPrecompile := evm.precompile(beneficiaryAddr)
 	isSystemContract := evm.isSystemContract(beneficiaryAddr)
@@ -121,21 +126,30 @@ func gasSelfdestructEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Mem
 	}
 
 	if contractAddr != beneficiaryAddr {
-		statelessGas += evm.Accesses.TouchBasicData(beneficiaryAddr[:], false, contract.Gas-statelessGas, false)
+		wanted := evm.Accesses.TouchBasicData(beneficiaryAddr[:], false, contract.Gas-statelessGas, false)
+		if wanted > contract.Gas-statelessGas {
+			return statelessGas + wanted, nil
+		}
+		statelessGas += wanted
 	}
 	// Charge write costs if it transfers value
 	if !balanceIsZero {
-		statelessGas += evm.Accesses.TouchBasicData(contractAddr[:], true, contract.Gas-statelessGas, false)
+		wanted := evm.Accesses.TouchBasicData(contractAddr[:], true, contract.Gas-statelessGas, false)
+		if wanted > contract.Gas-statelessGas {
+			return statelessGas + wanted, nil
+		}
+		statelessGas += wanted
+
 		if contractAddr != beneficiaryAddr {
 			if evm.StateDB.Exist(beneficiaryAddr) {
-				statelessGas += evm.Accesses.TouchBasicData(beneficiaryAddr[:], true, contract.Gas-statelessGas, false)
+				wanted = evm.Accesses.TouchBasicData(beneficiaryAddr[:], true, contract.Gas-statelessGas, false)
 			} else {
-				wanted := evm.Accesses.TouchFullAccount(beneficiaryAddr[:], true, contract.Gas-statelessGas)
-				if wanted > contract.Gas-statelessGas {
-					return statelessGas + wanted, nil
-				}
-				statelessGas += wanted
+				wanted = evm.Accesses.TouchFullAccount(beneficiaryAddr[:], true, contract.Gas-statelessGas)
 			}
+			if wanted > contract.Gas-statelessGas {
+				return statelessGas + wanted, nil
+			}
+			statelessGas += wanted
 		}
 	}
 	return statelessGas, nil
@@ -158,7 +172,7 @@ func gasExtCodeCopyEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Memo
 		}
 		return gas, nil
 	}
-	wgas := evm.Accesses.TouchBasicData(addr[:], false, contract.Gas, true)
+	wgas := evm.Accesses.TouchBasicData(addr[:], false, contract.Gas-gas, true)
 	var overflow bool
 	if gas, overflow = math.SafeAdd(gas, wgas); overflow {
 		return 0, ErrGasUintOverflow
