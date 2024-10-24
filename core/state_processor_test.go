@@ -666,7 +666,7 @@ func TestProcessVerkle(t *testing.T) {
 	//fmt.Printf("root= %x\n", chain[0].Root())
 
 	// check the proof for the 1st block
-	err = trie.DeserializeAndVerifyVerkleProof(proofs[0], genesis.Root().Bytes(), chain[0].Root().Bytes(), keyvals[0])
+	err = deserializeAndVerifyVerkleProof(proofs[0], genesis.Root().Bytes(), chain[0].Root().Bytes(), keyvals[0])
 	if err != nil {
 		spew.Dump(genesis.Root().Bytes(), proofs[0])
 		t.Fatal(err)
