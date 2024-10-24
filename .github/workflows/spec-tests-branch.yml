@@ -4,7 +4,8 @@ on:
   push:
     branches: [master, kaustinen-with-shapella]
   pull_request:
-    branches: [master, kaustinen-with-shapella]
+    branches:
+      [master, kaustinen-with-shapella, witness-charging-order-with-limits]
   workflow_dispatch:
 
 env:
