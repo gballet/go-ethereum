@@ -175,6 +175,8 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		receipts    = make(types.Receipts, 0)
 		txIndex     = 0
 	)
+	parentRoot := statedb.GetTrie().Hash()
+
 	gaspool.AddGas(pre.Env.GasLimit)
 	vmContext := vm.BlockContext{
 		CanTransfer: core.CanTransfer,
@@ -392,7 +394,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		BaseFee:     (*math.HexOrDecimal256)(vmContext.BaseFee),
 		VerkleProof: vktProof,
 		StateDiff:   vktStateDiff,
-		ParentRoot:  pre.Env.BlockHashes[math.HexOrDecimal64(pre.Env.Number-1)],
+		ParentRoot:  parentRoot,
 	}
 	if pre.Env.Withdrawals != nil {
 		h := types.DeriveSha(types.Withdrawals(pre.Env.Withdrawals), trie.NewStackTrie(nil))
@@ -453,7 +455,9 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 			codeHash := crypto.Keccak256Hash(acc.Code)
 			rawdb.WriteCode(codeWriter, codeHash, acc.Code)
 		}
-		statedb.Commit(0, false)
+		if _, err := statedb.Commit(0, false); err != nil {
+			panic(err)
+		}
 
 		return statedb
 	}
