@@ -193,8 +193,6 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	switch tr := statedb.GetTrie().(type) {
 	case *trie.VerkleTrie:
 		vtrpre = tr.Copy()
-	case *trie.TransitionTrie:
-		vtrpre = tr.Overlay().Copy()
 	}
 
 	// If currentBaseFee is defined, add it to the vmContext.
