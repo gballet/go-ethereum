@@ -414,10 +414,11 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 		state.Database().LoadTransitionState(parent.Root)
 
 		var err error
-		proot, stateDiff, proof, err = BuildVerkleProof(header, state, parent.Root)
+		stateDiff, proof, err = BuildVerkleProof(header, state, parent.Root)
 		if err != nil {
 			return nil, fmt.Errorf("error building verkle proof: %w", err)
 		}
+		proot = parent.Root
 	}
 
 	// Assemble and return the final block.
@@ -428,7 +429,7 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	return block, nil
 }
 
-func BuildVerkleProof(header *types.Header, state *state.StateDB, parentRoot common.Hash) (common.Hash, verkle.StateDiff, *verkle.VerkleProof, error) {
+func BuildVerkleProof(header *types.Header, state *state.StateDB, parentRoot common.Hash) (verkle.StateDiff, *verkle.VerkleProof, error) {
 	var (
 		proof     *verkle.VerkleProof
 		stateDiff verkle.StateDiff
@@ -436,7 +437,7 @@ func BuildVerkleProof(header *types.Header, state *state.StateDB, parentRoot com
 
 	preTrie, err := state.Database().OpenTrie(parentRoot)
 	if err != nil {
-		return common.Hash{}, nil, nil, fmt.Errorf("error opening pre-state tree root: %w", err)
+		return nil, nil, fmt.Errorf("error opening pre-state tree root: %w", err)
 	}
 
 	var okpre, okpost bool
@@ -478,11 +479,11 @@ func BuildVerkleProof(header *types.Header, state *state.StateDB, parentRoot com
 		if len(keys) > 0 {
 			proof, stateDiff, err = trie.ProveAndSerialize(vtrpre, vtrpost, keys, vtrpre.FlatdbNodeResolver)
 			if err != nil {
-				return common.Hash{}, nil, nil, fmt.Errorf("error generating verkle proof for block %d: %w", header.Number, err)
+				return nil, nil, fmt.Errorf("error generating verkle proof for block %d: %w", header.Number, err)
 			}
 		}
 	}
-	return parentRoot, stateDiff, proof, nil
+	return stateDiff, proof, nil
 }
 
 // Seal generates a new sealing request for the given input block and pushes
