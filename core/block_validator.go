@@ -132,8 +132,7 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 	if root := statedb.IntermediateRoot(v.config.IsEIP158(header.Number)); header.Root != root {
 		return fmt.Errorf("invalid merkle root (remote: %x local: %x) dberr: %w", header.Root, root, statedb.Error())
 	}
-
-	if blockEw := block.ExecutionWitness(); blockEw != nil && v.bc.Config().IsVerkle(header.Number, header.Time) {
+	if blockEw := block.ExecutionWitness(); blockEw != nil {
 		parent := v.bc.GetHeaderByNumber(header.Number.Uint64() - 1)
 		if parent == nil {
 			return fmt.Errorf("nil parent header for block %d", header.Number)

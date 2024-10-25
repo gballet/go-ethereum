@@ -65,7 +65,7 @@ type btBlock struct {
 	ExpectException  string
 	Rlp              string
 	UncleHeaders     []*btHeader
-	ExecutionWitness types.ExecutionWitness `json:"witness"`
+	ExecutionWitness *types.ExecutionWitness `json:"witness"`
 }
 
 //go:generate go run github.com/fjl/gencodec -type btHeader -field-override btHeaderMarshaling -out gen_btheader.go
@@ -333,6 +333,6 @@ func (bb *btBlock) decode() (*types.Block, error) {
 	if err := rlp.DecodeBytes(data, &b); err != nil {
 		return nil, err
 	}
-	b.SetExecutionWitness(&bb.ExecutionWitness)
+	b.SetExecutionWitness(bb.ExecutionWitness)
 	return &b, nil
 }
