@@ -553,6 +553,9 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		}
 
 		root, _ := statedb.Commit(0, false)
+		// If the VKT prestate is empty, this means that the "parent" root is the MPT.
+		// If we don't do this, we'd consider the "parent" to be an empty VKT which isn't
+		// correct.
 		if pre.VKT != nil {
 			parentRoot = root
 		}
