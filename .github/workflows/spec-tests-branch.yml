@@ -9,7 +9,7 @@ on:
 
 env:
   EEST_USER: "ethereum"
-  EEST_BRANCH: "witness-additions"
+  EEST_BRANCH: "verkle/main"
 
 jobs:
   setup:
