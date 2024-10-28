@@ -164,16 +164,16 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		return h
 	}
 	var (
-		parentRoot, statedb = MakePreState(rawdb.NewMemoryDatabase(), chainConfig, pre, chainConfig.IsVerkle(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp))
-		vtrpre              *trie.VerkleTrie
-		signer              = types.MakeSigner(chainConfig, new(big.Int).SetUint64(pre.Env.Number), pre.Env.Timestamp)
-		gaspool             = new(core.GasPool)
-		blockHash           = common.Hash{0x13, 0x37}
-		rejectedTxs         []*rejectedTx
-		includedTxs         types.Transactions
-		gasUsed             = uint64(0)
-		receipts            = make(types.Receipts, 0)
-		txIndex             = 0
+		parentStateRoot, statedb = MakePreState(rawdb.NewMemoryDatabase(), chainConfig, pre, chainConfig.IsVerkle(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp))
+		vtrpre                   *trie.VerkleTrie
+		signer                   = types.MakeSigner(chainConfig, new(big.Int).SetUint64(pre.Env.Number), pre.Env.Timestamp)
+		gaspool                  = new(core.GasPool)
+		blockHash                = common.Hash{0x13, 0x37}
+		rejectedTxs              []*rejectedTx
+		includedTxs              types.Transactions
+		gasUsed                  = uint64(0)
+		receipts                 = make(types.Receipts, 0)
+		txIndex                  = 0
 	)
 
 	gaspool.AddGas(pre.Env.GasLimit)
@@ -391,7 +391,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		BaseFee:     (*math.HexOrDecimal256)(vmContext.BaseFee),
 		VerkleProof: vktProof,
 		StateDiff:   vktStateDiff,
-		ParentRoot:  parentRoot,
+		ParentRoot:  parentStateRoot,
 	}
 	if pre.Env.Withdrawals != nil {
 		h := types.DeriveSha(types.Withdrawals(pre.Env.Withdrawals), trie.NewStackTrie(nil))
