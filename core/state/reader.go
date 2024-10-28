@@ -18,6 +18,7 @@ package state
 
 import (
 	"errors"
+	"fmt"
 	"maps"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -144,7 +145,7 @@ type trieReader struct {
 
 // trieReader constructs a trie reader of the specific state. An error will be
 // returned if the associated trie specified by root is not existent.
-func newTrieReader(root common.Hash, db *triedb.Database, cache *utils.PointCache) (*trieReader, error) {
+func newTrieReader(root common.Hash, db *triedb.Database, cache *utils.PointCache, transitioned bool, baseRoot common.Hash) (*trieReader, error) {
 	var (
 		tr  Trie
 		err error
@@ -153,6 +154,13 @@ func newTrieReader(root common.Hash, db *triedb.Database, cache *utils.PointCach
 		tr, err = trie.NewStateTrie(trie.StateTrieID(root), db)
 	} else {
 		tr, err = trie.NewVerkleTrie(root, db, cache)
+		if !transitioned {
+			mptr, err := trie.NewStateTrie(trie.StateTrieID(baseRoot), db)
+			if err != nil {
+				return nil, fmt.Errorf("error opening base root trie: %w", err)
+			}
+			tr = trie.NewTransitionTree(mptr, tr.(*trie.VerkleTrie), false)
+		}
 	}
 	if err != nil {
 		return nil, err

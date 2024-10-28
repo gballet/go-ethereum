@@ -148,6 +148,35 @@ type Trie interface {
 	IsVerkle() bool
 }
 
+type TransitionState struct {
+	CurrentAccountAddress *common.Address // addresss of the last translated account
+	CurrentSlotHash       common.Hash     // hash of the last translated storage slot
+	CurrentPreimageOffset int64           // next byte to read from the preimage file
+	Started, Ended        bool
+
+	// Mark whether the storage for an account has been processed. This is useful if the
+	// maximum number of leaves of the conversion is reached before the whole storage is
+	// processed.
+	StorageProcessed bool
+}
+
+// func (ts *TransitionState) Copy() *TransitionState {
+// 	ret := &TransitionState{
+// 		Started:               ts.Started,
+// 		Ended:                 ts.Ended,
+// 		CurrentSlotHash:       ts.CurrentSlotHash,
+// 		CurrentPreimageOffset: ts.CurrentPreimageOffset,
+// 		StorageProcessed:      ts.StorageProcessed,
+// 	}
+
+// 	if ts.CurrentAccountAddress != nil {
+// 		ret.CurrentAccountAddress = &common.Address{}
+// 		copy(ret.CurrentAccountAddress[:], ts.CurrentAccountAddress[:])
+// 	}
+
+// 	return ret
+// }
+
 // CachingDB is an implementation of Database interface. It leverages both trie and
 // state snapshot to provide functionalities for state access. It's meant to be a
 // long-live object and has a few caches inside for sharing between blocks.
@@ -158,6 +187,9 @@ type CachingDB struct {
 	codeCache     *lru.SizeConstrainedCache[common.Hash, []byte]
 	codeSizeCache *lru.Cache[common.Hash, int]
 	pointCache    *utils.PointCache
+
+	transitionState *TransitionState
+	baseRoot        common.Hash
 }
 
 // NewDatabase creates a state database with the provided data sources.
@@ -203,7 +235,7 @@ func (db *CachingDB) Reader(stateRoot common.Hash) (Reader, error) {
 	}
 	// Set up the trie reader, which is expected to always be available
 	// as the gatekeeper unless the state is corrupted.
-	tr, err := newTrieReader(stateRoot, db.triedb, db.pointCache)
+	tr, err := newTrieReader(stateRoot, db.triedb, db.pointCache, db.transitionState.Ended, db.baseRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +247,22 @@ func (db *CachingDB) Reader(stateRoot common.Hash) (Reader, error) {
 // OpenTrie opens the main account trie at a specific root hash.
 func (db *CachingDB) OpenTrie(root common.Hash) (Trie, error) {
 	if db.triedb.IsVerkle() {
-		return trie.NewVerkleTrie(root, db.triedb, db.pointCache)
+		var (
+			tr  Trie
+			err error
+		)
+		tr, err = trie.NewVerkleTrie(root, db.triedb, db.pointCache)
+		if err != nil {
+			return nil, fmt.Errorf("error opening verkle tree: %w", err)
+		}
+		if !db.transitionState.Ended {
+			mptr, err := trie.NewStateTrie(trie.StateTrieID(db.baseRoot), db.triedb)
+			if err != nil {
+				return nil, fmt.Errorf("error opening base root trie: %w", err)
+			}
+			tr = trie.NewTransitionTree(mptr, tr.(*trie.VerkleTrie), false)
+		}
+		return tr, nil
 	}
 	tr, err := trie.NewStateTrie(trie.StateTrieID(root), db.triedb)
 	if err != nil {
