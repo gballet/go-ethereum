@@ -76,6 +76,9 @@ func TestReproduceTree(t *testing.T) {
 		t.Fatalf("could not create proof: %v", err)
 	}
 	vktProof, statediff, err := verkle.SerializeProof(proof)
+	if err != nil {
+		t.Fatalf("could not serialize proof: %v", err)
+	}
 	preStateRoot := root.Commit().Bytes()
 	if err := verkle.Verify(vktProof, preStateRoot[:], nil, statediff); err != nil {
 		t.Fatalf("could not verify proof: %v", err)
