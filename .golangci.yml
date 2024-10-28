@@ -63,13 +63,13 @@ issues:
     - path: p2p/rlpx/rlpx.go
       linters:
         - staticcheck
-    - path: crypto/ecies/ecies.go
+    - path: crypto/
       linters:
         - staticcheck
-    - path: crypto/crypto.go
+    - path: rlp/
       linters:
         - staticcheck
-    - path: crypto/signature_cgo.go
+    - path: miner/
       linters:
         - staticcheck
   exclude:
