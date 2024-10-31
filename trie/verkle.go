@@ -164,8 +164,8 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount,
 	// the extra values. This happens in devmode, where
 	// 0xff**32 is allocated to the developer account.
 	balanceBytes := acc.Balance.Bytes()
-        // TODO: reduce the size of the allocation in devmode, then panic instead
-        // of truncating.
+	// TODO: reduce the size of the allocation in devmode, then panic instead
+	// of truncating.
 	if len(balanceBytes) > 16 {
 		balanceBytes = balanceBytes[16:]
 	}
