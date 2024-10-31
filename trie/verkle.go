@@ -160,7 +160,13 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount,
 
 	binary.BigEndian.PutUint32(basicData[utils.BasicDataCodeSizeOffset-1:], uint32(codeLen))
 	binary.BigEndian.PutUint64(basicData[utils.BasicDataNonceOffset:], acc.Nonce)
+	// Because the balance is a max of 16 bytes, truncate
+	// the extra values. This happens in devmode, where
+	// 0xff**32 is allocated to the developer account.
 	balanceBytes := acc.Balance.Bytes()
+	if len(balanceBytes) > 16 {
+		balanceBytes = balanceBytes[16:]
+	}
 	copy(basicData[32-len(balanceBytes):], balanceBytes[:])
 	values[utils.BasicDataLeafKey] = basicData[:]
 	values[utils.CodeHashLeafKey] = acc.CodeHash[:]
