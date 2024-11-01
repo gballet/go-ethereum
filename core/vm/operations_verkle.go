@@ -19,20 +19,27 @@ package vm
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core/witnesstracing"
 	"github.com/ethereum/go-ethereum/params"
 )
 
 func gasSStore4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	return evm.Accesses.TouchSlotAndChargeGas(contract.Address().Bytes(), common.Hash(stack.peek().Bytes32()), true, contract.Gas, true), nil
+	wanted := evm.Accesses.TouchSlotAndChargeGas(contract.Address().Bytes(), common.Hash(stack.peek().Bytes32()), true, contract.Gas, true)
+	witnesstracing.RecordWitnessCharge("SSTORE (wanted)", wanted, contract.Address().Bytes(), common.Hash(stack.peek().Bytes32()))
+	return wanted, nil
 }
 
 func gasSLoad4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	return evm.Accesses.TouchSlotAndChargeGas(contract.Address().Bytes(), common.Hash(stack.peek().Bytes32()), false, contract.Gas, true), nil
+	wanted := evm.Accesses.TouchSlotAndChargeGas(contract.Address().Bytes(), common.Hash(stack.peek().Bytes32()), false, contract.Gas, true)
+	witnesstracing.RecordWitnessCharge("SLOAD (wanted)", wanted, contract.Address().Bytes(), common.Hash(stack.peek().Bytes32()))
+	return wanted, nil
 }
 
 func gasBalance4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	address := stack.peek().Bytes20()
-	return evm.Accesses.TouchBasicData(address[:], false, contract.Gas, true), nil
+	wanted := evm.Accesses.TouchBasicData(address[:], false, contract.Gas, true)
+	witnesstracing.RecordWitnessCharge("BALANCE (wanted)", wanted, address)
+	return wanted, nil
 }
 
 func gasExtCodeSize4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
@@ -40,17 +47,23 @@ func gasExtCodeSize4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory,
 	isSystemContract := evm.isSystemContract(address)
 	_, isPrecompile := evm.precompile(address)
 	if isPrecompile || isSystemContract {
+		witnesstracing.RecordWitnessCharge("EXTCODESIZE (wanted)", params.WarmStorageReadCostEIP2929, address)
 		return params.WarmStorageReadCostEIP2929, nil
 	}
-	return evm.Accesses.TouchBasicData(address[:], false, contract.Gas, true), nil
+	wanted := evm.Accesses.TouchBasicData(address[:], false, contract.Gas, true)
+	witnesstracing.RecordWitnessCharge("EXTCODESIZE (wanted)", wanted, address)
+	return wanted, nil
 }
 
 func gasExtCodeHash4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	address := stack.peek().Bytes20()
 	if _, isPrecompile := evm.precompile(address); isPrecompile || evm.isSystemContract(address) {
+		witnesstracing.RecordWitnessCharge("EXTCODEHASH (wanted)", params.WarmStorageReadCostEIP2929, address)
 		return params.WarmStorageReadCostEIP2929, nil
 	}
-	return evm.Accesses.TouchCodeHash(address[:], false, contract.Gas, true), nil
+	wanted := evm.Accesses.TouchCodeHash(address[:], false, contract.Gas, true)
+	witnesstracing.RecordWitnessCharge("EXTCODEHASH (wanted)", wanted, address)
+	return wanted, nil
 }
 
 func makeCallVariantGasEIP4762(oldCalculator gasFunc, withTransferCosts bool) gasFunc {
@@ -88,6 +101,7 @@ func makeCallVariantGasEIP4762(oldCalculator gasFunc, withTransferCosts bool) ga
 			}
 		}
 
+		witnesstracing.RecordWitnessCharge("CALL* (wanted)", witnessGas, contract.Address().Bytes())
 		contract.Gas -= witnessGas
 		// if the operation fails, adds witness gas to the gas before returning the error
 		gas, err := oldCalculator(evm, contract, stack, mem, memorySize)
@@ -152,6 +166,7 @@ func gasSelfdestructEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Mem
 			statelessGas += wanted
 		}
 	}
+	witnesstracing.RecordWitnessCharge("SELFDESTRUCT (wanted)", statelessGas, contractAddr, beneficiaryAddr)
 	return statelessGas, nil
 }
 
@@ -173,6 +188,7 @@ func gasExtCodeCopyEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Memo
 		return gas, nil
 	}
 	wgas := evm.Accesses.TouchBasicData(addr[:], false, contract.Gas-gas, true)
+	witnesstracing.RecordWitnessCharge("EXTCODECOPY (wanted)", wgas, addr)
 	var overflow bool
 	if gas, overflow = math.SafeAdd(gas, wgas); overflow {
 		return 0, ErrGasUintOverflow

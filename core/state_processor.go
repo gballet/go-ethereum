@@ -29,9 +29,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/core/witnesstracing"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/trie"
 )
 
 // StateProcessor is a basic Processor, which takes care of transitioning
@@ -84,6 +86,8 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	}
 	// Iterate over and process the individual transactions
 	for i, tx := range block.Transactions() {
+		witnesstracing.ResetWitnessTracer(tx.Hash().Hex())
+
 		msg, err := TransactionToMessage(tx, signer, header.BaseFee)
 		if err != nil {
 			return nil, nil, 0, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
@@ -95,6 +99,16 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 		}
 		receipts = append(receipts, receipt)
 		allLogs = append(allLogs, receipt.Logs...)
+		from, err := signer.Sender(tx)
+		if err != nil {
+			panic(err)
+		}
+		to := "0x0"
+		if tx.To() != nil {
+			to = tx.To().Hex()
+		}
+		witnesstracing.SetGeneralInfo(block.NumberU64(), from.Hex(), to, tx.Value(), receipt.GasUsed)
+		witnesstracing.ExplDB.SaveRecord()
 	}
 	// Fail if Shanghai not enabled and len(withdrawals) is non-zero.
 	withdrawals := block.Withdrawals()
@@ -125,9 +139,20 @@ func applyTransaction(msg *Message, config *params.ChainConfig, gp *GasPool, sta
 		return nil, err
 	}
 
+	txWitnessKeys := txContext.Accesses.Keys()
+	currentValues := make([][]byte, len(txWitnessKeys))
+	tree := statedb.GetTrie().(*trie.VerkleTrie)
+	for i, k := range txWitnessKeys {
+		v, err := tree.GetWithHashedKey(k)
+		if err != nil {
+			panic(err)
+		}
+		currentValues[i] = v
+	}
+
 	// Update the state with pending changes.
 	var root []byte
-	if config.IsByzantium(blockNumber) {
+	if config.IsByzantium(blockNumber) && false {
 		statedb.Finalise(true)
 	} else {
 		root = statedb.IntermediateRoot(config.IsEIP158(blockNumber)).Bytes()
@@ -148,6 +173,15 @@ func applyTransaction(msg *Message, config *params.ChainConfig, gp *GasPool, sta
 	// If the transaction created a contract, store the creation address in the receipt.
 	if msg.To == nil {
 		receipt.ContractAddress = crypto.CreateAddress(evm.TxContext.Origin, tx.Nonce())
+	}
+
+	tree = statedb.GetTrie().(*trie.VerkleTrie)
+	for i, k := range txWitnessKeys {
+		v, err := tree.GetWithHashedKey(k)
+		if err != nil {
+			panic(err)
+		}
+		witnesstracing.RecordWitnessTreeKeyValue(k, currentValues[i], v)
 	}
 
 	statedb.Witness().Merge(txContext.Accesses)

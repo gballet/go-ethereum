@@ -23,6 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/witnesstracing"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
@@ -213,6 +214,7 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 				return nil, 0, ErrOutOfGas
 			}
 			gas -= wgas
+			witnesstracing.RecordWitnessCharge("CALL (non-existent account codehash write)", wgas, addr.Bytes())
 		}
 
 		if !isPrecompile && evm.chainRules.IsEIP158 && value.Sign() == 0 {
@@ -467,6 +469,7 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 			return nil, common.Address{}, 0, ErrOutOfGas
 		}
 		gas -= statelessGas
+		witnesstracing.RecordWitnessCharge("Contract creation (collision check)", statelessGas, address.Bytes())
 	}
 	// We add this to the access list _before_ taking a snapshot. Even if the creation fails,
 	// the access-list change should not be rolled back
@@ -486,6 +489,7 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 			return nil, common.Address{}, 0, ErrOutOfGas
 		}
 		gas -= consumed
+		witnesstracing.RecordWitnessCharge("Contract creation (account creation)", consumed, address.Bytes())
 	}
 
 	// Create a new account on the state
@@ -538,6 +542,8 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 			contract.UseGas(consumed) // consumed <= contract.Gas, so no return value check is needed
 			if len(ret) > 0 && (consumed < wanted) {
 				err = ErrCodeStoreOutOfGas
+			} else if len(ret) > 0 {
+				witnesstracing.RecordWitnessCharge("Contract creation (code-chunks)", consumed, address.Bytes())
 			}
 		}
 
