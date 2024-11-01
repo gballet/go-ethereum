@@ -133,18 +133,18 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 		return fmt.Errorf("invalid merkle root (remote: %x local: %x) dberr: %w", header.Root, root, statedb.Error())
 	}
 	if blockEw := block.ExecutionWitness(); blockEw != nil {
-		parent := v.bc.GetHeaderByNumber(header.Number.Uint64() - 1)
+		parent := v.bc.GetBlockByHash(header.ParentHash)
 		if parent == nil {
 			return fmt.Errorf("nil parent header for block %d", header.Number)
 		}
-		stateDiff, proof, err := beacon.BuildVerkleProof(header, statedb, parent.Root)
+		stateDiff, proof, err := beacon.BuildVerkleProof(header, statedb, parent.Root())
 		if err != nil {
 			return fmt.Errorf("error building verkle proof: %w", err)
 		}
 		ew := types.ExecutionWitness{
 			StateDiff:       stateDiff,
 			VerkleProof:     proof,
-			ParentStateRoot: parent.Root,
+			ParentStateRoot: parent.Root(),
 		}
 		if err := ew.Equal(blockEw); err != nil {
 			return fmt.Errorf("invalid execution witness: %v", err)
