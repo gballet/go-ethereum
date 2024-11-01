@@ -69,7 +69,7 @@ type ExecutionResult struct {
 	// Verkle witness
 	VerkleProof *verkle.VerkleProof `json:"verkleProof,omitempty"`
 	StateDiff   verkle.StateDiff    `json:"stateDiff,omitempty"`
-	ParentRoot  common.Hash         `json:"parentRoot,omitempty"`
+	ParentRoot  common.Hash         `json:"parentStateRoot,omitempty"`
 
 	// Values to test the verkle conversion
 	CurrentAccountAddress *common.Address `json:"currentConversionAddress,omitempty" gencodec:"optional"`
