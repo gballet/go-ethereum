@@ -167,6 +167,13 @@ func (s *stateObject) GetState(key common.Hash) common.Hash {
 	return s.GetCommittedState(key)
 }
 
+func (s *stateObject) GetOriginState(key common.Hash) common.Hash {
+	if value, cached := s.originStorage[key]; cached {
+		return value
+	}
+	return common.Hash{}
+}
+
 // GetCommittedState retrieves a value from the committed account storage trie.
 func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 	// If we have a pending write or clean cached, return that

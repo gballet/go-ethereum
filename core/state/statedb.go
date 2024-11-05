@@ -300,6 +300,23 @@ func (s *StateDB) SubRefund(gas uint64) {
 func (s *StateDB) Exist(addr common.Address) bool {
 	return s.getStateObject(addr) != nil
 }
+func (s *StateDB) StorageExist(addr common.Address, slot common.Hash) bool {
+	so := s.getStateObject(addr)
+	if so == nil {
+		return false
+	}
+	val := so.GetOriginState(slot)
+	if val == (common.Hash{}) {
+		// We got a 0, check if there was something in the tree
+		vtr := s.GetTrie().(*trie.VerkleTrie)
+		v, err := vtr.GetStorage(addr, slot[:])
+		if err != nil {
+			panic(err)
+		}
+		return v == nil
+	}
+	return false
+}
 
 // Empty returns whether the state object is either non-existent
 // or empty according to the EIP161 specification (balance = nonce = code = 0)

@@ -23,7 +23,9 @@ import (
 )
 
 func gasSStore4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	return evm.Accesses.TouchSlotAndChargeGas(contract.Address().Bytes(), common.Hash(stack.peek().Bytes32()), true, true /* XXX needs a missing API */, contract.Gas, true), nil
+	addr := contract.Address()
+	slot := common.Hash(stack.peek().Bytes32())
+	return evm.Accesses.TouchSlotAndChargeGas(addr.Bytes(), slot, true, evm.StateDB.StorageExist(addr, slot), contract.Gas, true), nil
 }
 
 func gasSLoad4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
