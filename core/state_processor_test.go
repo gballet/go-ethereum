@@ -507,9 +507,11 @@ func TestProcessVerkle(t *testing.T) {
 	contractCreationCost := intrinsicContractCreationGas +
 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + params.WitnessBranchReadCost + params.WitnessBranchWriteCost + /* creation */
 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* creation with value */
-		739 /* execution costs */
+		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #0 */
+		39 /* execution costs */
 	codeWithExtCodeCopyGas := intrinsicCodeWithExtCodeCopyGas +
 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + params.WitnessBranchReadCost + params.WitnessBranchWriteCost + /* creation (tx) */
+		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* write code hash */
 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + params.WitnessBranchReadCost + params.WitnessBranchWriteCost + /* creation (CREATE at pc=0x20) */
 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* write code hash */
 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #0 */
@@ -546,7 +548,7 @@ func TestProcessVerkle(t *testing.T) {
 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #12 */
 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #13 */
 		params.WitnessChunkReadCost + params.WitnessChunkWriteCost + /* code chunk #14 */
-		4844 /* execution costs */
+		4144 /* execution costs */
 	blockGasUsagesExpected := []uint64{
 		txCost1*2 + txCost2,
 		txCost1*2 + txCost2 + contractCreationCost + codeWithExtCodeCopyGas,
