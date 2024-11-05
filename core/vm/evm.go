@@ -481,7 +481,7 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 
 	// Charge the contract creation init gas in verkle mode
 	if evm.chainRules.IsEIP4762 {
-		consumed, wanted := evm.Accesses.TouchAndChargeContractCreateInit(address.Bytes(), gas)
+		consumed, wanted := evm.Accesses.TouchAndChargeContractCreateInit(address.Bytes(), gas, !evm.StateDB.Exist(address))
 		if consumed < wanted {
 			return nil, common.Address{}, 0, ErrOutOfGas
 		}
@@ -534,7 +534,7 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 				err = ErrCodeStoreOutOfGas
 			}
 		} else {
-			consumed, wanted := evm.Accesses.TouchCodeChunksRangeAndChargeGas(address.Bytes(), 0, uint64(len(ret)), uint64(len(ret)), true, contract.Gas)
+			consumed, wanted := evm.Accesses.TouchCodeChunksRangeAndChargeGas(address.Bytes(), 0, uint64(len(ret)), uint64(len(ret)), true, true, contract.Gas)
 			contract.UseGas(consumed) // consumed <= contract.Gas, so no return value check is needed
 			if len(ret) > 0 && (consumed < wanted) {
 				err = ErrCodeStoreOutOfGas

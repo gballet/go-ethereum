@@ -187,7 +187,7 @@ func (s *StateDB) Snaps() *snapshot.Tree {
 }
 
 func (s *StateDB) NewAccessWitness() *AccessWitness {
-	return NewAccessWitness(s.db.(*cachingDB).addrToPoint)
+	return NewAccessWitness(s.db.(*cachingDB).addrToPoint, make(map[chunkAccessKey]struct{}))
 }
 
 func (s *StateDB) Witness() *AccessWitness {
@@ -299,6 +299,23 @@ func (s *StateDB) SubRefund(gas uint64) {
 // Notably this also returns true for self-destructed accounts.
 func (s *StateDB) Exist(addr common.Address) bool {
 	return s.getStateObject(addr) != nil
+}
+func (s *StateDB) StorageExist(addr common.Address, slot common.Hash) bool {
+	so := s.getStateObject(addr)
+	if so == nil {
+		return false
+	}
+	val := so.GetOriginState(slot)
+	if val == (common.Hash{}) {
+		// We got a 0, check if there was something in the tree
+		vtr := s.GetTrie().(*trie.VerkleTrie)
+		v, err := vtr.GetStorage(addr, slot[:])
+		if err != nil {
+			panic(err)
+		}
+		return v == nil
+	}
+	return false
 }
 
 // Empty returns whether the state object is either non-existent
