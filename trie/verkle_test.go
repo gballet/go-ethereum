@@ -71,16 +71,12 @@ func TestReproduceTree(t *testing.T) {
 	}
 	root.Commit()
 
-	proof, Cs, _, _, err := verkle.MakeVerkleMultiProof(root, nil, append(presentKeys, absentKeys...), nil)
+	proof, Cs, zis, yis, err := verkle.MakeVerkleMultiProof(root, nil, append(presentKeys, absentKeys...), nil)
 	if err != nil {
 		t.Fatalf("could not create proof: %v", err)
 	}
-	vktProof, statediff, err := verkle.SerializeProof(proof)
-	if err != nil {
-		t.Fatalf("could not serialize proof: %v", err)
-	}
-	preStateRoot := root.Commit().Bytes()
-	if err := verkle.Verify(vktProof, preStateRoot[:], nil, statediff); err != nil {
+	cfg := verkle.GetConfig()
+	if ok, err := verkle.VerifyVerkleProof(proof, Cs, zis, yis, cfg); !ok || err != nil {
 		t.Fatalf("could not verify proof: %v", err)
 	}
 
@@ -298,13 +294,9 @@ func TestReproduceCondrieuStemAggregationInProofOfAbsence(t *testing.T) {
 	}
 	root.Commit()
 
-	proof, Cs, _, _, _ := verkle.MakeVerkleMultiProof(root, nil, append(presentKeys, absentKeys...), nil)
-	vktProof, statediff, err := verkle.SerializeProof(proof)
-	if err != nil {
-		t.Fatalf("could not serialize proof: %v", err)
-	}
-	preStateRoot := root.Commit().Bytes()
-	if err := verkle.Verify(vktProof, preStateRoot[:], nil, statediff); err != nil {
+	proof, Cs, zis, yis, _ := verkle.MakeVerkleMultiProof(root, nil, append(presentKeys, absentKeys...), nil)
+	cfg := verkle.GetConfig()
+	if ok, err := verkle.VerifyVerkleProof(proof, Cs, zis, yis, cfg); !ok || err != nil {
 		t.Fatal("could not verify proof")
 	}
 
@@ -348,13 +340,9 @@ func TestReproduceCondrieuPoAStemConflictWithAnotherStem(t *testing.T) {
 	}
 	root.Commit()
 
-	proof, Cs, _, _, _ := verkle.MakeVerkleMultiProof(root, nil, append(presentKeys, absentKeys...), nil)
-	vktProof, stateDiff, err := verkle.SerializeProof(proof)
-	if err != nil {
-		t.Fatalf("could not serialize proof: %v", err)
-	}
-	preStateRoot := root.Commit().Bytes()
-	if err := verkle.Verify(vktProof, preStateRoot[:], nil, stateDiff); err != nil {
+	proof, Cs, zis, yis, _ := verkle.MakeVerkleMultiProof(root, nil, append(presentKeys, absentKeys...), nil)
+	cfg := verkle.GetConfig()
+	if ok, err := verkle.VerifyVerkleProof(proof, Cs, zis, yis, cfg); !ok || err != nil {
 		t.Fatal("could not verify proof")
 	}
 
@@ -384,7 +372,7 @@ func TestEmptyKeySetInProveAndSerialize(t *testing.T) {
 func TestGetTreeKeys(t *testing.T) {
 	addr := common.Hex2Bytes("71562b71999873DB5b286dF957af199Ec94617f7")
 	target := common.Hex2Bytes("1540dfad7755b40be0768c6aa0a5096fbf0215e0e8cf354dd928a17834646600")
-	key := utils.GetTreeKeyBasicData(addr)
+	key := utils.GetTreeKeyVersion(addr)
 	t.Logf("key=%x", key)
 	t.Logf("actualKey=%x", target)
 	if !bytes.Equal(key, target) {

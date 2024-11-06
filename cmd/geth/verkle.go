@@ -18,12 +18,10 @@ package main
 
 import (
 	"bytes"
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
-	"runtime"
 	"time"
 
 	"github.com/ethereum/go-ethereum/cmd/utils"
@@ -37,7 +35,6 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	tutils "github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/ethereum/go-verkle"
-	"github.com/holiman/uint256"
 	cli "github.com/urfave/cli/v2"
 )
 
@@ -141,7 +138,8 @@ func convertToVerkle(ctx *cli.Context) error {
 		}
 	}
 
-	snaptree, err := snapshot.New(snapshot.Config{CacheSize: 256}, chaindb, trie.NewDatabase(chaindb), root)
+	triedb := trie.NewDatabase(chaindb)
+	snaptree, err := snapshot.New(snapshot.Config{CacheSize: 256}, chaindb, triedb, root)
 	if err != nil {
 		return err
 	}
@@ -150,6 +148,9 @@ func convertToVerkle(ctx *cli.Context) error {
 		return err
 	}
 	defer accIt.Release()
+
+	vkt := trie.NewVerkleTrie(&trie.BinaryNode{}, triedb, tutils.NewPointCache(), false)
+	count := 0
 
 	// root.FlushAtDepth(depth, saveverkle)
 
@@ -161,66 +162,35 @@ func convertToVerkle(ctx *cli.Context) error {
 			log.Error("Invalid account encountered during traversal", "error", err)
 			return err
 		}
+		var code []byte
+		// if !bytes.Equal(acc.CodeHash[:], types.EmptyCodeHash) {
 
-		// Store the basic account data
-		var (
-			nonce, balance, version, size [32]byte
-			newValues                     = make([][]byte, 256)
-		)
-		newValues[0] = version[:]
-		newValues[1] = balance[:]
-		newValues[2] = nonce[:]
-		newValues[4] = version[:] // memory-saving trick: by default, an account has 0 size
-		binary.LittleEndian.PutUint64(nonce[:8], acc.Nonce)
-		for i, b := range acc.Balance.Bytes() {
-			balance[len(acc.Balance.Bytes())-1-i] = b
-		}
+		// }
+
 		addr := rawdb.ReadPreimage(chaindb, accIt.Hash())
 		if addr == nil {
-			return fmt.Errorf("could not find preimage for address %x %v %v", accIt.Hash(), acc, accIt.Error())
+			panic("can't find preimage for address")
 		}
-		addrPoint := tutils.EvaluateAddressPoint(addr)
-		stem := tutils.GetTreeKeyBasicDataEvaluatedAddress(addrPoint)
-
-		// Store the account code if present
-		if !bytes.Equal(acc.CodeHash, types.EmptyRootHash[:]) {
-			code := rawdb.ReadCode(chaindb, common.BytesToHash(acc.CodeHash))
-			chunks := trie.ChunkifyCode(code)
-
-			for i := 0; i < 128 && i < len(chunks)/32; i++ {
-				newValues[128+i] = chunks[32*i : 32*(i+1)]
-			}
-
-			for i := 128; i < len(chunks)/32; {
-				values := make([][]byte, 256)
-				chunkkey := tutils.GetTreeKeyCodeChunkWithEvaluatedAddress(addrPoint, uint256.NewInt(uint64(i)))
-				j := i
-				for ; (j-i) < 256 && j < len(chunks)/32; j++ {
-					values[(j-128)%256] = chunks[32*j : 32*(j+1)]
-				}
-				i = j
-
-				// Otherwise, store the previous group in the tree with a
-				// stem insertion.
-				vRoot.InsertValuesAtStem(chunkkey[:31], values, chaindb.Get)
-			}
-
-			// Write the code size in the account header group
-			binary.LittleEndian.PutUint64(size[:8], uint64(len(code)))
+		err = vkt.UpdateAccount(common.BytesToAddress(addr), acc, len(code))
+		if err != nil {
+			panic(err)
 		}
-		newValues[3] = acc.CodeHash[:]
-		newValues[4] = size[:]
+		if len(code) > 0 {
+			err = vkt.UpdateContractCode(common.BytesToAddress(addr), common.Hash(acc.CodeHash), code)
+			if err != nil {
+				panic(err)
+			}
+		}
 
 		// Save every slot into the tree
 		if acc.Root != types.EmptyRootHash {
-			var translatedStorage = map[string][][]byte{}
-
 			storageIt, err := snaptree.StorageIterator(root, accIt.Hash(), common.Hash{})
 			if err != nil {
 				log.Error("Failed to open storage trie", "root", acc.Root, "error", err)
 				return err
 			}
 			for storageIt.Next() {
+				count++
 				// The value is RLP-encoded, decode it
 				var (
 					value     []byte   // slot value after RLP decoding
@@ -236,47 +206,16 @@ func convertToVerkle(ctx *cli.Context) error {
 					return fmt.Errorf("could not find preimage for slot %x", storageIt.Hash())
 				}
 
-				// if the slot belongs to the header group, store it there - and skip
-				// calculating the slot key.
-				slotnrbig := uint256.NewInt(0).SetBytes(slotnr)
-				if slotnrbig.Cmp(uint256.NewInt(64)) < 0 {
-					newValues[64+slotnr[31]] = safeValue[:]
-					continue
+				err = vkt.UpdateStorage(common.BytesToAddress(addr), slotnr, safeValue[:])
+				if err != nil {
+					panic(err)
 				}
 
-				// Slot not in the header group, get its tree key
-				slotkey := tutils.GetTreeKeyStorageSlotWithEvaluatedAddress(addrPoint, slotnr)
-
-				// Create the group if need be
-				values := translatedStorage[string(slotkey[:31])]
-				if values == nil {
-					values = make([][]byte, 256)
+				if count > 100_000 {
+					fmt.Println("committing")
+					vkt.Commit(false)
+					count = 0
 				}
-
-				// Store value in group
-				values[slotkey[31]] = safeValue[:]
-				translatedStorage[string(slotkey[:31])] = values
-
-				// Dump the stuff to disk if we ran out of space
-				var mem runtime.MemStats
-				runtime.ReadMemStats(&mem)
-				if mem.Alloc > 25*1024*1024*1024 {
-					fmt.Println("Memory usage exceeded threshold, calling mitigation function")
-					for s, vs := range translatedStorage {
-						var k [31]byte
-						copy(k[:], []byte(s))
-						// reminder that InsertStem will merge leaves
-						// if they exist.
-						vRoot.InsertValuesAtStem(k[:31], vs, chaindb.Get)
-					}
-					translatedStorage = make(map[string][][]byte)
-					vRoot.FlushAtDepth(2, saveverkle)
-				}
-			}
-			for s, vs := range translatedStorage {
-				var k [31]byte
-				copy(k[:], []byte(s))
-				vRoot.InsertValuesAtStem(k[:31], vs, chaindb.Get)
 			}
 			storageIt.Release()
 			if storageIt.Error() != nil {
@@ -284,19 +223,9 @@ func convertToVerkle(ctx *cli.Context) error {
 				return storageIt.Error()
 			}
 		}
-		// Finish with storing the complete account header group inside the tree.
-		vRoot.InsertValuesAtStem(stem[:31], newValues, chaindb.Get)
-
 		if time.Since(lastReport) > time.Second*8 {
 			log.Info("Traversing state", "accounts", accounts, "elapsed", common.PrettyDuration(time.Since(start)))
 			lastReport = time.Now()
-		}
-
-		var mem runtime.MemStats
-		runtime.ReadMemStats(&mem)
-		if mem.Alloc > 25*1024*1024*1024 {
-			fmt.Println("Memory usage exceeded threshold, calling mitigation function")
-			vRoot.FlushAtDepth(2, saveverkle)
 		}
 	}
 	if accIt.Error() != nil {

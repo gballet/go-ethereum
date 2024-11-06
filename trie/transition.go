@@ -23,16 +23,15 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/trie/trienode"
-	"github.com/ethereum/go-verkle"
 )
 
 type TransitionTrie struct {
-	overlay *VerkleTrie
+	overlay *BinaryTrie
 	base    *SecureTrie
 	storage bool
 }
 
-func NewTransitionTree(base *SecureTrie, overlay *VerkleTrie, st bool) *TransitionTrie {
+func NewTransitionTree(base *SecureTrie, overlay *BinaryTrie, st bool) *TransitionTrie {
 	return &TransitionTrie{
 		overlay: overlay,
 		base:    base,
@@ -45,7 +44,7 @@ func (t *TransitionTrie) Base() *SecureTrie {
 }
 
 // TODO(gballet/jsign): consider removing this API.
-func (t *TransitionTrie) Overlay() *VerkleTrie {
+func (t *TransitionTrie) Overlay() *BinaryTrie {
 	return t.overlay
 }
 
@@ -113,11 +112,11 @@ func (t *TransitionTrie) UpdateStorage(address common.Address, key []byte, value
 }
 
 // UpdateAccount abstract an account write to the trie.
-func (t *TransitionTrie) UpdateAccount(addr common.Address, account *types.StateAccount, codeLen int) error {
+func (t *TransitionTrie) UpdateAccount(addr common.Address, account *types.StateAccount, codelen int) error {
 	if account.Root != (common.Hash{}) && account.Root != types.EmptyRootHash {
 		t.overlay.db.SetStorageRootConversion(addr, account.Root)
 	}
-	return t.overlay.UpdateAccount(addr, account, codeLen)
+	return t.overlay.UpdateAccount(addr, account, codelen)
 }
 
 // Delete removes any existing value for key from the trie. If a node was not
@@ -177,13 +176,7 @@ func (t *TransitionTrie) IsVerkle() bool {
 }
 
 func (t *TransitionTrie) UpdateStem(key []byte, values [][]byte) error {
-	trie := t.overlay
-	switch root := trie.root.(type) {
-	case *verkle.InternalNode:
-		return root.InsertValuesAtStem(key, values, t.overlay.FlatdbNodeResolver)
-	default:
-		panic("invalid root type")
-	}
+	return t.overlay.root.InsertValuesAtStem(key, values, t.overlay.FlatdbNodeResolver, 0)
 }
 
 func (t *TransitionTrie) Copy() *TransitionTrie {
