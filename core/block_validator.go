@@ -20,12 +20,14 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/beacon"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-verkle"
 )
 
 // BlockValidator is responsible for validating block headers, uncles and
@@ -127,24 +129,42 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 	if receiptSha != header.ReceiptHash {
 		return fmt.Errorf("invalid receipt root hash (remote: %x local: %x)", header.ReceiptHash, receiptSha)
 	}
+	var (
+		proot common.Hash
+		proof *verkle.Proof
+		err   error
+		keys  [][]byte
+	)
+	if blockEw := block.ExecutionWitness(); blockEw != nil {
+		parent := v.bc.GetBlockByHash(header.ParentHash)
+		if parent == nil {
+			return fmt.Errorf("nil parent header for block %d", header.Number)
+		}
+		proot = parent.Root()
+		keys = statedb.Witness().Keys()
+		proof, err = beacon.BuildVerkleProof(header, statedb, proot, keys)
+		if err != nil {
+			return fmt.Errorf("error building verkle proof: %w", err)
+		}
+	}
 	// Validate the state root against the received state root and throw
 	// an error if they don't match.
 	if root := statedb.IntermediateRoot(v.config.IsEIP158(header.Number)); header.Root != root {
 		return fmt.Errorf("invalid merkle root (remote: %x local: %x) dberr: %w", header.Root, root, statedb.Error())
 	}
 	if blockEw := block.ExecutionWitness(); blockEw != nil {
-		parent := v.bc.GetBlockByHash(header.ParentHash)
-		if parent == nil {
-			return fmt.Errorf("nil parent header for block %d", header.Number)
-		}
-		stateDiff, proof, err := beacon.BuildVerkleProof(header, statedb, parent.Root())
+		err := trie.AddPostValuesToProof(keys, statedb.GetTrie().(*trie.VerkleTrie), proof)
 		if err != nil {
-			return fmt.Errorf("error building verkle proof: %w", err)
+			return fmt.Errorf("error adding post values to proof: %w", err)
+		}
+		vp, stateDiff, err := verkle.SerializeProof(proof)
+		if err != nil {
+			return fmt.Errorf("error serializing proof: %w", err)
 		}
 		ew := types.ExecutionWitness{
 			StateDiff:       stateDiff,
-			VerkleProof:     proof,
-			ParentStateRoot: parent.Root(),
+			VerkleProof:     vp,
+			ParentStateRoot: proot,
 		}
 		if err := ew.Equal(blockEw); err != nil {
 			return fmt.Errorf("invalid execution witness: %v", err)

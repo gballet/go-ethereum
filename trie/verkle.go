@@ -290,22 +290,32 @@ func (trie *VerkleTrie) IsVerkle() bool {
 	return true
 }
 
-func ProveAndSerialize(pretrie, posttrie *VerkleTrie, keys [][]byte, resolver verkle.NodeResolverFn) (*verkle.VerkleProof, verkle.StateDiff, error) {
+func AddPostValuesToProof(keys [][]byte, postroot *VerkleTrie, proof *verkle.Proof) error {
+	proof.PostValues = make([][]byte, len(keys))
+	if postroot != nil {
+		// keys were sorted already in the above GetcommitmentsForMultiproof.
+		// Set the post values, if they are untouched, leave them `nil`
+		for i := range keys {
+			val, err := postroot.root.Get(keys[i], nil)
+			if err != nil {
+				return fmt.Errorf("error getting post-state value for key %x: %w", keys[i], err)
+			}
+			if !bytes.Equal(proof.PreValues[i], val) {
+				proof.PostValues[i] = val
+			}
+		}
+	}
+
+	return nil
+}
+
+func Proof(pretrie, posttrie *VerkleTrie, keys [][]byte, resolver verkle.NodeResolverFn) (*verkle.Proof, error) {
 	var postroot verkle.VerkleNode
 	if posttrie != nil {
 		postroot = posttrie.root
 	}
 	proof, _, _, _, err := verkle.MakeVerkleMultiProof(pretrie.root, postroot, keys, resolver)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	p, kvps, err := verkle.SerializeProof(proof)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return p, kvps, nil
+	return proof, err
 }
 
 // ChunkedCode represents a sequence of 32-bytes chunks of code (31 bytes of which
