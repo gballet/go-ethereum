@@ -345,9 +345,32 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		statedb.AddBalance(w.Address, amount)
 		statedb.Witness().TouchFullAccount(w.Address[:], true, math.MaxUint64)
 	}
+
+	var (
+		verkleProof    *verkle.Proof
+		statelessProof *verkle.VerkleProof
+		keys           = statedb.Witness().Keys()
+		proofTrie      *trie.VerkleTrie
+	)
 	if chainConfig.IsVerkle(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) {
 		if err := overlay.OverlayVerkleTransition(statedb, common.Hash{}, chainConfig.OverlayStride); err != nil {
 			return nil, nil, fmt.Errorf("error performing the transition, err=%w", err)
+		}
+
+		if len(keys) > 0 && vtrpre != nil {
+			switch tr := statedb.GetTrie().(type) {
+			case *trie.VerkleTrie:
+				proofTrie = tr
+			case *trie.TransitionTrie:
+				proofTrie = tr.Overlay()
+			default:
+				return nil, nil, fmt.Errorf("invalid tree type in proof generation: %v", tr)
+			}
+			var err error
+			verkleProof, err = trie.Proof(vtrpre, proofTrie, keys, vtrpre.FlatdbNodeResolver)
+			if err != nil {
+				return nil, nil, fmt.Errorf("error generating verkle proof for block %d: %w", pre.Env.Number, err)
+			}
 		}
 	}
 	// Commit block
@@ -357,32 +380,15 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	}
 
 	// Add the witness to the execution result
-	var vktProof *verkle.VerkleProof
-	var vktStateDiff verkle.StateDiff
+	var statelessDiff verkle.StateDiff
 	if chainConfig.IsVerkle(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) {
-		keys := statedb.Witness().Keys()
-		if len(keys) > 0 && vtrpre != nil {
-			var proofTrie *trie.VerkleTrie
-			switch tr := statedb.GetTrie().(type) {
-			case *trie.VerkleTrie:
-				proofTrie = tr
-			case *trie.TransitionTrie:
-				proofTrie = tr.Overlay()
-			default:
-				return nil, nil, fmt.Errorf("invalid tree type in proof generation: %v", tr)
-			}
-			proof, err := trie.Proof(vtrpre, proofTrie, keys, vtrpre.FlatdbNodeResolver)
-			if err != nil {
-				return nil, nil, fmt.Errorf("error generating verkle proof for block %d: %w", pre.Env.Number, err)
-			}
-			err = trie.AddPostValuesToProof(keys, proofTrie, proof)
-			if err != nil {
-				return nil, nil, fmt.Errorf("error adding post values to proof: %w", err)
-			}
-			vktProof, vktStateDiff, err = verkle.SerializeProof(proof)
-			if err != nil {
-				return nil, nil, fmt.Errorf("error serializing proof: %w", err)
-			}
+		err = trie.AddPostValuesToProof(keys, proofTrie, verkleProof)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error adding post values to proof: %w", err)
+		}
+		statelessProof, statelessDiff, err = verkle.SerializeProof(verkleProof)
+		if err != nil {
+			return nil, nil, fmt.Errorf("error serializing proof: %w", err)
 		}
 	}
 
@@ -397,8 +403,8 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 		Difficulty:  (*math.HexOrDecimal256)(vmContext.Difficulty),
 		GasUsed:     (math.HexOrDecimal64)(gasUsed),
 		BaseFee:     (*math.HexOrDecimal256)(vmContext.BaseFee),
-		VerkleProof: vktProof,
-		StateDiff:   vktStateDiff,
+		VerkleProof: statelessProof,
+		StateDiff:   statelessDiff,
 		ParentRoot:  parentStateRoot,
 	}
 	if pre.Env.Withdrawals != nil {
