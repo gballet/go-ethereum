@@ -295,7 +295,7 @@ func AddPostValuesToProof(postroot *VerkleTrie, proof *verkle.Proof) error {
 	if postroot != nil {
 		// Set the post values, if they are untouched, leave them `nil`
 		for i := range proof.Keys {
-			val, err := postroot.root.Get(proof.Keys[i], nil)
+			val, err := postroot.root.Get(proof.Keys[i], postroot.FlatdbNodeResolver)
 			if err != nil {
 				return fmt.Errorf("error getting post-state value for key %x: %w", proof.Keys[i], err)
 			}
