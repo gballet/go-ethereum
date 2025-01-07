@@ -349,7 +349,6 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	var (
 		verkleProof    *verkle.Proof
 		statelessProof *verkle.VerkleProof
-		keys           = statedb.Witness().Keys()
 		proofTrie      *trie.VerkleTrie
 	)
 	if chainConfig.IsVerkle(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) {
@@ -357,6 +356,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 			return nil, nil, fmt.Errorf("error performing the transition, err=%w", err)
 		}
 
+		keys := statedb.Witness().Keys()
 		if len(keys) > 0 && vtrpre != nil {
 			switch tr := statedb.GetTrie().(type) {
 			case *trie.VerkleTrie:
@@ -382,7 +382,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	// Add the witness to the execution result
 	var statelessDiff verkle.StateDiff
 	if chainConfig.IsVerkle(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) && verkleProof != nil {
-		err = trie.AddPostValuesToProof(keys, proofTrie, verkleProof)
+		err = trie.AddPostValuesToProof(proofTrie, verkleProof)
 		if err != nil {
 			return nil, nil, fmt.Errorf("error adding post values to proof: %w", err)
 		}

@@ -421,7 +421,7 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	// Assemble and return the final block.
 	block := types.NewBlockWithWithdrawals(header, txs, uncles, receipts, withdrawals, trie.NewStackTrie(nil))
 	if chain.Config().IsVerkle(header.Number, header.Time) && chain.Config().ProofInBlocks {
-		err := trie.AddPostValuesToProof(keys, state.GetTrie().(*trie.VerkleTrie), proof)
+		err := trie.AddPostValuesToProof(state.GetTrie().(*trie.VerkleTrie), proof)
 		if err != nil {
 			return nil, fmt.Errorf("error adding post values to proof: %w", err)
 		}

@@ -290,15 +290,14 @@ func (trie *VerkleTrie) IsVerkle() bool {
 	return true
 }
 
-func AddPostValuesToProof(keys [][]byte, postroot *VerkleTrie, proof *verkle.Proof) error {
-	proof.PostValues = make([][]byte, len(keys))
+func AddPostValuesToProof(postroot *VerkleTrie, proof *verkle.Proof) error {
+	proof.PostValues = make([][]byte, len(proof.Keys))
 	if postroot != nil {
-		// keys were sorted already in the above GetcommitmentsForMultiproof.
 		// Set the post values, if they are untouched, leave them `nil`
-		for i := range keys {
-			val, err := postroot.root.Get(keys[i], nil)
+		for i := range proof.Keys {
+			val, err := postroot.root.Get(proof.Keys[i], nil)
 			if err != nil {
-				return fmt.Errorf("error getting post-state value for key %x: %w", keys[i], err)
+				return fmt.Errorf("error getting post-state value for key %x: %w", proof.Keys[i], err)
 			}
 			if !bytes.Equal(proof.PreValues[i], val) {
 				proof.PostValues[i] = val

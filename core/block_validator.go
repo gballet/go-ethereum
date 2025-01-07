@@ -153,7 +153,7 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 		return fmt.Errorf("invalid merkle root (remote: %x local: %x) dberr: %w", header.Root, root, statedb.Error())
 	}
 	if blockEw := block.ExecutionWitness(); blockEw != nil {
-		err := trie.AddPostValuesToProof(keys, statedb.GetTrie().(*trie.VerkleTrie), proof)
+		err := trie.AddPostValuesToProof(statedb.GetTrie().(*trie.VerkleTrie), proof)
 		if err != nil {
 			return fmt.Errorf("error adding post values to proof: %w", err)
 		}
