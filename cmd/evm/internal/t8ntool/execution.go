@@ -381,7 +381,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 
 	// Add the witness to the execution result
 	var statelessDiff verkle.StateDiff
-	if chainConfig.IsVerkle(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) {
+	if chainConfig.IsVerkle(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) && verkleProof != nil {
 		err = trie.AddPostValuesToProof(keys, proofTrie, verkleProof)
 		if err != nil {
 			return nil, nil, fmt.Errorf("error adding post values to proof: %w", err)
