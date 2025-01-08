@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"sort"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -291,8 +292,13 @@ func (trie *VerkleTrie) IsVerkle() bool {
 }
 
 func AddPostValuesToProof(postroot *VerkleTrie, proof *verkle.Proof) error {
-	proof.PostValues = make([][]byte, len(proof.Keys))
 	if postroot != nil {
+		proof.PostValues = make([][]byte, len(proof.Keys))
+
+		// Sanity check: sort the keys. This shouldn't be necessary but better
+		// safe than sorry.
+		sort.Sort(verkle.Keylist(proof.Keys))
+
 		// Set the post values, if they are untouched, leave them `nil`
 		for i := range proof.Keys {
 			val, err := postroot.root.Get(proof.Keys[i], postroot.FlatdbNodeResolver)
