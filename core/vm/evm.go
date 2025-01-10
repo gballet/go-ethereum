@@ -45,6 +45,16 @@ func (evm *EVM) precompile(addr common.Address) (PrecompiledContract, bool) {
 	return p, ok
 }
 
+func (evm *EVM) isSystemContract(addr common.Address) bool {
+	switch addr {
+	case params.BeaconRootsAddress, params.HistoryStorageAddress, params.WithdrawalQueueAddress,
+		params.ConsolidationQueueAddress, params.SystemAddress:
+		return true
+	default:
+		return false
+	}
+}
+
 // BlockContext provides the EVM with auxiliary information. Once provided
 // it shouldn't be modified.
 type BlockContext struct {
@@ -195,8 +205,14 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 
 	if !evm.StateDB.Exist(addr) {
 		if !isPrecompile && evm.chainRules.IsEIP4762 {
-			// add proof of absence to witness
-			wgas := evm.AccessEvents.AddAccount(addr, false)
+			// Add proof of absence to witness
+			// At this point, the read costs have already been charged, either because this
+			// is a direct tx call, in which case it's covered by the intrinsic gas, or because
+			// of a CALL instruction, in which case BASIC_DATA has been added to the access
+			// list in write mode. If there is enough gas paying for the addition of the code
+			// hash leaf to the access list, then account creation will proceed unimpaired.
+			// Thus, only pay for the creation of the code hash leaf here.
+			wgas := evm.AccessEvents.CodeHashGas(addr, true, gas, false)
 			if gas < wgas {
 				evm.StateDB.RevertToSnapshot(snapshot)
 				return nil, 0, ErrOutOfGas
@@ -441,9 +457,9 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 	}
 	evm.StateDB.SetNonce(caller.Address(), nonce+1)
 
-	// Charge the contract creation init gas in verkle mode
+	// Charge the contract creation precheck gas in verkle mode
 	if evm.chainRules.IsEIP4762 {
-		statelessGas := evm.AccessEvents.ContractCreatePreCheckGas(address)
+		statelessGas := evm.AccessEvents.ContractCreatePreCheckGas(address, gas)
 		if statelessGas > gas {
 			return nil, common.Address{}, 0, ErrOutOfGas
 		}
@@ -473,6 +489,19 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 		}
 		return nil, common.Address{}, 0, ErrContractAddressCollision
 	}
+
+	// Charge the contract creation init gas in verkle mode
+	if evm.chainRules.IsEIP4762 {
+		consumed, wanted := evm.AccessEvents.ContractCreateInitGas(address, gas)
+		if consumed < wanted {
+			return nil, common.Address{}, 0, ErrOutOfGas
+		}
+		if evm.Config.Tracer != nil && evm.Config.Tracer.OnGasChange != nil {
+			evm.Config.Tracer.OnGasChange(gas, gas-consumed, tracing.GasChangeWitnessContractInit)
+		}
+		gas = gas - consumed
+	}
+
 	// Create a new account on the state only if the object was not present.
 	// It might be possible the contract code is deployed to a pre-existent
 	// account with non-zero balance.
@@ -488,17 +517,6 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 
 	if evm.chainRules.IsEIP158 {
 		evm.StateDB.SetNonce(address, 1)
-	}
-	// Charge the contract creation init gas in verkle mode
-	if evm.chainRules.IsEIP4762 {
-		statelessGas := evm.AccessEvents.ContractCreateInitGas(address)
-		if statelessGas > gas {
-			return nil, common.Address{}, 0, ErrOutOfGas
-		}
-		if evm.Config.Tracer != nil && evm.Config.Tracer.OnGasChange != nil {
-			evm.Config.Tracer.OnGasChange(gas, gas-statelessGas, tracing.GasChangeWitnessContractInit)
-		}
-		gas = gas - statelessGas
 	}
 	evm.Context.Transfer(evm.StateDB, caller.Address(), address, value)
 
@@ -542,7 +560,9 @@ func (evm *EVM) initNewContract(contract *Contract, address common.Address, valu
 			return ret, ErrCodeStoreOutOfGas
 		}
 	} else {
-		if len(ret) > 0 && !contract.UseGas(evm.AccessEvents.CodeChunksRangeGas(address, 0, uint64(len(ret)), uint64(len(ret)), true), evm.Config.Tracer, tracing.GasChangeWitnessCodeChunk) {
+		consumed, wanted := evm.AccessEvents.CodeChunksRangeGas(address, 0, uint64(len(ret)), uint64(len(ret)), true, contract.Gas)
+		contract.UseGas(consumed, evm.Config.Tracer, tracing.GasChangeWitnessCodeChunk)
+		if len(ret) > 0 && (consumed < wanted) {
 			return ret, ErrCodeStoreOutOfGas
 		}
 	}

@@ -17,7 +17,9 @@
 package core
 
 import (
+	"encoding/binary"
 	"fmt"
+	"math"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -85,7 +87,7 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
 		ProcessBeaconBlockRoot(*beaconRoot, evm)
 	}
-	if p.config.IsPrague(block.Number(), block.Time()) {
+	if p.config.IsPrague(block.Number(), block.Time()) || p.config.IsVerkle(block.Number(), block.Time()) {
 		ProcessParentBlockHash(block.ParentHash(), evm)
 	}
 
@@ -236,25 +238,12 @@ func ProcessBeaconBlockRoot(beaconRoot common.Hash, evm *vm.EVM) {
 // ProcessParentBlockHash stores the parent block hash in the history storage contract
 // as per EIP-2935.
 func ProcessParentBlockHash(prevHash common.Hash, evm *vm.EVM) {
-	if tracer := evm.Config.Tracer; tracer != nil {
-		onSystemCallStart(tracer, evm.GetVMContext())
-		if tracer.OnSystemCallEnd != nil {
-			defer tracer.OnSystemCallEnd()
-		}
-	}
-	msg := &Message{
-		From:      params.SystemAddress,
-		GasLimit:  30_000_000,
-		GasPrice:  common.Big0,
-		GasFeeCap: common.Big0,
-		GasTipCap: common.Big0,
-		To:        &params.HistoryStorageAddress,
-		Data:      prevHash.Bytes(),
-	}
-	evm.SetTxContext(NewEVMTxContext(msg))
-	evm.StateDB.AddAddressToAccessList(params.HistoryStorageAddress)
-	_, _, _ = evm.Call(vm.AccountRef(msg.From), *msg.To, msg.Data, 30_000_000, common.U2560)
-	evm.StateDB.Finalise(true)
+	ringIndex := (evm.Context.BlockNumber.Uint64() - 1) % 8192
+	var key common.Hash
+	binary.BigEndian.PutUint64(key[24:], ringIndex)
+	evm.StateDB.SetState(params.SystemAddress, key, prevHash)
+	evm.StateDB.AccessEvents().SlotGas(params.SystemAddress, key, true, math.MaxUint64, false)
+	evm.StateDB.Finalise(false)
 }
 
 // ProcessWithdrawalQueue calls the EIP-7002 withdrawal queue contract.
