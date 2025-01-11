@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/ethereum/go-verkle"
 )
 
@@ -152,7 +153,20 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 		return fmt.Errorf("invalid merkle root (remote: %x local: %x) dberr: %w", header.Root, root, statedb.Error())
 	}
 	if blockEw := block.ExecutionWitness(); blockEw != nil {
-		err := trie.AddPostValuesToProof(statedb.GetTrie().(*trie.VerkleTrie), proof)
+		tr := statedb.GetTrie()
+		var vtr *trie.VerkleTrie
+		switch pre := tr.(type) {
+		case *trie.VerkleTrie:
+			vtr = pre
+		case *trie.TransitionTrie:
+			vtr = pre.Overlay()
+		default:
+			// This should only happen for the first block of the
+			// conversion, when the previous tree is a merkle tree.
+			//  Logically, the "previous" verkle tree is an empty tree.
+			vtr = trie.NewVerkleTrie(verkle.New(), statedb.Database().TrieDB(), utils.NewPointCache(), false)
+		}
+		err := trie.AddPostValuesToProof(vtr, proof)
 		if err != nil {
 			return fmt.Errorf("error adding post values to proof: %w", err)
 		}
