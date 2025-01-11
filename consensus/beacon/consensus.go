@@ -421,7 +421,7 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	// Assemble and return the final block.
 	block := types.NewBlockWithWithdrawals(header, txs, uncles, receipts, withdrawals, trie.NewStackTrie(nil))
 	if chain.Config().IsVerkle(header.Number, header.Time) && chain.Config().ProofInBlocks {
-		err := trie.AddPostValuesToProof(state.GetTrie().(*trie.VerkleTrie), proof)
+		err := trie.AddPostValuesToProof(getVerkleTrieOrEmpty(state.GetTrie(), state.Database().TrieDB()), proof)
 		if err != nil {
 			return nil, fmt.Errorf("error adding post values to proof: %w", err)
 		}
@@ -434,6 +434,22 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	return block, nil
 }
 
+func getVerkleTrieOrEmpty(tr state.Trie, triedb *trie.Database) *trie.VerkleTrie {
+	var vtr *trie.VerkleTrie
+	switch pre := tr.(type) {
+	case *trie.VerkleTrie:
+		vtr = pre
+	case *trie.TransitionTrie:
+		vtr = pre.Overlay()
+	default:
+		// This should only happen for the first block of the
+		// conversion, when the previous tree is a merkle tree.
+		//  Logically, the "previous" verkle tree is an empty tree.
+		vtr = trie.NewVerkleTrie(verkle.New(), triedb, utils.NewPointCache(), false)
+	}
+	return vtr
+}
+
 func BuildVerkleProof(header *types.Header, state *state.StateDB, parentRoot common.Hash, keys [][]byte) (*verkle.Proof, error) {
 	var (
 		proof *verkle.Proof
@@ -444,19 +460,8 @@ func BuildVerkleProof(header *types.Header, state *state.StateDB, parentRoot com
 		return nil, fmt.Errorf("error opening pre-state tree root: %w", err)
 	}
 
-	var vtr *trie.VerkleTrie
-	switch pre := preTrie.(type) {
-	case *trie.VerkleTrie:
-		vtr = pre
-	case *trie.TransitionTrie:
-		vtr = pre.Overlay()
-	default:
-		// This should only happen for the first block of the
-		// conversion, when the previous tree is a merkle tree.
-		//  Logically, the "previous" verkle tree is an empty tree.
-		vtr = trie.NewVerkleTrie(verkle.New(), state.Database().TrieDB(), utils.NewPointCache(), false)
-	}
 	if len(keys) > 0 {
+		vtr := getVerkleTrieOrEmpty(preTrie, state.Database().TrieDB())
 		proof, err = trie.Proof(vtr, nil, keys, vtr.FlatdbNodeResolver)
 		if err != nil {
 			return nil, fmt.Errorf("error generating verkle proof for block %d: %w", header.Number, err)
