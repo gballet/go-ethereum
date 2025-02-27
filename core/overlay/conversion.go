@@ -378,6 +378,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 				if !bytes.Equal(acc.CodeHash, types.EmptyCodeHash[:]) {
 					code := rawdb.ReadCode(statedb.Database().DiskDB(), common.BytesToHash(acc.CodeHash))
 					chunks := trie.ChunkifyCode(code)
+					count += uint64((len(chunks) + 30) / 31)
 
 					mkv.addAccountCode(migrdb.GetCurrentAccountAddress().Bytes(), uint64(len(code)), chunks)
 				}
