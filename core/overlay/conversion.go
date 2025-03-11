@@ -222,7 +222,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 	// TODO(jsign): for fixture execution this isn't needed since it's configured (hardcoded)
 	// in the forks.go file. But it's required for filling! Fix this eventually when the testing
 	// framework passes flag.
-	maxMovedCount = 3
+	maxMovedCount = 7
 
 	// verkle transition: if the conversion process is in progress, move
 	// N values from the MPT into the verkle tree.
