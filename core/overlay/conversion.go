@@ -219,6 +219,11 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 	migrdb.LockCurrentTransitionState()
 	defer migrdb.UnLockCurrentTransitionState()
 
+	// TODO(jsign): for fixture execution this isn't needed since it's configured (hardcoded)
+	// in the forks.go file. But it's required for filling! Fix this eventually when the testing
+	// framework passes flag.
+	maxMovedCount = 7
+
 	// verkle transition: if the conversion process is in progress, move
 	// N values from the MPT into the verkle tree.
 	if migrdb.InTransition() {
@@ -373,6 +378,7 @@ func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedC
 				if !bytes.Equal(acc.CodeHash, types.EmptyCodeHash[:]) {
 					code := rawdb.ReadCode(statedb.Database().DiskDB(), common.BytesToHash(acc.CodeHash))
 					chunks := trie.ChunkifyCode(code)
+					count += uint64(len(chunks)) / 32
 
 					mkv.addAccountCode(migrdb.GetCurrentAccountAddress().Bytes(), uint64(len(code)), chunks)
 				}

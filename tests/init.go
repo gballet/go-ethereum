@@ -355,6 +355,7 @@ var Forks = map[string]*params.ChainConfig{
 		TerminalTotalDifficulty: big.NewInt(0),
 		ShanghaiTime:            u64(0),
 		VerkleTime:              u64(32),
+		OverlayStride:           7,
 	},
 }
 
