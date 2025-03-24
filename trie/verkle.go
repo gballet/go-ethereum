@@ -291,13 +291,27 @@ func (trie *VerkleTrie) IsVerkle() bool {
 	return true
 }
 
+type keylist [][]byte
+
+func (kl keylist) Len() int {
+	return len(kl)
+}
+
+func (kl keylist) Less(i, j int) bool {
+	return bytes.Compare(kl[i], kl[j]) == -1
+}
+
+func (kl keylist) Swap(i, j int) {
+	kl[i], kl[j] = kl[j], kl[i]
+}
+
 func AddPostValuesToProof(postroot *VerkleTrie, proof *verkle.Proof) error {
 	if postroot != nil {
 		proof.PostValues = make([][]byte, len(proof.Keys))
 
 		// Sanity check: sort the keys. This shouldn't be necessary but better
 		// safe than sorry.
-		sort.Sort(verkle.Keylist(proof.Keys))
+		sort.Sort(keylist(proof.Keys))
 
 		// Set the post values, if they are untouched, leave them `nil`
 		for i := range proof.Keys {
