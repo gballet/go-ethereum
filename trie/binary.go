@@ -30,22 +30,383 @@ import (
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/ethereum/go-verkle"
 	"github.com/holiman/uint256"
+	"github.com/zeebo/blake3"
 )
+
+type (
+	NodeFlushFn    func([]byte, BinaryNode)
+	NodeResolverFn func([]byte) ([]byte, error)
+)
+
+type BinaryNode interface {
+	Get([]byte, NodeResolverFn) ([]byte, error)
+	Insert([]byte, []byte, NodeResolverFn) error
+	Commit() common.Hash
+	Copy() BinaryNode
+	Hash() common.Hash
+	GetValuesAtStem([]byte, NodeResolverFn) ([][]byte, error)
+	InsertValuesAtStem([]byte, [][]byte, NodeResolverFn) error
+	CollectNodes([]byte, NodeFlushFn) error
+
+	toDot(parent, path string) string
+}
+
+var (
+	errInsertingIntoHash = errors.New("cannot insert into hashed node")
+)
+
+type HashedNode common.Hash
+
+func (h HashedNode) Get(_ []byte, _ NodeResolverFn) ([]byte, error) {
+	panic("not implemented") // TODO: Implement
+}
+
+func (h HashedNode) Insert(_ []byte, _ []byte, _ NodeResolverFn) error {
+	return errInsertingIntoHash
+}
+
+func (h HashedNode) Commit() common.Hash {
+	panic("not implemented") // TODO: Implement
+}
+
+func (h HashedNode) Copy() BinaryNode {
+	panic("not implemented") // TODO: Implement
+}
+
+func (h HashedNode) Hash() common.Hash {
+	panic("not implemented") // TODO: Implement
+}
+
+func (h HashedNode) GetValuesAtStem(_ []byte, _ NodeResolverFn) ([][]byte, error) {
+	panic("not implemented") // TODO: Implement
+}
+
+func (h HashedNode) InsertValuesAtStem(_ []byte, _ [][]byte, _ NodeResolverFn) error {
+	return errInsertingIntoHash
+}
+
+func (h HashedNode) toDot(parent string, path string) string {
+	panic("not implemented") // TODO: Implement
+}
+
+func (h HashedNode) CollectNodes([]byte, NodeFlushFn) error {
+	panic("not implemented") // TODO: Implement
+}
+
+type StemNode struct {
+	Stem   []byte
+	Values [][]byte
+}
+
+func (bt *StemNode) Get(key []byte, _ NodeResolverFn) ([]byte, error) {
+	panic("this should not be called directly")
+}
+
+func (bt *StemNode) Insert(key []byte, value []byte, _ NodeResolverFn) error {
+	if !bytes.Equal(bt.Stem, key[:31]) {
+		return errors.New("invalid insertion: stem mismatch")
+	}
+	if len(value) != 32 {
+		return errors.New("invalid insertion: value length")
+	}
+
+	bt.Values[key[31]] = value
+	return nil
+}
+
+func (bt *StemNode) Commit() common.Hash {
+	return bt.Hash()
+}
+
+func (bt *StemNode) Copy() BinaryNode {
+	var values [256][]byte
+	for i, v := range bt.Values {
+		values[i] = append([]byte(nil), v...)
+	}
+	return &StemNode{
+		Stem:   append([]byte(nil), bt.Stem...),
+		Values: values[:],
+	}
+}
+
+func (bt *StemNode) Hash() common.Hash {
+	var data [verkle.NodeWidth]common.Hash
+	for i, v := range bt.Values {
+		h := blake3.Sum256(v)
+		data[i] = common.BytesToHash(h[:])
+	}
+
+	h := blake3.New()
+	for level := 1; level <= 8; level++ {
+		for i := 0; i < verkle.NodeWidth/(1<<level); i++ {
+			h.Write(data[i*2][:])
+			h.Write(data[i*2+1][:])
+			data[i] = common.Hash(h.Sum(nil))
+			h.Reset()
+		}
+	}
+
+	h.Write(bt.Stem)
+	h.Write([]byte{0})
+	h.Write(data[0][:])
+	return common.BytesToHash(h.Sum(nil))
+}
+
+func (bt *StemNode) CollectNodes(path []byte, flush NodeFlushFn) error {
+	flush(path, bt)
+	return nil
+}
+
+func (bt *StemNode) GetValuesAtStem(_ []byte, _ NodeResolverFn) ([][]byte, error) {
+	return bt.Values[:], nil
+}
+
+func (bt *StemNode) InsertValuesAtStem(_ []byte, values [][]byte, _ NodeResolverFn) error {
+	for i, v := range values {
+		if v != nil {
+			bt.Values[i] = v
+		}
+	}
+	return nil
+}
+
+func (bt *StemNode) toDot(parent, path string) string {
+	me := fmt.Sprintf("stem%s", path)
+	ret := fmt.Sprintf("%s [label=\"stem=%x c=%x\"]\n", me, bt.Stem, bt.Hash())
+	ret = fmt.Sprintf("%s %s -> %s\n", ret, parent, me)
+	for i, v := range bt.Values {
+		if v != nil {
+			ret = fmt.Sprintf("%s%s%x [label=\"%x\"]\n", ret, me, i, v)
+			ret = fmt.Sprintf("%s%s -> %s%x\n", ret, me, me, i)
+		}
+	}
+	return ret
+}
+
+func (n *StemNode) Key(i int) []byte {
+	var ret [32]byte
+	copy(ret[:], n.Stem)
+	ret[verkle.StemSize] = byte(i)
+	return ret[:]
+}
+
+type InternalNode struct {
+	left, right BinaryNode
+	depth       int
+}
+
+func NewBinaryNode() BinaryNode {
+	return &InternalNode{}
+}
+
+func (bt *InternalNode) GetValuesAtStem(stem []byte, resolver NodeResolverFn) ([][]byte, error) {
+	if bt.depth > 31*8 {
+		return nil, errors.New("node too deep")
+	}
+
+	bit := stem[bt.depth/8] >> (7 - (bt.depth % 8)) & 1
+	var child *BinaryNode
+	if bit == 0 {
+		child = &bt.left
+	} else {
+		child = &bt.right
+	}
+
+	if hn, ok := (*child).(HashedNode); ok {
+		data, err := resolver(hn[:])
+		if err != nil {
+			return nil, fmt.Errorf("GetValuesAtStem resolve error: %w", err)
+		}
+		node, err := DeserializeNode(data, bt.depth+1)
+		if err != nil {
+			return nil, fmt.Errorf("GetValuesAtStem node deserialization error: %w", err)
+		}
+		*child = node
+	}
+	return (*child).GetValuesAtStem(stem, resolver)
+}
+
+func (bt *InternalNode) Get(key []byte, resolver NodeResolverFn) ([]byte, error) {
+	values, err := bt.GetValuesAtStem(key[:31], resolver)
+	if err != nil {
+		return nil, fmt.Errorf("Get error: %w", err)
+	}
+	return values[key[31]], nil
+}
+
+func (bt *InternalNode) Insert(key []byte, value []byte, resolver NodeResolverFn) error {
+	var values [256][]byte
+	values[key[31]] = value
+	return bt.InsertValuesAtStem(key[:31], values[:], resolver)
+}
+
+func (bt *InternalNode) Commit() common.Hash {
+	hasher := blake3.New()
+	hasher.Write(bt.left.Commit().Bytes())
+	hasher.Write(bt.right.Commit().Bytes())
+	sum := hasher.Sum(nil)
+	return common.BytesToHash(sum)
+}
+
+func (bt *InternalNode) Copy() BinaryNode {
+	return &InternalNode{
+		left:  bt.left.Copy(),
+		right: bt.right.Copy(),
+		depth: bt.depth,
+	}
+}
+
+func (bt *InternalNode) Hash() common.Hash {
+	h := blake3.New()
+	if bt.left != nil {
+		h.Write(bt.left.Hash().Bytes())
+	} else {
+		h.Write(zero[:])
+	}
+	if bt.right != nil {
+		h.Write(bt.right.Hash().Bytes())
+	} else {
+		h.Write(zero[:])
+	}
+	return common.BytesToHash(h.Sum(nil))
+}
+
+func (bt *InternalNode) InsertValuesAtStem(stem []byte, values [][]byte, resolver NodeResolverFn) error {
+	bit := stem[bt.depth/8] >> (7 - (bt.depth % 8)) & 1
+	var child *BinaryNode
+	if bit == 0 {
+		child = &bt.left
+	} else {
+		child = &bt.right
+	}
+
+	if *child == nil {
+		*child = &StemNode{
+			Stem:   append([]byte(nil), stem[:31]...),
+			Values: values,
+		}
+		return nil
+	}
+	// XXX il faut vérifier si c'est un stemnode et aussi faire le resolve
+	return (*child).InsertValuesAtStem(stem, values, resolver)
+}
+
+func (bt *InternalNode) CollectNodes(path []byte, flushfn NodeFlushFn) error {
+	if bt.left != nil {
+		var p [256]byte
+		copy(p[:], path)
+		childpath := p[:len(path)]
+		childpath = append(childpath, 0)
+		if err := bt.left.CollectNodes(childpath, flushfn); err != nil {
+			return err
+		}
+	}
+	if bt.right != nil {
+		var p [256]byte
+		copy(p[:], path)
+		childpath := p[:len(path)]
+		childpath = append(childpath, 1)
+		if err := bt.right.CollectNodes(childpath, flushfn); err != nil {
+			return err
+		}
+	}
+	flushfn(path, bt)
+	return nil
+}
+
+func SerializeNode(node BinaryNode) []byte {
+	switch n := (node).(type) {
+	case *InternalNode:
+		var serialized [65]byte
+		serialized[0] = 1
+		copy(serialized[1:33], n.left.Hash().Bytes())
+		copy(serialized[33:65], n.right.Hash().Bytes())
+		return serialized[:]
+	case *StemNode:
+		var serialized [32 + 256*32]byte
+		serialized[0] = 2
+		copy(serialized[1:32], node.(*StemNode).Stem)
+		bitmap := serialized[32:64]
+		offset := 64
+		for i, v := range node.(*StemNode).Values {
+			if v != nil {
+				bitmap[i/8] |= 1 << (7 - (i % 8))
+				copy(serialized[offset:offset+32], v)
+				offset += 32
+			}
+		}
+		return serialized[:]
+	default:
+		panic("invalid node type")
+	}
+}
+
+func DeserializeNode(serialized []byte, depth int) (BinaryNode, error) {
+	if len(serialized) == 0 {
+		return nil, errors.New("empty serialized node")
+	}
+
+	switch serialized[0] {
+	case 1:
+		if len(serialized) != 65 {
+			return nil, errors.New("invalid serialized node length")
+		}
+		return &InternalNode{
+			depth: depth,
+			left:  HashedNode(common.BytesToHash(serialized[1:33])),
+			right: HashedNode(common.BytesToHash(serialized[33:65])),
+		}, nil
+	case 2:
+		var values [256][]byte
+		bitmap := serialized[32:64]
+		offset := 64
+		for i := 0; i < 256; i++ {
+			if bitmap[i/8]>>(7-(i%8))&1 == 1 {
+				values[i] = serialized[offset : offset+32]
+				offset += 32
+			}
+		}
+		return &StemNode{
+			Stem:   serialized[1:32],
+			Values: values[:],
+		}, nil
+	default:
+		return nil, errors.New("invalid node type")
+	}
+}
 
 // VerkleTrie is a wrapper around VerkleNode that implements the trie.Trie
 // interface so that Verkle trees can be reused verbatim.
 type VerkleTrie struct {
-	root       verkle.VerkleNode
+	root       BinaryNode
 	db         *Database
 	pointCache *utils.PointCache
 	ended      bool
 }
 
 func (vt *VerkleTrie) ToDot() string {
-	return verkle.ToDot(vt.root)
+	vt.root.Commit()
+	return vt.root.toDot("", "")
 }
 
-func NewVerkleTrie(root verkle.VerkleNode, db *Database, pointCache *utils.PointCache, ended bool) *VerkleTrie {
+func (n *InternalNode) toDot(parent, path string) string {
+	me := fmt.Sprintf("internal%s", path)
+	ret := fmt.Sprintf("%s [label=\"I: %x\"]\n", me, n.Hash())
+	if len(parent) > 0 {
+		ret = fmt.Sprintf("%s %s -> %s\n", ret, parent, me)
+	}
+
+	if n.left != nil {
+		ret = fmt.Sprintf("%s%s", ret, n.left.toDot(me, fmt.Sprintf("%s%02x", path, 0)))
+	}
+	if n.right != nil {
+		ret = fmt.Sprintf("%s%s", ret, n.right.toDot(me, fmt.Sprintf("%s%02x", path, 1)))
+	}
+
+	return ret
+}
+
+func NewVerkleTrie(root BinaryNode, db *Database, pointCache *utils.PointCache, ended bool) *VerkleTrie {
 	return &VerkleTrie{
 		root:       root,
 		db:         db,
@@ -56,10 +417,6 @@ func NewVerkleTrie(root verkle.VerkleNode, db *Database, pointCache *utils.Point
 
 func (trie *VerkleTrie) FlatdbNodeResolver(path []byte) ([]byte, error) {
 	return trie.db.diskdb.Get(append(FlatDBVerkleNodeKeyPrefix, path...))
-}
-
-func (trie *VerkleTrie) InsertMigratedLeaves(leaves []verkle.LeafNode) error {
-	return trie.root.(*verkle.InternalNode).InsertMigratedLeaves(leaves, trie.FlatdbNodeResolver)
 }
 
 var (
@@ -106,8 +463,8 @@ func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 		err    error
 	)
 	switch t.root.(type) {
-	case *verkle.InternalNode:
-		values, err = t.root.(*verkle.InternalNode).GetValuesAtStem(versionkey[:31], t.FlatdbNodeResolver)
+	case *InternalNode:
+		values, err = t.root.(*InternalNode).GetValuesAtStem(versionkey[:31], t.FlatdbNodeResolver)
 	default:
 		return nil, errInvalidRootType
 	}
@@ -174,7 +531,7 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount,
 	values[utils.CodeHashLeafKey] = acc.CodeHash[:]
 
 	switch root := t.root.(type) {
-	case *verkle.InternalNode:
+	case *InternalNode:
 		err = root.InsertValuesAtStem(stem, values, t.FlatdbNodeResolver)
 	default:
 		return errInvalidRootType
@@ -188,7 +545,7 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount,
 
 func (trie *VerkleTrie) UpdateStem(key []byte, values [][]byte) error {
 	switch root := trie.root.(type) {
-	case *verkle.InternalNode:
+	case *InternalNode:
 		return root.InsertValuesAtStem(key, values, trie.FlatdbNodeResolver)
 	default:
 		panic("invalid root type")
@@ -226,39 +583,25 @@ func (trie *VerkleTrie) DeleteStorage(addr common.Address, key []byte) error {
 // Hash returns the root hash of the trie. It does not write to the database and
 // can be used even if the trie doesn't have one.
 func (trie *VerkleTrie) Hash() common.Hash {
-	return trie.root.Commit().Bytes()
+	return trie.root.Commit()
 }
 
 // Commit writes all nodes to the trie's memory database, tracking the internal
 // and external (for account tries) references.
 func (trie *VerkleTrie) Commit(_ bool) (common.Hash, *trienode.NodeSet, error) {
-	root, ok := trie.root.(*verkle.InternalNode)
-	if !ok {
-		return common.Hash{}, nil, errors.New("unexpected root node type")
-	}
-	nodes, err := root.BatchSerialize()
+	root := trie.root.(*InternalNode)
+	nodeset := trienode.NewNodeSet(common.Hash{})
+
+	err := root.CollectNodes(nil, func(path []byte, node BinaryNode) {
+		serialized := SerializeNode(node)
+		trie.db.diskdb.Put(append(FlatDBVerkleNodeKeyPrefix, path...), serialized)
+	})
 	if err != nil {
-		return common.Hash{}, nil, fmt.Errorf("serializing tree nodes: %s", err)
+		panic(fmt.Errorf("CollectNodes failed: %v", err))
 	}
 
-	batch := trie.db.diskdb.NewBatch()
-	path := make([]byte, 0, len(FlatDBVerkleNodeKeyPrefix)+32)
-	path = append(path, FlatDBVerkleNodeKeyPrefix...)
-	for _, node := range nodes {
-		path := append(path[:len(FlatDBVerkleNodeKeyPrefix)], node.Path...)
-
-		if err := batch.Put(path, node.SerializedBytes); err != nil {
-			return common.Hash{}, nil, fmt.Errorf("put node to disk: %s", err)
-		}
-
-		if batch.ValueSize() >= ethdb.IdealBatchSize {
-			batch.Write()
-			batch.Reset()
-		}
-	}
-	batch.Write()
-
-	return trie.Hash(), nil, nil
+	// Serialize root commitment form
+	return trie.root.Hash(), nodeset, nil
 }
 
 // NodeIterator returns an iterator that returns nodes of the trie. Iteration
@@ -290,17 +633,25 @@ func (trie *VerkleTrie) IsVerkle() bool {
 	return true
 }
 
-func ProveAndSerialize(pretrie, posttrie *VerkleTrie, keys [][]byte, resolver verkle.NodeResolverFn) (*verkle.VerkleProof, verkle.StateDiff, error) {
-	var postroot verkle.VerkleNode
+func MakeBinaryMultiProof(pretrie, posttrie BinaryNode, keys [][]byte, resolver NodeResolverFn) (*verkle.VerkleProof, [][]byte, [][]byte, [][]byte, error) {
+	panic("not implemented")
+}
+
+func SerializeProof(proof *verkle.VerkleProof) (*verkle.VerkleProof, verkle.StateDiff, error) {
+	panic("not implemented")
+}
+
+func ProveAndSerialize(pretrie, posttrie *VerkleTrie, keys [][]byte, resolver NodeResolverFn) (*verkle.VerkleProof, verkle.StateDiff, error) {
+	var postroot BinaryNode
 	if posttrie != nil {
 		postroot = posttrie.root
 	}
-	proof, _, _, _, err := verkle.MakeVerkleMultiProof(pretrie.root, postroot, keys, resolver)
+	proof, _, _, _, err := MakeBinaryMultiProof(pretrie.root, postroot, keys, resolver)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	p, kvps, err := verkle.SerializeProof(proof)
+	p, kvps, err := SerializeProof(proof)
 	if err != nil {
 		return nil, nil, err
 	}

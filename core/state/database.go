@@ -343,10 +343,10 @@ func (db *cachingDB) openMPTTrie(root common.Hash) (Trie, error) {
 func (db *cachingDB) openVKTrie(_ common.Hash) (Trie, error) {
 	payload, err := db.DiskDB().Get(trie.FlatDBVerkleNodeKeyPrefix)
 	if err != nil {
-		return trie.NewVerkleTrie(verkle.New(), db.triedb, db.addrToPoint, db.CurrentTransitionState.Ended), nil
+		return trie.NewVerkleTrie(trie.NewBinaryNode(), db.triedb, db.addrToPoint, db.CurrentTransitionState.Ended), nil
 	}
 
-	r, err := verkle.ParseNode(payload, 0)
+	r, err := trie.DeserializeNode(payload, 0)
 	if err != nil {
 		panic(err)
 	}

@@ -24,11 +24,10 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie/utils"
-	"github.com/ethereum/go-verkle"
 )
 
 func TestVerkleIterator(t *testing.T) {
-	trie := NewVerkleTrie(verkle.New(), NewDatabase(rawdb.NewMemoryDatabase()), utils.NewPointCache(), true)
+	trie := NewVerkleTrie(NewBinaryNode(), NewDatabase(rawdb.NewMemoryDatabase()), utils.NewPointCache(), true)
 	account0 := &types.StateAccount{
 		Nonce:    1,
 		Balance:  big.NewInt(2),

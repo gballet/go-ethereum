@@ -18,18 +18,16 @@ package trie
 
 import (
 	"github.com/ethereum/go-ethereum/common"
-
-	"github.com/ethereum/go-verkle"
 )
 
 type verkleNodeIteratorState struct {
-	Node  verkle.VerkleNode
-	Index int // points to _next_ value
+	Node  BinaryNode
+	Index int
 }
 
 type verkleNodeIterator struct {
 	trie    *VerkleTrie
-	current verkle.VerkleNode
+	current BinaryNode
 	lastErr error
 
 	stack []verkleNodeIteratorState
@@ -53,24 +51,37 @@ func (it *verkleNodeIterator) Next(descend bool) bool {
 	}
 
 	if len(it.stack) == 0 {
-		it.stack = append(it.stack, verkleNodeIteratorState{Node: it.trie.root, Index: 0})
+		it.stack = append(it.stack, verkleNodeIteratorState{Node: it.trie.root})
 		it.current = it.trie.root
 
 		return true
 	}
 
 	switch node := it.current.(type) {
-	case *verkle.InternalNode:
+	case *InternalNode:
+		// index: 0 = nothing visited, 1=left visited, 2=right visited
 		context := &it.stack[len(it.stack)-1]
 
-		// Look for the next non-empty child
-		children := node.Children()
-		for ; context.Index < len(children); context.Index++ {
-			if _, ok := children[context.Index].(verkle.Empty); !ok {
-				it.stack = append(it.stack, verkleNodeIteratorState{Node: children[context.Index], Index: 0})
-				it.current = children[context.Index]
+		// recurse into both children
+		if context.Index == 0 {
+			if node.left != nil {
+				it.stack = append(it.stack, verkleNodeIteratorState{Node: node.left})
+				it.current = node.left
+				return it.Next(descend)
+
+			}
+
+			context.Index++
+		}
+
+		if context.Index == 1 {
+			if node.right != nil {
+				it.stack = append(it.stack, verkleNodeIteratorState{Node: node.right})
+				it.current = node.right
 				return it.Next(descend)
 			}
+
+			context.Index++
 		}
 
 		// Reached the end of this node, go back to the parent, if
@@ -83,10 +94,10 @@ func (it *verkleNodeIterator) Next(descend bool) bool {
 		it.current = it.stack[len(it.stack)-1].Node
 		it.stack[len(it.stack)-1].Index++
 		return it.Next(descend)
-	case *verkle.LeafNode:
+	case *StemNode:
 		// Look for the next non-empty value
 		for i := it.stack[len(it.stack)-1].Index; i < 256; i++ {
-			if node.Value(i) != nil {
+			if node.Values[i] != nil {
 				it.stack[len(it.stack)-1].Index = i + 1
 				return true
 			}
@@ -97,13 +108,13 @@ func (it *verkleNodeIterator) Next(descend bool) bool {
 		it.current = it.stack[len(it.stack)-1].Node
 		it.stack[len(it.stack)-1].Index++
 		return it.Next(descend)
-	case verkle.HashedNode:
+	case HashedNode:
 		// resolve the node
 		data, err := it.trie.FlatdbNodeResolver(it.Path())
 		if err != nil {
 			panic(err)
 		}
-		it.current, err = verkle.ParseNode(data, byte(len(it.stack)-1))
+		it.current, err = DeserializeNode(data, len(it.stack)-1)
 		if err != nil {
 			panic(err)
 		}
@@ -111,8 +122,12 @@ func (it *verkleNodeIterator) Next(descend bool) bool {
 		// update the stack and parent with the resolved node
 		it.stack[len(it.stack)-1].Node = it.current
 		parent := &it.stack[len(it.stack)-2]
-		parent.Node.(*verkle.InternalNode).SetChild(parent.Index, it.current)
-		return it.Next(true)
+		if parent.Index == 0 {
+			parent.Node.(*InternalNode).left = it.current
+		} else {
+			parent.Node.(*InternalNode).right = it.current
+		}
+		return it.Next(descend)
 	default:
 		panic("invalid node type")
 	}
@@ -128,13 +143,13 @@ func (it *verkleNodeIterator) Error() error {
 
 // Hash returns the hash of the current node.
 func (it *verkleNodeIterator) Hash() common.Hash {
-	return it.current.Commit().Bytes()
+	return it.current.Commit()
 }
 
 // Parent returns the hash of the parent of the current node. The hash may be the one
 // grandparent if the immediate parent is an internal node with no hash.
 func (it *verkleNodeIterator) Parent() common.Hash {
-	return it.stack[len(it.stack)-1].Node.Commit().Bytes()
+	return it.stack[len(it.stack)-1].Node.Commit()
 }
 
 // Path returns the hex-encoded path to the current node.
@@ -161,7 +176,7 @@ func (it *verkleNodeIterator) NodeBlob() []byte {
 
 // Leaf returns true iff the current node is a leaf node.
 func (it *verkleNodeIterator) Leaf() bool {
-	_, ok := it.current.(*verkle.LeafNode)
+	_, ok := it.current.(*StemNode)
 	return ok
 }
 
@@ -169,7 +184,7 @@ func (it *verkleNodeIterator) Leaf() bool {
 // positioned at a leaf. Callers must not retain references to the value after
 // calling Next.
 func (it *verkleNodeIterator) LeafKey() []byte {
-	leaf, ok := it.current.(*verkle.LeafNode)
+	leaf, ok := it.current.(*StemNode)
 	if !ok {
 		panic("Leaf() called on an verkle node iterator not at a leaf location")
 	}
@@ -181,19 +196,19 @@ func (it *verkleNodeIterator) LeafKey() []byte {
 // is not positioned at a leaf. Callers must not retain references to the value
 // after calling Next.
 func (it *verkleNodeIterator) LeafBlob() []byte {
-	leaf, ok := it.current.(*verkle.LeafNode)
+	leaf, ok := it.current.(*StemNode)
 	if !ok {
 		panic("LeafBlob() called on an verkle node iterator not at a leaf location")
 	}
 
-	return leaf.Value(it.stack[len(it.stack)-1].Index - 1)
+	return leaf.Values[it.stack[len(it.stack)-1].Index-1]
 }
 
 // LeafProof returns the Merkle proof of the leaf. The method panics if the
 // iterator is not positioned at a leaf. Callers must not retain references
 // to the value after calling Next.
 func (it *verkleNodeIterator) LeafProof() [][]byte {
-	_, ok := it.current.(*verkle.LeafNode)
+	_, ok := it.current.(*StemNode)
 	if !ok {
 		panic("LeafProof() called on an verkle node iterator not at a leaf location")
 	}

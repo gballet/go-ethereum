@@ -23,7 +23,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/trie/trienode"
-	"github.com/ethereum/go-verkle"
 )
 
 type TransitionTrie struct {
@@ -179,7 +178,7 @@ func (t *TransitionTrie) IsVerkle() bool {
 func (t *TransitionTrie) UpdateStem(key []byte, values [][]byte) error {
 	trie := t.overlay
 	switch root := trie.root.(type) {
-	case *verkle.InternalNode:
+	case *InternalNode:
 		return root.InsertValuesAtStem(key, values, t.overlay.FlatdbNodeResolver)
 	default:
 		panic("invalid root type")
