@@ -213,8 +213,8 @@ func (evm *EVM) Call(caller common.Address, addr common.Address, input []byte, g
 			// list in write mode. If there is enough gas paying for the addition of the code
 			// hash leaf to the access list, then account creation will proceed unimpaired.
 			// Thus, only pay for the creation of the code hash leaf here.
-			wgas := evm.AccessEvents.CodeHashGas(addr, true, gas, false)
-			if gas < wgas {
+			wgas, sufficient := evm.AccessEvents.CodeHashGas(addr, true, gas, false)
+			if !sufficient {
 				evm.StateDB.RevertToSnapshot(snapshot)
 				return nil, 0, ErrOutOfGas
 			}
@@ -439,8 +439,8 @@ func (evm *EVM) create(caller common.Address, code []byte, gas uint64, value *ui
 
 	// Charge the contract creation init gas in verkle mode
 	if evm.chainRules.IsEIP4762 {
-		statelessGas := evm.AccessEvents.ContractCreatePreCheckGas(address, gas)
-		if statelessGas > gas {
+		statelessGas, sufficient := evm.AccessEvents.ContractCreatePreCheckGas(address, gas)
+		if !sufficient {
 			return nil, common.Address{}, 0, ErrOutOfGas
 		}
 		if evm.Config.Tracer != nil && evm.Config.Tracer.OnGasChange != nil {
@@ -487,14 +487,14 @@ func (evm *EVM) create(caller common.Address, code []byte, gas uint64, value *ui
 	}
 	// Charge the contract creation init gas in verkle mode
 	if evm.chainRules.IsEIP4762 {
-		consumed, wanted := evm.AccessEvents.ContractCreateInitGas(address, gas)
-		if consumed < wanted {
+		cost, sufficient := evm.AccessEvents.ContractCreateInitGas(address, gas)
+		if !sufficient {
 			return nil, common.Address{}, 0, ErrOutOfGas
 		}
 		if evm.Config.Tracer != nil && evm.Config.Tracer.OnGasChange != nil {
-			evm.Config.Tracer.OnGasChange(gas, gas-consumed, tracing.GasChangeWitnessContractInit)
+			evm.Config.Tracer.OnGasChange(gas, gas-cost, tracing.GasChangeWitnessContractInit)
 		}
-		gas = gas - consumed
+		gas = gas - cost
 	}
 	evm.Context.Transfer(evm.StateDB, caller, address, value)
 
@@ -541,13 +541,12 @@ func (evm *EVM) initNewContract(contract *Contract, address common.Address) ([]b
 			return ret, ErrCodeStoreOutOfGas
 		}
 	} else {
-		consumed, wanted := evm.AccessEvents.CodeChunksRangeGas(address, 0, uint64(len(ret)), uint64(len(ret)), true, contract.Gas)
-		contract.UseGas(consumed, evm.Config.Tracer, tracing.GasChangeWitnessCodeChunk)
-		if len(ret) > 0 && (consumed < wanted) {
-			return ret, ErrCodeStoreOutOfGas
+		cost, sufficient := evm.AccessEvents.CodeChunksRangeGas(address, 0, uint64(len(ret)), uint64(len(ret)), true, contract.Gas)
+		if !sufficient {
+			return nil, ErrCodeStoreOutOfGas
 		}
+		contract.UseGas(cost, evm.Config.Tracer, tracing.GasChangeWitnessCodeChunk)
 	}
-
 	evm.StateDB.SetCode(address, ret)
 	return ret, nil
 }
