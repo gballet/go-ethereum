@@ -148,6 +148,7 @@ var (
 	preimageHitsCounter = metrics.NewRegisteredCounter("db/preimage/hits", nil)
 	preimageMissCounter = metrics.NewRegisteredCounter("db/preimage/miss", nil)
 
+	// Verkle transition information
 	VerkleTransitionStatePrefix = []byte("verkle-transition-state-")
 )
 
