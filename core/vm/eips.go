@@ -356,15 +356,18 @@ func opPush1EIP4762(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext
 	if *pc < codeLen {
 		scope.Stack.push(integer.SetUint64(uint64(scope.Contract.Code[*pc])))
 
+		// The PC is not exposed in the gas func.
+		// TODO(rjl493456442) we either need to refactor the gas func definition
+		// a bit, or keep the hack here...
 		if !scope.Contract.IsDeployment && !scope.Contract.IsSystemCall && *pc%31 == 0 {
 			// touch next chunk if PUSH1 is at the boundary. if so, *pc has
 			// advanced past this boundary.
 			contractAddr := scope.Contract.Address()
-			consumed, wanted := interpreter.evm.AccessEvents.CodeChunksRangeGas(contractAddr, *pc+1, uint64(1), uint64(len(scope.Contract.Code)), false, scope.Contract.Gas)
-			scope.Contract.UseGas(wanted, interpreter.evm.Config.Tracer, tracing.GasChangeUnspecified)
-			if consumed < wanted {
+			cost, sufficient := interpreter.evm.AccessEvents.CodeChunksRangeGas(contractAddr, *pc+1, uint64(1), uint64(len(scope.Contract.Code)), false, scope.Contract.Gas)
+			if !sufficient {
 				return nil, ErrOutOfGas
 			}
+			scope.Contract.UseGas(cost, interpreter.evm.Config.Tracer, tracing.GasChangeUnspecified)
 		}
 	} else {
 		scope.Stack.push(integer.Clear())
@@ -388,11 +391,11 @@ func makePushEIP4762(size uint64, pushByteSize int) executionFunc {
 
 		if !scope.Contract.IsDeployment && !scope.Contract.IsSystemCall {
 			contractAddr := scope.Contract.Address()
-			consumed, wanted := interpreter.evm.AccessEvents.CodeChunksRangeGas(contractAddr, uint64(start), uint64(pushByteSize), uint64(len(scope.Contract.Code)), false, scope.Contract.Gas)
-			scope.Contract.UseGas(consumed, interpreter.evm.Config.Tracer, tracing.GasChangeUnspecified)
-			if consumed < wanted {
+			cost, sufficient := interpreter.evm.AccessEvents.CodeChunksRangeGas(contractAddr, uint64(start), uint64(pushByteSize), uint64(len(scope.Contract.Code)), false, scope.Contract.Gas)
+			if !sufficient {
 				return nil, ErrOutOfGas
 			}
+			scope.Contract.UseGas(cost, interpreter.evm.Config.Tracer, tracing.GasChangeUnspecified)
 		}
 
 		*pc += size

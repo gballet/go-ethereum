@@ -25,16 +25,28 @@ import (
 )
 
 func gasSStore4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	return evm.AccessEvents.SlotGas(contract.Address(), stack.peek().Bytes32(), true, contract.Gas, true), nil
+	cost, sufficient := evm.AccessEvents.SlotGas(contract.Address(), stack.peek().Bytes32(), true, contract.Gas, true)
+	if !sufficient {
+		return 0, ErrOutOfGas
+	}
+	return cost, nil
 }
 
 func gasSLoad4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
-	return evm.AccessEvents.SlotGas(contract.Address(), stack.peek().Bytes32(), false, contract.Gas, true), nil
+	cost, sufficient := evm.AccessEvents.SlotGas(contract.Address(), stack.peek().Bytes32(), false, contract.Gas, true)
+	if !sufficient {
+		return 0, ErrOutOfGas
+	}
+	return cost, nil
 }
 
 func gasBalance4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	address := stack.peek().Bytes20()
-	return evm.AccessEvents.BasicDataGas(address, false, contract.Gas, true), nil
+	cost, sufficient := evm.AccessEvents.BasicDataGas(address, false, contract.Gas, true)
+	if !sufficient {
+		return 0, ErrOutOfGas
+	}
+	return cost, nil
 }
 
 func gasExtCodeSize4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
@@ -42,7 +54,11 @@ func gasExtCodeSize4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory,
 	if _, isPrecompile := evm.precompile(address); isPrecompile {
 		return 0, nil
 	}
-	return evm.AccessEvents.BasicDataGas(address, false, contract.Gas, true), nil
+	cost, sufficient := evm.AccessEvents.BasicDataGas(address, false, contract.Gas, true)
+	if !sufficient {
+		return 0, ErrOutOfGas
+	}
+	return cost, nil
 }
 
 func gasExtCodeHash4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
@@ -50,7 +66,11 @@ func gasExtCodeHash4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory,
 	if _, isPrecompile := evm.precompile(address); isPrecompile {
 		return 0, nil
 	}
-	return evm.AccessEvents.CodeHashGas(address, false, contract.Gas, true), nil
+	cost, sufficient := evm.AccessEvents.CodeHashGas(address, false, contract.Gas, true)
+	if !sufficient {
+		return 0, ErrOutOfGas
+	}
+	return cost, nil
 }
 
 func makeCallVariantGasEIP4762(oldCalculator gasFunc, withTransferCosts bool) gasFunc {
@@ -65,11 +85,11 @@ func makeCallVariantGasEIP4762(oldCalculator gasFunc, withTransferCosts bool) ga
 		// If value is transferred, it is charged before 1/64th
 		// is subtracted from the available gas pool.
 		if withTransferCosts && !stack.Back(2).IsZero() {
-			wantedValueTransferWitnessGas := evm.AccessEvents.ValueTransferGas(contract.Address(), target, contract.Gas)
-			if wantedValueTransferWitnessGas > contract.Gas {
-				return wantedValueTransferWitnessGas, nil
+			cost, sufficient := evm.AccessEvents.ValueTransferGas(contract.Address(), target, contract.Gas)
+			if !sufficient {
+				return 0, ErrOutOfGas
 			}
-			witnessGas = wantedValueTransferWitnessGas
+			witnessGas = cost
 		} else if isPrecompile || isSystemContract {
 			witnessGas = params.WarmStorageReadCostEIP2929
 		} else {
@@ -78,13 +98,13 @@ func makeCallVariantGasEIP4762(oldCalculator gasFunc, withTransferCosts bool) ga
 			// (so before we get to this point)
 			// But the message call is part of the subcall, for which only 63/64th
 			// of the gas should be available.
-			wantedMessageCallWitnessGas := evm.AccessEvents.MessageCallGas(target, contract.Gas-witnessGas)
-			var overflow bool
-			if witnessGas, overflow = math.SafeAdd(witnessGas, wantedMessageCallWitnessGas); overflow {
-				return 0, ErrGasUintOverflow
+			cost, sufficient := evm.AccessEvents.MessageCallGas(target, contract.Gas-witnessGas)
+			if !sufficient {
+				return 0, ErrOutOfGas
 			}
-			if witnessGas > contract.Gas {
-				return witnessGas, nil
+			var overflow bool
+			if witnessGas, overflow = math.SafeAdd(witnessGas, cost); overflow {
+				return 0, ErrGasUintOverflow
 			}
 		}
 
@@ -116,11 +136,12 @@ func gasSelfdestructEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Mem
 		return 0, nil
 	}
 	contractAddr := contract.Address()
-	wanted := evm.AccessEvents.BasicDataGas(contractAddr, false, contract.Gas, false)
-	if wanted > contract.Gas {
-		return wanted, nil
+	cost, sufficient := evm.AccessEvents.BasicDataGas(contractAddr, false, contract.Gas, false)
+	if !sufficient {
+		return 0, ErrOutOfGas
 	}
-	statelessGas := wanted
+	statelessGas := cost
+
 	balanceIsZero := evm.StateDB.GetBalance(contractAddr).Sign() == 0
 	_, isPrecompile := evm.precompile(beneficiaryAddr)
 	isSystemContract := beneficiaryAddr == params.HistoryStorageAddress
@@ -130,30 +151,30 @@ func gasSelfdestructEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Mem
 	}
 
 	if contractAddr != beneficiaryAddr {
-		wanted := evm.AccessEvents.BasicDataGas(beneficiaryAddr, false, contract.Gas-statelessGas, false)
-		if wanted > contract.Gas-statelessGas {
-			return statelessGas + wanted, nil
+		cost, sufficient := evm.AccessEvents.BasicDataGas(beneficiaryAddr, false, contract.Gas-statelessGas, false)
+		if !sufficient {
+			return 0, ErrOutOfGas
 		}
-		statelessGas += wanted
+		statelessGas += cost
 	}
 	// Charge write costs if it transfers value
 	if !balanceIsZero {
-		wanted := evm.AccessEvents.BasicDataGas(contractAddr, true, contract.Gas-statelessGas, false)
-		if wanted > contract.Gas-statelessGas {
-			return statelessGas + wanted, nil
+		cost, sufficient := evm.AccessEvents.BasicDataGas(contractAddr, true, contract.Gas-statelessGas, false)
+		if !sufficient {
+			return 0, ErrOutOfGas
 		}
-		statelessGas += wanted
+		statelessGas += cost
 
 		if contractAddr != beneficiaryAddr {
 			if evm.StateDB.Exist(beneficiaryAddr) {
-				wanted = evm.AccessEvents.BasicDataGas(beneficiaryAddr, true, contract.Gas-statelessGas, false)
+				cost, sufficient = evm.AccessEvents.BasicDataGas(beneficiaryAddr, true, contract.Gas-statelessGas, false)
 			} else {
-				wanted = evm.AccessEvents.AddAccount(beneficiaryAddr, true, contract.Gas-statelessGas)
+				cost, sufficient = evm.AccessEvents.AddAccount(beneficiaryAddr, true, contract.Gas-statelessGas)
 			}
-			if wanted > contract.Gas-statelessGas {
-				return statelessGas + wanted, nil
+			if !sufficient {
+				return 0, ErrOutOfGas
 			}
-			statelessGas += wanted
+			statelessGas += cost
 		}
 	}
 	return statelessGas, nil
@@ -175,8 +196,11 @@ func gasCodeCopyEip4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory,
 		}
 
 		_, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(contract.Code, uint64CodeOffset, length.Uint64())
-		_, wanted := evm.AccessEvents.CodeChunksRangeGas(contract.Address(), copyOffset, nonPaddedCopyLength, uint64(len(contract.Code)), false, contract.Gas-gas)
-		gas += wanted
+		cost, sufficient := evm.AccessEvents.CodeChunksRangeGas(contract.Address(), copyOffset, nonPaddedCopyLength, uint64(len(contract.Code)), false, contract.Gas-gas)
+		if !sufficient {
+			return 0, ErrOutOfGas
+		}
+		gas += cost
 	}
 	return gas, nil
 }
@@ -196,11 +220,16 @@ func gasExtCodeCopyEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Memo
 		}
 		return gas, nil
 	}
-	wgas := evm.AccessEvents.BasicDataGas(addr, false, contract.Gas-gas, true)
+	cost, sufficient := evm.AccessEvents.BasicDataGas(addr, false, contract.Gas-gas, true)
+	if !sufficient {
+		return 0, ErrOutOfGas
+	}
 	var overflow bool
-	if gas, overflow = math.SafeAdd(gas, wgas); overflow {
+	if gas, overflow = math.SafeAdd(gas, cost); overflow {
 		return 0, ErrGasUintOverflow
 	}
+
+	// Evaluate the gas cost for accessing code chunks
 	codeOffset := stack.Back(2)
 	length := stack.Back(3)
 	uint64CodeOffset, overflow := codeOffset.Uint64WithOverflow()
@@ -209,8 +238,11 @@ func gasExtCodeCopyEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Memo
 	}
 	code := evm.StateDB.GetCode(addr)
 	_, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(code, uint64CodeOffset, length.Uint64())
-	_, wanted := evm.AccessEvents.CodeChunksRangeGas(addr, copyOffset, nonPaddedCopyLength, uint64(len(code)), false, gas)
-	if gas, overflow = math.SafeAdd(gas, wanted); overflow {
+	cost, sufficient = evm.AccessEvents.CodeChunksRangeGas(addr, copyOffset, nonPaddedCopyLength, uint64(len(code)), false, contract.Gas-gas)
+	if !sufficient {
+		return 0, ErrOutOfGas
+	}
+	if gas, overflow = math.SafeAdd(gas, cost); overflow {
 		return 0, ErrGasUintOverflow
 	}
 	return gas, nil

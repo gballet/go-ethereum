@@ -237,11 +237,11 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			// if the PC ends up in a new "chunk" of verkleized code, charge the
 			// associated costs.
 			contractAddr := contract.Address()
-			consumed, wanted := in.evm.TxContext.AccessEvents.CodeChunksRangeGas(contractAddr, pc, 1, uint64(len(contract.Code)), false, contract.Gas)
-			contract.UseGas(consumed, in.evm.Config.Tracer, tracing.GasChangeWitnessCodeChunk)
-			if consumed < wanted {
+			cost, sufficient := in.evm.TxContext.AccessEvents.CodeChunksRangeGas(contractAddr, pc, 1, uint64(len(contract.Code)), false, contract.Gas)
+			if !sufficient {
 				return nil, ErrOutOfGas
 			}
+			contract.UseGas(cost, in.evm.Config.Tracer, tracing.GasChangeWitnessCodeChunk)
 		}
 
 		// Get the operation from the jump table and validate the stack to ensure there are
