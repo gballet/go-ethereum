@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-verkle"
 )
 
 // CurrentHeader retrieves the current head header of the canonical chain. The
@@ -278,7 +279,7 @@ func (bc *BlockChain) GetTd(hash common.Hash, number uint64) *big.Int {
 
 // HasState checks if state trie is fully present in the database or not.
 func (bc *BlockChain) HasState(hash common.Hash) bool {
-	_, err := bc.stateCache.OpenTrie(hash)
+	_, err := bc.stateCache.OpenTrie(hash, types.Period0) // we can ignore the actual period since we're only checking for presence
 	return err == nil
 }
 
@@ -315,12 +316,14 @@ func (bc *BlockChain) ContractCodeWithPrefix(hash common.Hash) ([]byte, error) {
 
 // State returns a new mutable state based on the current HEAD block.
 func (bc *BlockChain) State() (*state.StateDB, error) {
-	return bc.StateAt(bc.CurrentBlock().Root)
+	curBlock := bc.CurrentBlock()
+	curPeriod := types.GetStatePeriod(bc.chainConfig, curBlock.Time)
+	return bc.StateAt(curBlock.Root, curPeriod)
 }
 
 // StateAt returns a new mutable state based on a particular point in time.
-func (bc *BlockChain) StateAt(root common.Hash) (*state.StateDB, error) {
-	return state.New(root, bc.stateCache, bc.snaps)
+func (bc *BlockChain) StateAt(root common.Hash, curPeriod verkle.StatePeriod) (*state.StateDB, error) {
+	return state.New(root, bc.stateCache, bc.snaps, curPeriod)
 }
 
 // Config retrieves the chain's fork configuration.

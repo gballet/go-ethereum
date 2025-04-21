@@ -158,7 +158,7 @@ func testBlockChainImport(chain types.Blocks, blockchain *BlockChain) error {
 			}
 			return err
 		}
-		statedb, err := state.New(blockchain.GetBlockByHash(block.ParentHash()).Root(), blockchain.stateCache, nil)
+		statedb, err := state.New(blockchain.GetBlockByHash(block.ParentHash()).Root(), blockchain.stateCache, nil, types.Period0)
 		if err != nil {
 			return err
 		}
@@ -4222,7 +4222,7 @@ func TestTransientStorageReset(t *testing.T) {
 		t.Fatalf("failed to insert into chain: %v", err)
 	}
 	// Check the storage
-	state, err := chain.StateAt(chain.CurrentHeader().Root)
+	state, err := chain.StateAt(chain.CurrentHeader().Root, types.Period0)
 	if err != nil {
 		t.Fatalf("Failed to load state %v", err)
 	}

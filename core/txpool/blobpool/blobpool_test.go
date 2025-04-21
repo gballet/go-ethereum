@@ -43,6 +43,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-verkle"
 	"github.com/holiman/billy"
 	"github.com/holiman/uint256"
 )
@@ -158,7 +159,7 @@ func (bt *testBlockChain) GetBlock(hash common.Hash, number uint64) *types.Block
 	return nil
 }
 
-func (bc *testBlockChain) StateAt(common.Hash) (*state.StateDB, error) {
+func (bc *testBlockChain) StateAt(root common.Hash, _ verkle.StatePeriod) (*state.StateDB, error) {
 	return bc.statedb, nil
 }
 
@@ -506,7 +507,7 @@ func TestOpenDrops(t *testing.T) {
 	store.Close()
 
 	// Create a blob pool out of the pre-seeded data
-	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabase(rawdb.NewDatabase(memorydb.New())), nil)
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabase(rawdb.NewDatabase(memorydb.New())), nil, types.Period0)
 	statedb.AddBalance(crypto.PubkeyToAddress(gapper.PublicKey), big.NewInt(1000000))
 	statedb.AddBalance(crypto.PubkeyToAddress(dangler.PublicKey), big.NewInt(1000000))
 	statedb.AddBalance(crypto.PubkeyToAddress(filler.PublicKey), big.NewInt(1000000))
@@ -631,7 +632,7 @@ func TestOpenIndex(t *testing.T) {
 	store.Close()
 
 	// Create a blob pool out of the pre-seeded data
-	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabase(rawdb.NewDatabase(memorydb.New())), nil)
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabase(rawdb.NewDatabase(memorydb.New())), nil, types.Period0)
 	statedb.AddBalance(addr, big.NewInt(1_000_000_000))
 	statedb.Commit(0, true)
 
@@ -731,7 +732,7 @@ func TestOpenHeap(t *testing.T) {
 	store.Close()
 
 	// Create a blob pool out of the pre-seeded data
-	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabase(rawdb.NewDatabase(memorydb.New())), nil)
+	statedb, _ := state.New(types.EmptyRootHash, state.NewDatabase(rawdb.NewDatabase(memorydb.New())), nil, types.Period0)
 	statedb.AddBalance(addr1, big.NewInt(1_000_000_000))
 	statedb.AddBalance(addr2, big.NewInt(1_000_000_000))
 	statedb.AddBalance(addr3, big.NewInt(1_000_000_000))
@@ -811,7 +812,7 @@ func TestOpenCap(t *testing.T) {
 	// with a high cap to ensure everything was persisted previously
 	for _, datacap := range []uint64{2 * (txAvgSize + blobSize), 100 * (txAvgSize + blobSize)} {
 		// Create a blob pool out of the pre-seeded data, but cap it to 2 blob transaction
-		statedb, _ := state.New(types.EmptyRootHash, state.NewDatabase(rawdb.NewDatabase(memorydb.New())), nil)
+		statedb, _ := state.New(types.EmptyRootHash, state.NewDatabase(rawdb.NewDatabase(memorydb.New())), nil, types.Period0)
 		statedb.AddBalance(addr1, big.NewInt(1_000_000_000))
 		statedb.AddBalance(addr2, big.NewInt(1_000_000_000))
 		statedb.AddBalance(addr3, big.NewInt(1_000_000_000))
@@ -1198,7 +1199,7 @@ func TestAdd(t *testing.T) {
 			keys  = make(map[string]*ecdsa.PrivateKey)
 			addrs = make(map[string]common.Address)
 		)
-		statedb, _ := state.New(types.EmptyRootHash, state.NewDatabase(rawdb.NewDatabase(memorydb.New())), nil)
+		statedb, _ := state.New(types.EmptyRootHash, state.NewDatabase(rawdb.NewDatabase(memorydb.New())), nil, types.Period0)
 		for acc, seed := range tt.seeds {
 			// Generate a new random key/address for the seed account
 			keys[acc], _ = crypto.GenerateKey()

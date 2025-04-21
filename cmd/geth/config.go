@@ -175,6 +175,14 @@ func makeFullNode(ctx *cli.Context) (*node.Node, ethapi.Backend) {
 		v := ctx.Uint64(utils.OverrideVerkle.Name)
 		cfg.Eth.OverrideVerkle = &v
 	}
+	if ctx.IsSet(utils.OverrideStateExpiry.Name) {
+		v := ctx.Uint64(utils.OverrideStateExpiry.Name)
+		cfg.Eth.OverrideStateExpiry = &v
+	}
+	if ctx.IsSet(utils.OverrideStateExpiryPeriod.Name) {
+		v := ctx.Uint64(utils.OverrideStateExpiryPeriod.Name)
+		cfg.Eth.OverrideStateExpiryPeriod = &v
+	}
 	if ctx.IsSet(utils.OverrideProofInBlock.Name) {
 		v := ctx.Bool(utils.OverrideProofInBlock.Name)
 		cfg.Eth.OverrideProofInBlock = &v

@@ -128,6 +128,7 @@ var (
 		ShanghaiTime:                  nil,
 		CancunTime:                    nil,
 		VerkleTime:                    nil,
+		StateExpiryTime:               nil,
 		TerminalTotalDifficulty:       nil,
 		TerminalTotalDifficultyPassed: true,
 		Ethash:                        new(EthashConfig),
@@ -178,6 +179,7 @@ var (
 		ShanghaiTime:                  nil,
 		CancunTime:                    nil,
 		VerkleTime:                    nil,
+		StateExpiryTime:               nil,
 		TerminalTotalDifficulty:       nil,
 		TerminalTotalDifficultyPassed: false,
 		Ethash:                        nil,
@@ -207,6 +209,7 @@ var (
 		ShanghaiTime:                  nil,
 		CancunTime:                    nil,
 		VerkleTime:                    nil,
+		StateExpiryTime:               nil,
 		TerminalTotalDifficulty:       nil,
 		TerminalTotalDifficultyPassed: false,
 		Ethash:                        new(EthashConfig),
@@ -236,6 +239,7 @@ var (
 		ShanghaiTime:                  nil,
 		CancunTime:                    nil,
 		VerkleTime:                    nil,
+		StateExpiryTime:               nil,
 		TerminalTotalDifficulty:       nil,
 		TerminalTotalDifficultyPassed: false,
 		Ethash:                        new(EthashConfig),
@@ -285,6 +289,7 @@ type ChainConfig struct {
 	ShanghaiTime *uint64 `json:"shanghaiTime,omitempty"` // Shanghai switch time (nil = no fork, 0 = already on shanghai)
 	CancunTime   *uint64 `json:"cancunTime,omitempty"`   // Cancun switch time (nil = no fork, 0 = already on cancun)
 	VerkleTime   *uint64 `json:"verkleTime,omitempty"`   // Verkle switch time (nil = no fork, 0 = already on verkle)
+	StateExpiryTime *uint64 `json:"stateExpiryTime,omitempty"` // State expiry time (nil = no fork, 0 = already on state expiry)
 
 	// TerminalTotalDifficulty is the amount of total difficulty reached by
 	// the network that triggers the consensus upgrade.
@@ -303,6 +308,9 @@ type ChainConfig struct {
 	// Proof in block
 	ProofInBlocks bool   `json:"proofInBlocks,omitempty"`
 	OverlayStride uint64 `json:"overlayStride,omitempty"`
+
+	// TODO(weiihann): only used for testing, remove this field later
+	StateExpiryPeriod *uint64 `json:"stateExpiryPeriod,omitempty"`
 }
 
 // EthashConfig is the consensus engine configs for proof-of-work based sealing.
@@ -410,6 +418,9 @@ func (c *ChainConfig) Description() string {
 	if c.VerkleTime != nil {
 		banner += fmt.Sprintf(" - Verkle:                      @%-10v\n", *c.VerkleTime)
 	}
+	if c.StateExpiryTime != nil {
+		banner += fmt.Sprintf(" - State expiry:                @%-10v\n", *c.StateExpiryTime)
+	}
 	return banner
 }
 
@@ -508,6 +519,11 @@ func (c *ChainConfig) IsVerkle(num *big.Int, time uint64) bool {
 	return c.IsLondon(num) && isTimestampForked(c.VerkleTime, time)
 }
 
+// IsStateExpiry returns whether time is either equal to the State expiry time or greater.
+func (c *ChainConfig) IsStateExpiry(num *big.Int, time uint64) bool {
+	return c.IsLondon(num) && isTimestampForked(c.StateExpiryTime, time)
+}
+
 // CheckCompatible checks whether scheduled fork transitions have been imported
 // with a mismatching chain configuration.
 func (c *ChainConfig) CheckCompatible(newcfg *ChainConfig, height uint64, time uint64) *ConfigCompatError {
@@ -562,6 +578,7 @@ func (c *ChainConfig) CheckConfigForkOrder() error {
 		{name: "shanghaiTime", timestamp: c.ShanghaiTime},
 		{name: "cancunTime", timestamp: c.CancunTime, optional: true},
 		{name: "verkleTime", timestamp: c.VerkleTime, optional: true},
+		{name: "stateExpiryTime", timestamp: c.StateExpiryTime, optional: true},
 	} {
 		if lastFork.name != "" {
 			switch {
@@ -664,6 +681,9 @@ func (c *ChainConfig) checkCompatible(newcfg *ChainConfig, headNumber *big.Int, 
 	}
 	if isForkTimestampIncompatible(c.VerkleTime, newcfg.VerkleTime, headTimestamp) {
 		return newTimestampCompatError("Verkle fork timestamp", c.VerkleTime, newcfg.VerkleTime)
+	}
+	if isForkTimestampIncompatible(c.StateExpiryTime, newcfg.StateExpiryTime, headTimestamp) {
+		return newTimestampCompatError("State expiry fork timestamp", c.StateExpiryTime, newcfg.StateExpiryTime)
 	}
 	return nil
 }

@@ -900,7 +900,7 @@ func (w *worker) prepareWork(genParams *generateParams) (*environment, error) {
 
 	// Retrieve the parent state to execute on top and start a prefetcher for
 	// the miner to speed block sealing up a bit.
-	state, err := w.chain.StateAt(parent.Root)
+	state, err := w.chain.StateAt(parent.Root, types.Period0)
 	if err != nil {
 		return nil, err
 	}

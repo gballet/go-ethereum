@@ -31,6 +31,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/trienode"
+	"github.com/ethereum/go-verkle"
 )
 
 var (
@@ -38,7 +39,7 @@ var (
 )
 
 func NewState(ctx context.Context, head *types.Header, odr OdrBackend) *state.StateDB {
-	state, _ := state.New(head.Root, NewStateDatabase(ctx, head, odr), nil)
+	state, _ := state.New(head.Root, NewStateDatabase(ctx, head, odr), nil, types.Period0)
 	return state
 }
 
@@ -52,7 +53,7 @@ type odrDatabase struct {
 	backend OdrBackend
 }
 
-func (db *odrDatabase) OpenTrie(root common.Hash) (state.Trie, error) {
+func (db *odrDatabase) OpenTrie(root common.Hash, _ verkle.StatePeriod) (state.Trie, error) {
 	return &odrTrie{db: db, id: db.id}, nil
 }
 
@@ -188,6 +189,10 @@ type odrTrie struct {
 	db   *odrDatabase
 	id   *TrieID
 	trie *trie.Trie
+}
+
+func (t *odrTrie) Revive(_ verkle.Stem, _ [][]byte, _ verkle.StatePeriod, _ verkle.StatePeriod) error {
+	panic("not supported")
 }
 
 func (t *odrTrie) GetStorage(_ common.Address, key []byte) ([]byte, error) {

@@ -54,8 +54,8 @@ func TestNodeIterator(t *testing.T) {
 	ctx := context.Background()
 	odr := &testOdr{sdb: fulldb, ldb: lightdb, serverState: blockchain.StateCache(), indexerConfig: TestClientIndexerConfig}
 	head := blockchain.CurrentHeader()
-	lightTrie, _ := NewStateDatabase(ctx, head, odr).OpenTrie(head.Root)
-	fullTrie, _ := blockchain.StateCache().OpenTrie(head.Root)
+	lightTrie, _ := NewStateDatabase(ctx, head, odr).OpenTrie(head.Root, 0)
+	fullTrie, _ := blockchain.StateCache().OpenTrie(head.Root, 0)
 	if err := diffTries(fullTrie, lightTrie); err != nil {
 		t.Fatal(err)
 	}

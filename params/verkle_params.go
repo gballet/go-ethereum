@@ -18,11 +18,11 @@ package params
 
 // Verkle tree EIP: costs associated to witness accesses
 var (
-	WitnessBranchReadCost  uint64 = 1900
-	WitnessChunkReadCost   uint64 = 200
-	WitnessBranchWriteCost uint64 = 3000
-	WitnessChunkWriteCost  uint64 = 500
-	WitnessChunkFillCost   uint64 = 6200
+	WitnessBranchReadCost  uint64 = 1900 // WITNESS_BRANCH_COST
+	WitnessChunkReadCost   uint64 = 200 // WITNESS_CHUNK_COST
+	WitnessBranchWriteCost uint64 = 3000 // SUBTREE_EDIT_COST
+	WitnessChunkWriteCost  uint64 = 500 // CHUNK_EDIT_COST
+	WitnessChunkFillCost   uint64 = 6200 // CHUNK_FILL_COST
 )
 
 // ClearVerkleWitnessCosts sets all witness costs to 0, which is necessary

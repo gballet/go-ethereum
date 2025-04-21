@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/holiman/uint256"
 )
 
 // TransactionArgs represents the arguments to construct a new transaction
@@ -52,6 +53,7 @@ type TransactionArgs struct {
 
 	// Introduced by AccessListTxType transaction.
 	AccessList *types.AccessList `json:"accessList,omitempty"`
+	ReviveList *types.ReviveList `json:"reviveList,omitempty"`
 	ChainID    *hexutil.Big      `json:"chainId,omitempty"`
 }
 
@@ -109,6 +111,7 @@ func (args *TransactionArgs) setDefaults(ctx context.Context, b Backend) error {
 			Value:                args.Value,
 			Data:                 (*hexutil.Bytes)(&data),
 			AccessList:           args.AccessList,
+			ReviveList:           args.ReviveList,
 		}
 		pendingBlockNr := rpc.BlockNumberOrHashWithNumber(rpc.PendingBlockNumber)
 		estimated, err := DoEstimateGas(ctx, b, callArgs, pendingBlockNr, b.RPCGasCap())
@@ -284,6 +287,23 @@ func (args *TransactionArgs) ToMessage(globalGasCap uint64, baseFee *big.Int) (*
 func (args *TransactionArgs) toTransaction() *types.Transaction {
 	var data types.TxData
 	switch {
+	case args.ReviveList != nil:
+		al := types.AccessList{}
+		if args.AccessList != nil {
+			al = *args.AccessList
+		}
+		data = &types.ReviveTx{
+			To:         args.To,
+			ChainID:    uint256.MustFromBig(args.ChainID.ToInt()),
+			Nonce:      uint64(*args.Nonce),
+			Gas:        uint64(*args.Gas),
+			GasFeeCap:  uint256.MustFromBig(args.MaxFeePerGas.ToInt()),
+			GasTipCap:  uint256.MustFromBig(args.MaxPriorityFeePerGas.ToInt()),
+			Value:      uint256.MustFromBig(args.Value.ToInt()),
+			Data:       args.data(),
+			AccessList: al,
+			ReviveList: *args.ReviveList,
+		}
 	case args.MaxFeePerGas != nil:
 		al := types.AccessList{}
 		if args.AccessList != nil {

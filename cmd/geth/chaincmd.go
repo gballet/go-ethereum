@@ -49,7 +49,7 @@ var (
 		Name:      "init",
 		Usage:     "Bootstrap and initialize a new genesis block",
 		ArgsUsage: "<genesisPath>",
-		Flags:     flags.Merge([]cli.Flag{utils.CachePreimagesFlag, utils.OverrideVerkle}, utils.DatabasePathFlags),
+		Flags:     flags.Merge([]cli.Flag{utils.CachePreimagesFlag, utils.OverrideVerkle, utils.OverrideStateExpiry, utils.OverrideStateExpiryPeriod}, utils.DatabasePathFlags),
 		Description: `
 The init command initializes a new genesis block and definition for the network.
 This is a destructive action and changes the network in which you will be
@@ -205,6 +205,16 @@ func initGenesis(ctx *cli.Context) error {
 	if ctx.IsSet(utils.OverrideVerkle.Name) {
 		v := ctx.Uint64(utils.OverrideVerkle.Name)
 		overrides.OverrideVerkle = &v
+	}
+
+	if ctx.IsSet(utils.OverrideStateExpiry.Name) {
+		v := ctx.Uint64(utils.OverrideStateExpiry.Name)
+		overrides.OverrideStateExpiry = &v
+	}
+
+	if ctx.IsSet(utils.OverrideStateExpiryPeriod.Name) {
+		v := ctx.Uint64(utils.OverrideStateExpiryPeriod.Name)
+		overrides.OverrideStateExpiryPeriod = &v
 	}
 
 	for _, name := range []string{"chaindata", "lightchaindata"} {
@@ -513,7 +523,7 @@ func dump(ctx *cli.Context) error {
 	config := &trie.Config{
 		Preimages: true, // always enable preimage lookup
 	}
-	state, err := state.New(root, state.NewDatabaseWithConfig(db, config), nil)
+	state, err := state.New(root, state.NewDatabaseWithConfig(db, config), nil, types.Period0) // TODO(wh): load head block and get the period
 	if err != nil {
 		return err
 	}

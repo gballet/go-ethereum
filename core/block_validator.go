@@ -137,7 +137,7 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 		if parent == nil {
 			return fmt.Errorf("nil parent header for block %d", header.Number)
 		}
-		stateDiff, proof, err := beacon.BuildVerkleProof(header, statedb, parent.Root())
+		stateDiff, proof, err := beacon.BuildVerkleProof(header, statedb, parent.Root(), types.GetStatePeriod(v.bc.Config(), parent.Time()))
 		if err != nil {
 			return fmt.Errorf("error building verkle proof: %w", err)
 		}

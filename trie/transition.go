@@ -134,6 +134,7 @@ func (t *TransitionTrie) DeleteAccount(key common.Address) error {
 // Hash returns the root hash of the trie. It does not write to the database and
 // can be used even if the trie doesn't have one.
 func (t *TransitionTrie) Hash() common.Hash {
+	// fmt.Println("TransitionTrie.Hash")
 	return t.overlay.Hash()
 }
 
@@ -180,7 +181,7 @@ func (t *TransitionTrie) UpdateStem(key []byte, values [][]byte) error {
 	trie := t.overlay
 	switch root := trie.root.(type) {
 	case *verkle.InternalNode:
-		return root.InsertValuesAtStem(key, values, t.overlay.FlatdbNodeResolver)
+		return root.InsertValuesAtStem(key, values, trie.curPeriod, false, trie.FlatdbNodeResolver)
 	default:
 		panic("invalid root type")
 	}
@@ -196,4 +197,8 @@ func (t *TransitionTrie) Copy() *TransitionTrie {
 
 func (t *TransitionTrie) UpdateContractCode(addr common.Address, codeHash common.Hash, code []byte) error {
 	return t.overlay.UpdateContractCode(addr, codeHash, code)
+}
+
+func (t *TransitionTrie) Revive(_ verkle.Stem, _ [][]byte, _ verkle.StatePeriod, _ verkle.StatePeriod) error {
+	panic("shouldn't happen in transition trie")
 }

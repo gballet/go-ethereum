@@ -295,7 +295,7 @@ func (sf *subfetcher) loop() {
 
 	// Start by opening the trie and stop processing if it fails
 	if sf.owner == (common.Hash{}) {
-		trie, err := sf.db.OpenTrie(sf.root)
+		trie, err := sf.db.OpenTrie(sf.root, 0) // TODO(wh): Verkle currently doesn't support prefetching, ignore period for now
 		if err != nil {
 			log.Warn("Trie prefetcher failed opening trie", "root", sf.root, "err", err)
 			return

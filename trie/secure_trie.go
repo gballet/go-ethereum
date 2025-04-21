@@ -21,6 +21,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie/trienode"
+	"github.com/ethereum/go-verkle"
 )
 
 // SecureTrie is the old name of StateTrie.
@@ -291,4 +292,8 @@ func (t *StateTrie) getSecKeyCache() map[string][]byte {
 
 func (t *StateTrie) IsVerkle() bool {
 	return false
+}
+
+func (t *StateTrie) Revive(_ verkle.Stem, _ [][]byte, _ verkle.StatePeriod, _ verkle.StatePeriod) error {
+	panic("not supported")
 }

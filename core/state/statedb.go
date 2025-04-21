@@ -36,6 +36,7 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/ethereum/go-ethereum/trie/triestate"
+	"github.com/ethereum/go-verkle"
 )
 
 type revision struct {
@@ -120,6 +121,7 @@ type StateDB struct {
 
 	// Verkle witness
 	witness *AccessWitness
+	curPeriod verkle.StatePeriod
 
 	// Journal of state modifications. This is the backbone of
 	// Snapshot and RevertToSnapshot.
@@ -148,8 +150,8 @@ type StateDB struct {
 }
 
 // New creates a new state from a given trie.
-func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) {
-	tr, err := db.OpenTrie(root)
+func New(root common.Hash, db Database, snaps *snapshot.Tree, curPeriod verkle.StatePeriod) (*StateDB, error) {
+	tr, err := db.OpenTrie(root, curPeriod)
 	if err != nil {
 		return nil, err
 	}
@@ -175,6 +177,7 @@ func New(root common.Hash, db Database, snaps *snapshot.Tree) (*StateDB, error) 
 	}
 	if tr.IsVerkle() {
 		sdb.witness = sdb.NewAccessWitness()
+		sdb.curPeriod = curPeriod
 	}
 	if sdb.snaps != nil {
 		sdb.snap = sdb.snaps.Snapshot(root)
@@ -983,6 +986,7 @@ func (s *StateDB) Finalise(deleteEmptyObjects bool) {
 // It is called in between transactions to get the root hash that
 // goes into transaction receipts.
 func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
+	fmt.Println("StateDB.IntermediateRoot")
 	// Finalise all the dirty storage states and write them into the tries
 	s.Finalise(deleteEmptyObjects)
 
@@ -1043,8 +1047,9 @@ func (s *StateDB) IntermediateRoot(deleteEmptyObjects bool) common.Hash {
 	if metrics.EnabledExpensive {
 		defer func(start time.Time) { s.AccountHashes += time.Since(start) }(time.Now())
 	}
+	fmt.Printf("StateDB.IntermediateRoot s.trie.hash before\n")
 	root := s.trie.Hash()
-
+	fmt.Printf("StateDB.IntermediateRoot s.trie.hash after: %x\n", root)
 	// Save the root of the MPT so that it can be used during the transition
 	if !s.Database().InTransition() && !s.Database().Transitioned() {
 		s.Database().SetLastMerkleRoot(root)
@@ -1220,6 +1225,19 @@ func (s *StateDB) GetTrie() Trie {
 // The associated block number of the state transition is also provided
 // for more chain context.
 func (s *StateDB) Commit(block uint64, deleteEmptyObjects bool) (common.Hash, error) {
+	if s.GetTrie().IsVerkle() {
+		fmt.Println("--------------------------------")
+		fmt.Println("StateDB.Commit")
+		fmt.Println("--------------------------------")
+		tr := s.trie
+		switch vkt := tr.(type) {
+		case *trie.VerkleTrie:
+			fmt.Println(vkt.ToDot())
+		case *trie.TransitionTrie:
+			fmt.Println(vkt.Overlay().ToDot())
+		}
+		fmt.Println("--------------------------------")
+	}
 	// Short circuit in case any database failure occurred earlier.
 	if s.dbErr != nil {
 		return common.Hash{}, fmt.Errorf("commit aborted due to earlier error: %v", s.dbErr)
@@ -1466,4 +1484,19 @@ func copy2DSet[k comparable](set map[k]map[common.Hash][]byte) map[k]map[common.
 		}
 	}
 	return copied
+}
+
+func (s *StateDB) Revive(stem verkle.Stem, values [][]byte, oldPeriod, curPeriod verkle.StatePeriod) error {
+	return s.trie.Revive(stem, values, oldPeriod, curPeriod)
+}
+
+func (s *StateDB) CurPeriod() verkle.StatePeriod {
+	return s.curPeriod
+}
+
+func (s *StateDB) SetCurPeriod(period verkle.StatePeriod) {
+	s.curPeriod = period
+	if tr, ok := s.trie.(*trie.VerkleTrie); ok {
+		tr.SetPeriod(period)
+	}
 }

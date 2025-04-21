@@ -66,7 +66,7 @@ func (result *ExecutionResult) Revert() []byte {
 }
 
 // IntrinsicGas computes the 'intrinsic gas' for a message with the given data.
-func IntrinsicGas(data []byte, accessList types.AccessList, isContractCreation bool, isHomestead, isEIP2028 bool, isEIP3860 bool) (uint64, error) {
+func IntrinsicGas(data []byte, accessList types.AccessList, reviveList types.ReviveList, isContractCreation bool, isHomestead, isEIP2028 bool, isEIP3860 bool) (uint64, error) {
 	// Set the starting gas for the raw transaction
 	var gas uint64
 	if isContractCreation && isHomestead {
@@ -112,6 +112,15 @@ func IntrinsicGas(data []byte, accessList types.AccessList, isContractCreation b
 		gas += uint64(len(accessList)) * params.TxAccessListAddressGas
 		gas += uint64(accessList.StorageKeys()) * params.TxAccessListStorageKeyGas
 	}
+	if reviveList != nil {
+		gas += uint64(len(reviveList)) * params.WitnessBranchReadCost
+		gas += uint64(len(reviveList)) * params.WitnessBranchWriteCost
+		for _, val := range reviveList {
+			gas += uint64(len(val.Values)) * params.WitnessChunkReadCost
+			gas += uint64(len(val.Values)) * params.WitnessChunkWriteCost
+			gas += uint64(len(val.Values)) * params.WitnessChunkFillCost
+		}
+	}
 	return gas, nil
 }
 
@@ -137,6 +146,7 @@ type Message struct {
 	GasTipCap     *big.Int
 	Data          []byte
 	AccessList    types.AccessList
+	ReviveList    types.ReviveList
 	BlobGasFeeCap *big.Int
 	BlobHashes    []common.Hash
 
@@ -158,6 +168,7 @@ func TransactionToMessage(tx *types.Transaction, s types.Signer, baseFee *big.In
 		Value:             tx.Value(),
 		Data:              tx.Data(),
 		AccessList:        tx.AccessList(),
+		ReviveList:        tx.ReviveList(),
 		SkipAccountChecks: false,
 		BlobHashes:        tx.BlobHashes(),
 		BlobGasFeeCap:     tx.BlobGasFeeCap(),
@@ -380,7 +391,7 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	)
 
 	// Check clauses 4-5, subtract intrinsic gas if everything is correct
-	gas, err := IntrinsicGas(msg.Data, msg.AccessList, contractCreation, rules.IsHomestead, rules.IsIstanbul, rules.IsShanghai)
+	gas, err := IntrinsicGas(msg.Data, msg.AccessList, msg.ReviveList, contractCreation, rules.IsHomestead, rules.IsIstanbul, rules.IsShanghai)
 	if err != nil {
 		return nil, err
 	}
@@ -417,6 +428,13 @@ func (st *StateTransition) TransitionDb() (*ExecutionResult, error) {
 	// - prepare accessList(post-berlin)
 	// - reset transient storage(eip 1153)
 	st.state.Prepare(rules, msg.From, st.evm.Context.Coinbase, msg.To, vm.ActivePrecompiles(rules), msg.AccessList)
+
+	// Before performing the actual transition, we first perform the revive
+	for _, revive := range msg.ReviveList {
+		if err := st.state.Revive(revive.Stem, revive.Values, revive.LastPeriod, st.state.CurPeriod()); err != nil {
+			return nil, err
+		}
+	}
 
 	var (
 		ret   []byte

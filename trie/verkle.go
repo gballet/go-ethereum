@@ -39,18 +39,20 @@ type VerkleTrie struct {
 	db         *Database
 	pointCache *utils.PointCache
 	ended      bool
+	curPeriod  verkle.StatePeriod
 }
 
 func (vt *VerkleTrie) ToDot() string {
 	return verkle.ToDot(vt.root)
 }
 
-func NewVerkleTrie(root verkle.VerkleNode, db *Database, pointCache *utils.PointCache, ended bool) *VerkleTrie {
+func NewVerkleTrie(root verkle.VerkleNode, db *Database, pointCache *utils.PointCache, ended bool, curPeriod verkle.StatePeriod) *VerkleTrie {
 	return &VerkleTrie{
 		root:       root,
 		db:         db,
 		pointCache: pointCache,
 		ended:      ended,
+		curPeriod:  curPeriod,
 	}
 }
 
@@ -80,6 +82,7 @@ var (
 // GetKey returns the sha3 preimage of a hashed key that was previously used
 // to store a value.
 func (trie *VerkleTrie) GetKey(key []byte) []byte {
+	fmt.Printf("vkt period %d GetKey %x\n", trie.curPeriod, key)
 	return key
 }
 
@@ -87,18 +90,21 @@ func (trie *VerkleTrie) GetKey(key []byte) []byte {
 // not be modified by the caller. If a node was not found in the database, a
 // trie.MissingNodeError is returned.
 func (trie *VerkleTrie) GetStorage(addr common.Address, key []byte) ([]byte, error) {
+	fmt.Printf("VerkleTrie.GetStorage addr: %x key: %x\n", addr, key)
 	pointEval := trie.pointCache.GetTreeKeyHeader(addr[:])
 	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(pointEval, key)
-	return trie.root.Get(k, trie.FlatdbNodeResolver)
+	return trie.root.Get(k, trie.curPeriod, trie.FlatdbNodeResolver)
 }
 
 // GetWithHashedKey returns the value, assuming that the key has already
 // been hashed.
 func (trie *VerkleTrie) GetWithHashedKey(key []byte) ([]byte, error) {
-	return trie.root.Get(key, trie.FlatdbNodeResolver)
+	fmt.Printf("VerkleTrie.GetWithHashedKey key: %x\n", key)
+	return trie.root.Get(key, trie.curPeriod, trie.FlatdbNodeResolver)
 }
 
 func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error) {
+	fmt.Printf("VerkleTrie.GetAccount addr: %x\n", addr)
 	acc := &types.StateAccount{}
 	versionkey := t.pointCache.GetTreeKeyBasicDataCached(addr[:])
 	var (
@@ -107,7 +113,7 @@ func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 	)
 	switch t.root.(type) {
 	case *verkle.InternalNode:
-		values, err = t.root.(*verkle.InternalNode).GetValuesAtStem(versionkey[:31], t.FlatdbNodeResolver)
+		values, err = t.root.(*verkle.InternalNode).GetValuesAtStem(versionkey[:31], t.curPeriod, t.FlatdbNodeResolver)
 	default:
 		return nil, errInvalidRootType
 	}
@@ -175,7 +181,7 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount,
 
 	switch root := t.root.(type) {
 	case *verkle.InternalNode:
-		err = root.InsertValuesAtStem(stem, values, t.FlatdbNodeResolver)
+		err = root.InsertValuesAtStem(stem, values, t.curPeriod, false, t.FlatdbNodeResolver)
 	default:
 		return errInvalidRootType
 	}
@@ -189,7 +195,16 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount,
 func (trie *VerkleTrie) UpdateStem(key []byte, values [][]byte) error {
 	switch root := trie.root.(type) {
 	case *verkle.InternalNode:
-		return root.InsertValuesAtStem(key, values, trie.FlatdbNodeResolver)
+		return root.InsertValuesAtStem(key, values, trie.curPeriod, false, trie.FlatdbNodeResolver)
+	default:
+		panic("invalid root type")
+	}
+}
+
+func (trie *VerkleTrie) Revive(stem verkle.Stem, values [][]byte, oldPeriod, curPeriod verkle.StatePeriod) error {
+	switch root := trie.root.(type) {
+	case *verkle.InternalNode:
+		return root.Revive(stem, values, oldPeriod, curPeriod, false, trie.FlatdbNodeResolver)
 	default:
 		panic("invalid root type")
 	}
@@ -207,7 +222,7 @@ func (trie *VerkleTrie) UpdateStorage(address common.Address, key, value []byte)
 	} else {
 		copy(v[32-len(value):], value[:])
 	}
-	return trie.root.Insert(k, v[:], trie.FlatdbNodeResolver)
+	return trie.root.Insert(k, v[:], trie.curPeriod, trie.FlatdbNodeResolver)
 }
 
 func (t *VerkleTrie) DeleteAccount(addr common.Address) error {
@@ -220,18 +235,20 @@ func (trie *VerkleTrie) DeleteStorage(addr common.Address, key []byte) error {
 	pointEval := trie.pointCache.GetTreeKeyHeader(addr[:])
 	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(pointEval, key)
 	var zero [32]byte
-	return trie.root.Insert(k, zero[:], trie.FlatdbNodeResolver)
+	return trie.root.Insert(k, zero[:], trie.curPeriod, trie.FlatdbNodeResolver)
 }
 
 // Hash returns the root hash of the trie. It does not write to the database and
 // can be used even if the trie doesn't have one.
 func (trie *VerkleTrie) Hash() common.Hash {
+	// fmt.Println("VerkleTrie.Hash")
 	return trie.root.Commit().Bytes()
 }
 
 // Commit writes all nodes to the trie's memory database, tracking the internal
 // and external (for account tries) references.
 func (trie *VerkleTrie) Commit(_ bool) (common.Hash, *trienode.NodeSet, error) {
+	// fmt.Println("Commit\n", trie.ToDot())
 	root, ok := trie.root.(*verkle.InternalNode)
 	if !ok {
 		return common.Hash{}, nil, errors.New("unexpected root node type")
@@ -290,12 +307,17 @@ func (trie *VerkleTrie) IsVerkle() bool {
 	return true
 }
 
+func (trie *VerkleTrie) SetPeriod(period verkle.StatePeriod) {
+	trie.curPeriod = period
+}
+
 func ProveAndSerialize(pretrie, posttrie *VerkleTrie, keys [][]byte, resolver verkle.NodeResolverFn) (*verkle.VerkleProof, verkle.StateDiff, error) {
+	// fmt.Println("ProveAndSerialize")
 	var postroot verkle.VerkleNode
 	if posttrie != nil {
 		postroot = posttrie.root
 	}
-	proof, _, _, _, err := verkle.MakeVerkleMultiProof(pretrie.root, postroot, keys, resolver)
+	proof, _, _, _, err := verkle.MakeVerkleMultiProof(pretrie.root, postroot, keys, pretrie.curPeriod, resolver)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -400,7 +422,6 @@ func (t *VerkleTrie) UpdateContractCode(addr common.Address, codeHash common.Has
 
 		if groupOffset == 255 || len(chunks)-i <= 32 {
 			err = t.UpdateStem(key[:31], values)
-
 			if err != nil {
 				return fmt.Errorf("UpdateContractCode (addr=%x) error: %w", addr[:], err)
 			}

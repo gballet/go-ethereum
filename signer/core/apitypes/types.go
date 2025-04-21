@@ -97,6 +97,7 @@ type SendTxArgs struct {
 
 	// For non-legacy transactions
 	AccessList *types.AccessList `json:"accessList,omitempty"`
+	ReviveList []hexutil.Bytes   `json:"reviveList,omitempty"`
 	ChainID    *hexutil.Big      `json:"chainId,omitempty"`
 }
 
@@ -153,6 +154,10 @@ func (args *SendTxArgs) ToTransaction() *types.Transaction {
 			Data:       input,
 			AccessList: *args.AccessList,
 		}
+	case args.ReviveList != nil:
+		// TODO(wh): handle this
+		panic("ToTransaction(): revive list not implemented")
+
 	default:
 		data = &types.LegacyTx{
 			To:       to,

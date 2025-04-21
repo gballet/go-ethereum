@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie/trienode"
+	// "github.com/ethereum/go-ethereum/trie"
 )
 
 type Code []byte
@@ -292,6 +293,12 @@ func (s *stateObject) updateTrie() (Trie, error) {
 	}
 	// Insert all the pending updates into the trie
 	usedStorage := make([][]byte, 0, len(s.pendingStorage))
+	// switch tr := tr.(type) {
+	// case *trie.VerkleTrie:
+	// 	fmt.Printf("tr.Hash(): %x\n", tr.Hash())
+	// case *trie.TransitionTrie:
+	// 	fmt.Printf("tr.Hash(): %x\n", tr.Hash())
+	// }
 	for key, value := range s.pendingStorage {
 		// Skip noop changes, persist actual changes
 		if value == s.originStorage[key] {
@@ -372,7 +379,9 @@ func (s *stateObject) updateRoot() {
 	if metrics.EnabledExpensive {
 		defer func(start time.Time) { s.db.StorageHashes += time.Since(start) }(time.Now())
 	}
+	fmt.Printf("stateObject.updateRoot s.data.Root before: %x\n", s.data.Root)
 	s.data.Root = tr.Hash()
+	fmt.Printf("stateObject.updateRoot s.data.Root after: %x\n", s.data.Root)
 }
 
 // commit returns the changes made in storage trie and updates the account data.

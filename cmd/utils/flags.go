@@ -279,6 +279,16 @@ var (
 		Usage:    "Manually specify the Verkle fork timestamp, overriding the bundled setting",
 		Category: flags.EthCategory,
 	}
+	OverrideStateExpiry = &cli.Uint64Flag{
+		Name:     "override.expiry",
+		Usage:    "Manually specify the state expiry timestamp, overriding the bundled setting",
+		Category: flags.EthCategory,
+	}
+	OverrideStateExpiryPeriod = &cli.Uint64Flag{
+		Name:     "override.expiryperiod",
+		Usage:    "Manually specify the state expiry period, overriding the bundled setting",
+		Category: flags.EthCategory,
+	}
 	OverrideProofInBlock = &cli.BoolFlag{
 		Name:     "override.blockproof",
 		Usage:    "Manually specify the proof-in-block setting",

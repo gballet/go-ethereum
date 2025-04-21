@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
@@ -414,7 +415,7 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 		state.Database().LoadTransitionState(parent.Root)
 
 		var err error
-		stateDiff, proof, err = BuildVerkleProof(header, state, parent.Root)
+		stateDiff, proof, err = BuildVerkleProof(header, state, parent.Root, types.GetStatePeriod(chain.Config(), parent.Time))
 		if err != nil {
 			return nil, fmt.Errorf("error building verkle proof: %w", err)
 		}
@@ -429,13 +430,13 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	return block, nil
 }
 
-func BuildVerkleProof(header *types.Header, state *state.StateDB, parentRoot common.Hash) (verkle.StateDiff, *verkle.VerkleProof, error) {
+func BuildVerkleProof(header *types.Header, state *state.StateDB, parentRoot common.Hash, parentPeriod verkle.StatePeriod) (verkle.StateDiff, *verkle.VerkleProof, error) {
 	var (
 		proof     *verkle.VerkleProof
 		stateDiff verkle.StateDiff
 	)
 
-	preTrie, err := state.Database().OpenTrie(parentRoot)
+	preTrie, err := state.Database().OpenTrie(parentRoot, parentPeriod)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error opening pre-state tree root: %w", err)
 	}
@@ -469,7 +470,7 @@ func BuildVerkleProof(header *types.Header, state *state.StateDB, parentRoot com
 		// conversion, when the previous tree is a merkle tree.
 		//  Logically, the "previous" verkle tree is an empty tree.
 		okpre = true
-		vtrpre = trie.NewVerkleTrie(verkle.New(), state.Database().TrieDB(), utils.NewPointCache(), false)
+		vtrpre = trie.NewVerkleTrie(verkle.New(), state.Database().TrieDB(), utils.NewPointCache(), false, types.Period0)
 		post := state.GetTrie().(*trie.TransitionTrie)
 		vtrpost = post.Overlay()
 		okpost = true
@@ -483,7 +484,42 @@ func BuildVerkleProof(header *types.Header, state *state.StateDB, parentRoot com
 			}
 		}
 	}
+
+	fmt.Println(getStateDiffString(stateDiff))
+
 	return stateDiff, proof, nil
+}
+
+func getStateDiffString(sd verkle.StateDiff) string {
+	var b strings.Builder
+	b.WriteString("StateDiff[\n")
+	for i, stem := range sd {
+		if i > 0 {
+			b.WriteString(",\n")
+		}
+		b.WriteString(fmt.Sprintf("  Stem: %x\n", stem.Stem))
+		b.WriteString(fmt.Sprintf("  Period: %d\n", stem.PrePeriod))
+		b.WriteString("  SuffixDiffs[\n")
+		for j, suffix := range stem.SuffixDiffs {
+			if j > 0 {
+				b.WriteString(",\n")
+			}
+			b.WriteString(fmt.Sprintf("    Suffix: %x\n", suffix.Suffix))
+			if suffix.CurrentValue != nil {
+				b.WriteString(fmt.Sprintf("    CurrentValue: %x\n", *suffix.CurrentValue))
+			} else {
+				b.WriteString("    CurrentValue: nil\n")
+			}
+			if suffix.NewValue != nil {
+				b.WriteString(fmt.Sprintf("    NewValue: %x\n", *suffix.NewValue))
+			} else {
+				b.WriteString("    NewValue: nil\n")
+			}
+		}
+		b.WriteString("  ]")
+	}
+	b.WriteString("\n]")
+	return b.String()
 }
 
 // Seal generates a new sealing request for the given input block and pushes

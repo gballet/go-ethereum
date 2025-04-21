@@ -416,7 +416,7 @@ func handleGetProofs(msg Decoder) (serveRequestFn, uint64, uint64, error) {
 			switch len(request.AccountAddress) {
 			case 0:
 				// No account key specified, open an account trie
-				trie, err = statedb.OpenTrie(root)
+				trie, err = statedb.OpenTrie(root, types.Period0)
 				if trie == nil || err != nil {
 					p.Log().Warn("Failed to open storage trie for proof", "block", header.Number, "hash", header.Hash(), "root", root, "err", err)
 					continue

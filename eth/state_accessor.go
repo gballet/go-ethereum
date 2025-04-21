@@ -63,6 +63,7 @@ func (eth *Ethereum) StateAtBlock(ctx context.Context, block *types.Block, reexe
 		database state.Database
 		report   = true
 		origin   = block.NumberU64()
+		curPeriod = types.GetStatePeriod(eth.blockchain.Config(), block.Time())
 	)
 	// The state is only for reading purposes, check the state presence in
 	// live database.
@@ -70,7 +71,7 @@ func (eth *Ethereum) StateAtBlock(ctx context.Context, block *types.Block, reexe
 		// The state is available in live database, create a reference
 		// on top to prevent garbage collection and return a release
 		// function to deref it.
-		if statedb, err = eth.blockchain.StateAt(block.Root()); err == nil {
+		if statedb, err = eth.blockchain.StateAt(block.Root(), curPeriod); err == nil {
 			statedb.Database().TrieDB().Reference(block.Root(), common.Hash{})
 			return statedb, func() {
 				statedb.Database().TrieDB().Dereference(block.Root())
@@ -85,7 +86,7 @@ func (eth *Ethereum) StateAtBlock(ctx context.Context, block *types.Block, reexe
 			// Create an ephemeral trie.Database for isolating the live one. Otherwise
 			// the internal junks created by tracing will be persisted into the disk.
 			database = state.NewDatabaseWithConfig(eth.chainDb, &trie.Config{Cache: 16})
-			if statedb, err = state.New(block.Root(), database, nil); err == nil {
+			if statedb, err = state.New(block.Root(), database, nil, curPeriod); err == nil {
 				log.Info("Found disk backend for state trie", "root", block.Root(), "number", block.Number())
 				return statedb, noopReleaser, nil
 			}
@@ -105,7 +106,7 @@ func (eth *Ethereum) StateAtBlock(ctx context.Context, block *types.Block, reexe
 		// otherwise we would rewind past a persisted block (specific corner case is
 		// chain tracing from the genesis).
 		if !readOnly {
-			statedb, err = state.New(current.Root(), database, nil)
+			statedb, err = state.New(current.Root(), database, nil, curPeriod)
 			if err == nil {
 				return statedb, noopReleaser, nil
 			}
@@ -124,7 +125,7 @@ func (eth *Ethereum) StateAtBlock(ctx context.Context, block *types.Block, reexe
 			}
 			current = parent
 
-			statedb, err = state.New(current.Root(), database, nil)
+			statedb, err = state.New(current.Root(), database, nil, curPeriod)
 			if err == nil {
 				break
 			}
@@ -169,7 +170,7 @@ func (eth *Ethereum) StateAtBlock(ctx context.Context, block *types.Block, reexe
 			return nil, nil, fmt.Errorf("stateAtBlock commit failed, number %d root %v: %w",
 				current.NumberU64(), current.Root().Hex(), err)
 		}
-		statedb, err = state.New(root, database, nil)
+		statedb, err = state.New(root, database, nil, curPeriod)
 		if err != nil {
 			return nil, nil, fmt.Errorf("state reset after block %d failed: %v", current.NumberU64(), err)
 		}

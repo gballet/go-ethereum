@@ -89,7 +89,7 @@ func (odr *testOdr) Retrieve(ctx context.Context, req OdrRequest) error {
 		if len(req.Id.AccountAddress) > 0 {
 			t, err = odr.serverState.OpenStorageTrie(req.Id.StateRoot, common.BytesToAddress(req.Id.AccountAddress), req.Id.Root, nil)
 		} else {
-			t, err = odr.serverState.OpenTrie(req.Id.Root)
+			t, err = odr.serverState.OpenTrie(req.Id.Root, types.Period0)
 		}
 		if err != nil {
 			panic(err)
@@ -161,7 +161,7 @@ func odrAccounts(ctx context.Context, db ethdb.Database, bc *core.BlockChain, lc
 		st = NewState(ctx, header, lc.Odr())
 	} else {
 		header := bc.GetHeaderByHash(bhash)
-		st, _ = state.New(header.Root, bc.StateCache(), nil)
+		st, _ = state.New(header.Root, bc.StateCache(), nil, types.Period0)
 	}
 
 	var res []byte
@@ -195,7 +195,7 @@ func odrContractCall(ctx context.Context, db ethdb.Database, bc *core.BlockChain
 		} else {
 			chain = bc
 			header = bc.GetHeaderByHash(bhash)
-			st, _ = state.New(header.Root, bc.StateCache(), nil)
+			st, _ = state.New(header.Root, bc.StateCache(), nil, types.Period0)
 		}
 
 		// Perform read-only call.

@@ -97,6 +97,7 @@ func (tx *DynamicFeeTx) to() *common.Address       { return tx.To }
 func (tx *DynamicFeeTx) blobGas() uint64           { return 0 }
 func (tx *DynamicFeeTx) blobGasFeeCap() *big.Int   { return nil }
 func (tx *DynamicFeeTx) blobHashes() []common.Hash { return nil }
+func (tx *DynamicFeeTx) reviveList() []ReviveValue { return nil }
 
 func (tx *DynamicFeeTx) effectiveGasPrice(dst *big.Int, baseFee *big.Int) *big.Int {
 	if baseFee == nil {

@@ -1020,6 +1020,10 @@ func overrideConfig(original *params.ChainConfig, override *params.ChainConfig) 
 		copy.VerkleTime = timestamp
 		canon = false
 	}
+	if timestamp := override.StateExpiryTime; timestamp != nil {
+		copy.StateExpiryTime = timestamp
+		canon = false
+	}
 
 	return copy, canon
 }

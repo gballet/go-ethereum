@@ -129,7 +129,7 @@ func (ga *GenesisAlloc) deriveHash(cfg *params.ChainConfig, timestamp uint64) (c
 		db.StartVerkleTransition(common.Hash{}, common.Hash{}, cfg, &timestamp, common.Hash{})
 		db.EndVerkleTransition()
 	}
-	statedb, err := state.New(types.EmptyRootHash, db, nil)
+	statedb, err := state.New(types.EmptyRootHash, db, nil, types.Period0)
 	if err != nil {
 		return common.Hash{}, err
 	}
@@ -155,7 +155,7 @@ func (ga *GenesisAlloc) flush(db ethdb.Database, triedb *trie.Database, blockhas
 		database.EndVerkleTransition()
 	}
 
-	statedb, err := state.New(types.EmptyRootHash, database, nil)
+	statedb, err := state.New(types.EmptyRootHash, database, nil, types.Period0)
 	if err != nil {
 		return err
 	}
@@ -294,6 +294,8 @@ func (e *GenesisMismatchError) Error() string {
 type ChainOverrides struct {
 	OverrideCancun        *uint64
 	OverrideVerkle        *uint64
+	OverrideStateExpiry   *uint64
+	OverrideStateExpiryPeriod *uint64
 	OverrideProofInBlock  *bool
 	OverrideOverlayStride *uint64
 }
@@ -326,6 +328,12 @@ func SetupGenesisBlockWithOverride(db ethdb.Database, triedb *trie.Database, gen
 			}
 			if overrides != nil && overrides.OverrideVerkle != nil {
 				config.VerkleTime = overrides.OverrideVerkle
+			}
+			if overrides != nil && overrides.OverrideStateExpiry != nil {
+				config.StateExpiryTime = overrides.OverrideStateExpiry
+			}
+			if overrides != nil && overrides.OverrideStateExpiryPeriod != nil {
+				config.StateExpiryPeriod = overrides.OverrideStateExpiryPeriod
 			}
 		}
 	}

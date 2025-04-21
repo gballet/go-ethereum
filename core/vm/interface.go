@@ -23,6 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-verkle"
 )
 
 // StateDB is an EVM database for full state querying.
@@ -84,6 +85,11 @@ type StateDB interface {
 
 	Witness() *state.AccessWitness
 	SetWitness(*state.AccessWitness)
+
+	CurPeriod() verkle.StatePeriod
+	SetCurPeriod(verkle.StatePeriod)
+
+	Revive(stem verkle.Stem, values [][]byte, oldPeriod, curPeriod verkle.StatePeriod) error
 }
 
 // CallContext provides a basic interface for the EVM calling conventions. The EVM

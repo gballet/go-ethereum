@@ -419,7 +419,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	}
 	// Re-create statedb instance with new root upon the updated database
 	// for accessing latest states.
-	statedb, err = state.New(root, statedb.Database(), nil)
+	statedb, err = state.New(root, statedb.Database(), nil, types.Period0)
 	if err != nil {
 		return nil, nil, NewError(ErrorEVM, fmt.Errorf("could not reopen state: %v", err))
 	}
@@ -434,7 +434,7 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		sdb.InitTransitionStatus(true, true, common.Hash{})
 	}
 
-	statedb, _ := state.New(types.EmptyRootHash, sdb, nil)
+	statedb, _ := state.New(types.EmptyRootHash, sdb, nil, types.Period0)
 
 	if pre.Env.Ended != nil && *pre.Env.Ended {
 		vtr := statedb.GetTrie().(*trie.VerkleTrie)
@@ -528,7 +528,7 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		// to dump the tree that was passed as parameters, but is not suited for block
 		// execution since it's missing the snapshot and therefore it can't go through
 		// the conversion.
-		statedb, err = state.New(types.EmptyRootHash, sdb, nil)
+		statedb, err = state.New(types.EmptyRootHash, sdb, nil, types.Period0)
 		if err != nil {
 			panic(err)
 		}
@@ -562,12 +562,12 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 
 		// recreate the verkle db with the tree root, but this time with the mpt snapshot,
 		// so that the conversion can proceed.
-		statedb, err = state.New(root, sdb, snaps)
+		statedb, err = state.New(root, sdb, snaps, types.Period0)
 		if err != nil {
 			panic(err)
 		}
 	} else {
-		statedb, err = state.New(mptRoot, sdb, nil)
+		statedb, err = state.New(mptRoot, sdb, nil, types.Period0)
 		if err != nil {
 			panic(err)
 		}

@@ -128,6 +128,7 @@ func convertToVerkle(ctx *cli.Context) error {
 		lastReport time.Time
 		start      = time.Now()
 		vRoot      = verkle.New().(*verkle.InternalNode)
+		curPeriod  = verkle.StatePeriod(0) // we assume conversion always starts from period 0
 	)
 
 	saveverkle := func(path []byte, node verkle.VerkleNode) {
@@ -202,7 +203,7 @@ func convertToVerkle(ctx *cli.Context) error {
 
 				// Otherwise, store the previous group in the tree with a
 				// stem insertion.
-				vRoot.InsertValuesAtStem(chunkkey[:31], values, chaindb.Get)
+				vRoot.InsertValuesAtStem(chunkkey[:31], values, curPeriod, false, chaindb.Get)
 			}
 
 			// Write the code size in the account header group
@@ -267,7 +268,7 @@ func convertToVerkle(ctx *cli.Context) error {
 						copy(k[:], []byte(s))
 						// reminder that InsertStem will merge leaves
 						// if they exist.
-						vRoot.InsertValuesAtStem(k[:31], vs, chaindb.Get)
+						vRoot.InsertValuesAtStem(k[:31], vs, curPeriod, false, chaindb.Get)
 					}
 					translatedStorage = make(map[string][][]byte)
 					vRoot.FlushAtDepth(2, saveverkle)
@@ -276,7 +277,7 @@ func convertToVerkle(ctx *cli.Context) error {
 			for s, vs := range translatedStorage {
 				var k [31]byte
 				copy(k[:], []byte(s))
-				vRoot.InsertValuesAtStem(k[:31], vs, chaindb.Get)
+				vRoot.InsertValuesAtStem(k[:31], vs, curPeriod, false, chaindb.Get)
 			}
 			storageIt.Release()
 			if storageIt.Error() != nil {
@@ -285,7 +286,7 @@ func convertToVerkle(ctx *cli.Context) error {
 			}
 		}
 		// Finish with storing the complete account header group inside the tree.
-		vRoot.InsertValuesAtStem(stem[:31], newValues, chaindb.Get)
+		vRoot.InsertValuesAtStem(stem[:31], newValues, curPeriod, false, chaindb.Get)
 
 		if time.Since(lastReport) > time.Second*8 {
 			log.Info("Traversing state", "accounts", accounts, "elapsed", common.PrettyDuration(time.Since(start)))
@@ -445,7 +446,7 @@ func expandVerkle(ctx *cli.Context) error {
 
 	for i, key := range keylist {
 		log.Info("Reading key", "index", i, "key", keylist[0])
-		root.Get(key, chaindb.Get)
+		root.Get(key, 0, chaindb.Get)
 	}
 
 	if err := os.WriteFile("dump.dot", []byte(verkle.ToDot(root)), 0o600); err != nil {

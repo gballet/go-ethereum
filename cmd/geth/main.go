@@ -70,6 +70,8 @@ var (
 		utils.OverrideOverlayStride,
 		utils.OverrideCancun,
 		utils.OverrideVerkle,
+		utils.OverrideStateExpiry,
+		utils.OverrideStateExpiryPeriod,
 		utils.OverrideProofInBlock,
 		utils.ClearVerkleCosts,
 		utils.EnablePersonal,

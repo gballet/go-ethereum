@@ -54,7 +54,7 @@ func NoBanner() {
 // Database wraps access to tries and contract code.
 type Database interface {
 	// OpenTrie opens the main account trie.
-	OpenTrie(root common.Hash) (Trie, error)
+	OpenTrie(root common.Hash, curPeriod verkle.StatePeriod) (Trie, error)
 
 	// OpenStorageTrie opens the storage trie of an account.
 	OpenStorageTrie(stateRoot common.Hash, address common.Address, root common.Hash, main Trie) (Trie, error)
@@ -188,6 +188,9 @@ type Trie interface {
 
 	// IsVerkle returns true if the trie is verkle-tree based
 	IsVerkle() bool
+
+	// Revive(stem verkle.Stem, values [][]byte) error
+	Revive(stem verkle.Stem, values [][]byte, oldPeriod, curPeriod verkle.StatePeriod) error
 }
 
 // NewDatabase creates a backing store for state. The returned database is safe for
@@ -340,26 +343,26 @@ func (db *cachingDB) openMPTTrie(root common.Hash) (Trie, error) {
 	return tr, nil
 }
 
-func (db *cachingDB) openVKTrie(_ common.Hash) (Trie, error) {
+func (db *cachingDB) openVKTrie(_ common.Hash, curPeriod verkle.StatePeriod) (Trie, error) {
 	payload, err := db.DiskDB().Get(trie.FlatDBVerkleNodeKeyPrefix)
 	if err != nil {
-		return trie.NewVerkleTrie(verkle.New(), db.triedb, db.addrToPoint, db.CurrentTransitionState.Ended), nil
+		return trie.NewVerkleTrie(verkle.New(), db.triedb, db.addrToPoint, db.CurrentTransitionState.Ended, curPeriod), nil
 	}
 
 	r, err := verkle.ParseNode(payload, 0)
 	if err != nil {
 		panic(err)
 	}
-	return trie.NewVerkleTrie(r, db.triedb, db.addrToPoint, db.CurrentTransitionState.Ended), err
+	return trie.NewVerkleTrie(r, db.triedb, db.addrToPoint, db.CurrentTransitionState.Ended, curPeriod), err
 }
 
 // OpenTrie opens the main account trie at a specific root hash.
-func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
+func (db *cachingDB) OpenTrie(root common.Hash, curPeriod verkle.StatePeriod) (Trie, error) {
 	// TODO separate both cases when I can be certain that it won't
 	// find a Verkle trie where is expects a Transitoion trie.
 	if db.InTransition() || db.Transitioned() {
 		// NOTE this is a kaustinen-only change, it will break replay
-		vkt, err := db.openVKTrie(root)
+		vkt, err := db.openVKTrie(root, curPeriod) // assume that transition will always start with period 0
 		if err != nil {
 			log.Error("failed to open the vkt", "err", err)
 			return nil, err

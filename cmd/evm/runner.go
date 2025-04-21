@@ -144,11 +144,11 @@ func runCmd(ctx *cli.Context) error {
 		db := rawdb.NewMemoryDatabase()
 		genesis := gen.MustCommit(db)
 		sdb := state.NewDatabaseWithConfig(db, &trie.Config{Preimages: preimages})
-		statedb, _ = state.New(genesis.Root(), sdb, nil)
+		statedb, _ = state.New(genesis.Root(), sdb, nil, types.Period0)
 		chainConfig = gen.Config
 	} else {
 		sdb := state.NewDatabaseWithConfig(rawdb.NewMemoryDatabase(), &trie.Config{Preimages: preimages})
-		statedb, _ = state.New(types.EmptyRootHash, sdb, nil)
+		statedb, _ = state.New(types.EmptyRootHash, sdb, nil, types.Period0)
 		genesisConfig = new(core.Genesis)
 	}
 	if ctx.String(SenderFlag.Name) != "" {

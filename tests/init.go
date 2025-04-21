@@ -336,6 +336,7 @@ var Forks = map[string]*params.ChainConfig{
 		TerminalTotalDifficulty: big.NewInt(0),
 		ShanghaiTime:            u64(0),
 		VerkleTime:              u64(0),
+		StateExpiryTime:         u64(0),
 	},
 	"ShanghaiToVerkleAtTime32": {
 		ChainID:                 big.NewInt(1),
@@ -355,6 +356,7 @@ var Forks = map[string]*params.ChainConfig{
 		TerminalTotalDifficulty: big.NewInt(0),
 		ShanghaiTime:            u64(0),
 		VerkleTime:              u64(32),
+		StateExpiryTime:         u64(32),
 	},
 }
 

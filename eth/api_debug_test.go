@@ -63,7 +63,7 @@ func TestAccountRange(t *testing.T) {
 
 	var (
 		statedb = state.NewDatabaseWithConfig(rawdb.NewMemoryDatabase(), &trie.Config{Preimages: true})
-		sdb, _  = state.New(types.EmptyRootHash, statedb, nil)
+		sdb, _  = state.New(types.EmptyRootHash, statedb, nil, types.Period0)
 		addrs   = [AccountRangeMaxResults * 2]common.Address{}
 		m       = map[common.Address]bool{}
 	)
@@ -80,9 +80,9 @@ func TestAccountRange(t *testing.T) {
 		}
 	}
 	root, _ := sdb.Commit(0, true)
-	sdb, _ = state.New(root, statedb, nil)
+	sdb, _ = state.New(root, statedb, nil, types.Period0)
 
-	trie, err := statedb.OpenTrie(root)
+	trie, err := statedb.OpenTrie(root, types.Period0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,11 +134,11 @@ func TestEmptyAccountRange(t *testing.T) {
 
 	var (
 		statedb = state.NewDatabase(rawdb.NewMemoryDatabase())
-		st, _   = state.New(types.EmptyRootHash, statedb, nil)
+		st, _   = state.New(types.EmptyRootHash, statedb, nil, types.Period0)
 	)
 	// Commit(although nothing to flush) and re-init the statedb
 	st.Commit(0, true)
-	st, _ = state.New(types.EmptyRootHash, statedb, nil)
+	st, _ = state.New(types.EmptyRootHash, statedb, nil, types.Period0)
 
 	results := st.IteratorDump(&state.DumpConfig{
 		SkipCode:          true,
@@ -159,7 +159,7 @@ func TestStorageRangeAt(t *testing.T) {
 
 	// Create a state where account 0x010000... has a few storage entries.
 	var (
-		state, _ = state.New(types.EmptyRootHash, state.NewDatabase(rawdb.NewMemoryDatabase()), nil)
+		state, _ = state.New(types.EmptyRootHash, state.NewDatabase(rawdb.NewMemoryDatabase()), nil, types.Period0)
 		addr     = common.Address{0x01}
 		keys     = []common.Hash{ // hashes of Keys of storage
 			common.HexToHash("340dd630ad21bf010b4e676dbfa9ba9a02175262d1fa356232cfde6cb5b47ef2"),

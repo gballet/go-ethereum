@@ -201,6 +201,12 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	if config.OverrideVerkle != nil {
 		overrides.OverrideVerkle = config.OverrideVerkle
 	}
+	if config.OverrideStateExpiry != nil {
+		overrides.OverrideStateExpiry = config.OverrideStateExpiry
+	}
+	if config.OverrideStateExpiryPeriod != nil {
+		overrides.OverrideStateExpiryPeriod = config.OverrideStateExpiryPeriod
+	}
 	if config.OverrideProofInBlock != nil {
 		overrides.OverrideProofInBlock = config.OverrideProofInBlock
 	}

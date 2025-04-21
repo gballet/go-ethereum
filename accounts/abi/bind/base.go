@@ -241,6 +241,7 @@ func (c *BoundContract) Transfer(opts *TransactOpts) (*types.Transaction, error)
 	return c.transact(opts, &c.address, nil)
 }
 
+// TODO(wh): handle this, create resurrect tx
 func (c *BoundContract) createDynamicTx(opts *TransactOpts, contract *common.Address, input []byte, head *types.Header) (*types.Transaction, error) {
 	// Normalize value
 	value := opts.Value

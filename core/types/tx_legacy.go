@@ -105,6 +105,7 @@ func (tx *LegacyTx) to() *common.Address       { return tx.To }
 func (tx *LegacyTx) blobGas() uint64           { return 0 }
 func (tx *LegacyTx) blobGasFeeCap() *big.Int   { return nil }
 func (tx *LegacyTx) blobHashes() []common.Hash { return nil }
+func (tx *LegacyTx) reviveList() []ReviveValue { return nil }
 
 func (tx *LegacyTx) effectiveGasPrice(dst *big.Int, baseFee *big.Int) *big.Int {
 	return dst.Set(tx.GasPrice)

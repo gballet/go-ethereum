@@ -1760,6 +1760,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			parent = bc.GetHeader(block.ParentHash(), block.NumberU64()-1)
 		}
 
+		curPeriod := types.GetStatePeriod(bc.Config(), block.Time())
 		if bc.Config().IsVerkle(block.Number(), block.Time()) {
 			bc.stateCache.LoadTransitionState(parent.Root)
 
@@ -1778,7 +1779,7 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 			bc.StartVerkleTransition(parent.Root, emptyVerkleRoot, bc.Config(), &parent.Time, parent.Root)
 			bc.stateCache.SetLastMerkleRoot(parent.Root)
 		}
-		statedb, err := state.New(parent.Root, bc.stateCache, bc.snaps)
+		statedb, err := state.New(parent.Root, bc.stateCache, bc.snaps, curPeriod)
 		if err != nil {
 			return it.index, err
 		}
@@ -1792,7 +1793,8 @@ func (bc *BlockChain) insertChain(chain types.Blocks, setHead bool) (int, error)
 		var followupInterrupt atomic.Bool
 		if !bc.cacheConfig.TrieCleanNoPrefetch {
 			if followup, err := it.peek(); followup != nil && err == nil {
-				throwaway, _ := state.New(parent.Root, bc.stateCache, bc.snaps)
+				blockPeriod := types.GetStatePeriod(bc.Config(), followup.Time())
+				throwaway, _ := state.New(parent.Root, bc.stateCache, bc.snaps, blockPeriod)
 
 				go func(start time.Time, followup *types.Block, throwaway *state.StateDB) {
 					bc.prefetcher.Prefetch(followup, throwaway, bc.vmConfig, &followupInterrupt)

@@ -108,7 +108,7 @@ func (tx *AccessListTx) to() *common.Address       { return tx.To }
 func (tx *AccessListTx) blobGas() uint64           { return 0 }
 func (tx *AccessListTx) blobGasFeeCap() *big.Int   { return nil }
 func (tx *AccessListTx) blobHashes() []common.Hash { return nil }
-
+func (tx *AccessListTx) reviveList() []ReviveValue { return nil }
 func (tx *AccessListTx) effectiveGasPrice(dst *big.Int, baseFee *big.Int) *big.Int {
 	return dst.Set(tx.GasPrice)
 }

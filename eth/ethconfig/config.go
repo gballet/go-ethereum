@@ -159,6 +159,12 @@ type Config struct {
 	// OverrideVerkle (TODO: remove after the fork)
 	OverrideVerkle *uint64 `toml:",omitempty"`
 
+	// OverrideStateExpiry (TODO: remove after the fork)
+	OverrideStateExpiry *uint64 `toml:",omitempty"`
+
+	// OverrideStateExpiryPeriod (TODO: remove after the fork)
+	OverrideStateExpiryPeriod *uint64 `toml:",omitempty"`
+
 	// OverrideProofInBlock
 	OverrideProofInBlock *bool `toml:",omitempty"`
 

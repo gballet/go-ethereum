@@ -133,3 +133,5 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
 )
+
+replace github.com/ethereum/go-verkle => github.com/weiihann/go-verkle v0.11.3-0.20250421072228-a835e89d1f00

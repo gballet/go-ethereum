@@ -214,6 +214,7 @@ func (kvm *keyValueMigrator) migrateCollectedKeyValues(tree *trie.VerkleTrie) er
 }
 
 // OverlayVerkleTransition contains the overlay conversion logic
+// TODO(weiihann): this is the conversion code
 func OverlayVerkleTransition(statedb *state.StateDB, root common.Hash, maxMovedCount uint64) error {
 	migrdb := statedb.Database()
 	migrdb.LockCurrentTransitionState()
