@@ -207,11 +207,12 @@ func (evm *EVM) Call(caller ContractRef, addr common.Address, input []byte, gas 
 			// list in write mode. If there is enough gas paying for the addition of the code
 			// hash leaf to the access list, then account creation will proceed unimpaired.
 			// Thus, only pay for the creation of the code hash leaf here.
-			wgas := evm.Accesses.TouchCodeHash(addr.Bytes(), true, gas, false)
+			wgas := evm.Accesses.CodeHashGas(addr.Bytes(), true, false)
 			if gas < wgas {
 				evm.StateDB.RevertToSnapshot(snapshot)
 				return nil, 0, ErrOutOfGas
 			}
+			evm.Accesses.TouchCodeHash(addr.Bytes(), true)
 			gas -= wgas
 		}
 
@@ -462,11 +463,12 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 
 	// Charge the contract creation init gas in verkle mode
 	if evm.chainRules.IsEIP4762 {
-		statelessGas := evm.Accesses.TouchAndChargeContractCreateCheck(address.Bytes(), gas)
+		statelessGas := evm.Accesses.ContractCreateCheckGas(address.Bytes())
 		if statelessGas > gas {
 			return nil, common.Address{}, 0, ErrOutOfGas
 		}
 		gas -= statelessGas
+		evm.Accesses.TouchContractCreateCheck(address.Bytes())
 	}
 	// We add this to the access list _before_ taking a snapshot. Even if the creation fails,
 	// the access-list change should not be rolled back
@@ -481,11 +483,12 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 
 	// Charge the contract creation init gas in verkle mode
 	if evm.chainRules.IsEIP4762 {
-		consumed, wanted := evm.Accesses.TouchAndChargeContractCreateInit(address.Bytes(), gas)
-		if consumed < wanted {
+		wanted := evm.Accesses.ContractCreateInitGas(address.Bytes())
+		if gas < wanted {
 			return nil, common.Address{}, 0, ErrOutOfGas
 		}
-		gas -= consumed
+		gas -= wanted
+		evm.Accesses.TouchContractCreateInit(address.Bytes(), gas)
 	}
 
 	// Create a new account on the state
@@ -534,10 +537,17 @@ func (evm *EVM) create(caller ContractRef, codeAndHash *codeAndHash, gas uint64,
 				err = ErrCodeStoreOutOfGas
 			}
 		} else {
-			consumed, wanted := evm.Accesses.TouchCodeChunksRangeAndChargeGas(address.Bytes(), 0, uint64(len(ret)), uint64(len(ret)), true, contract.Gas)
-			contract.UseGas(consumed) // consumed <= contract.Gas, so no return value check is needed
-			if len(ret) > 0 && (consumed < wanted) {
-				err = ErrCodeStoreOutOfGas
+			var wanted uint64
+			wanted, err = evm.Accesses.CodeChunksRangeGas(address.Bytes(), 0, uint64(len(ret)), uint64(len(ret)), true)
+			if err == nil {
+				ok := contract.UseGas(wanted)
+				// TODO check that the len(ret) is necessary here. If it's 0, then
+				// we should not get any gas charged, so ok would always be true.
+				if len(ret) > 0 && !ok {
+					err = ErrCodeStoreOutOfGas
+				} else {
+					evm.Accesses.TouchCodeChunksRange(address.Bytes(), 0, uint64(len(ret)), uint64(len(ret)), true)
+				}
 			}
 		}
 

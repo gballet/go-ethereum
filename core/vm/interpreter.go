@@ -183,11 +183,15 @@ func (in *EVMInterpreter) Run(contract *Contract, input []byte, readOnly bool) (
 			// if the PC ends up in a new "chunk" of verkleized code, charge the
 			// associated costs.
 			codeAddr := contract.CodeAddr
-			consumed, wanted := in.evm.TxContext.Accesses.TouchCodeChunksRangeAndChargeGas(codeAddr[:], pc, 1, uint64(len(contract.Code)), false, contract.Gas)
-			contract.UseGas(consumed)
-			if consumed < wanted {
+			wanted, err := in.evm.TxContext.Accesses.CodeChunksRangeGas(codeAddr[:], pc, 1, uint64(len(contract.Code)), false)
+			if err != nil {
+				return nil, err
+			}
+			ok := contract.UseGas(wanted)
+			if !ok {
 				return nil, ErrOutOfGas
 			}
+			in.evm.TxContext.Accesses.TouchCodeChunksRange(codeAddr[:], pc, 1, uint64(len(contract.Code)), false)
 		}
 
 		// Get the operation from the jump table and validate the stack to ensure there are
