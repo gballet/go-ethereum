@@ -92,7 +92,7 @@ func (aw *AccessWitness) Copy() *AccessWitness {
 }
 
 func (aw *AccessWitness) FullAccountGas(addr []byte, isWrite bool) uint64 {
-	return aw.calculateWitnessGas(addr, zeroTreeIndex, isWrite, utils.BasicDataLeafKey, utils.CodeHashLeafKey)
+	return aw.calculateWitnessGasRange(addr, zeroTreeIndex, isWrite, utils.BasicDataLeafKey, utils.CodeHashLeafKey)
 }
 
 func (aw *AccessWitness) TouchFullAccount(addr []byte, isWrite bool) {
@@ -102,7 +102,7 @@ func (aw *AccessWitness) TouchFullAccount(addr []byte, isWrite bool) {
 }
 
 func (aw *AccessWitness) MessageCallGas(addr []byte) uint64 {
-	wanted := aw.calculateWitnessGas(addr, zeroTreeIndex, false, utils.BasicDataLeafKey)
+	wanted := aw.calculateWitnessGasRange(addr, zeroTreeIndex, false, utils.BasicDataLeafKey, utils.BasicDataLeafKey)
 	if wanted == 0 {
 		wanted = params.WarmStorageReadCostEIP2929
 	}
@@ -119,8 +119,8 @@ func (aw *AccessWitness) TouchValueTransfer(callerAddr, targetAddr []byte) {
 }
 
 func (aw *AccessWitness) ValueTransferGas(callerAddr, targetAddr []byte) uint64 {
-	wanted1 := aw.calculateWitnessGas(callerAddr, zeroTreeIndex, true, utils.BasicDataLeafKey)
-	wanted2 := aw.calculateWitnessGas(targetAddr, zeroTreeIndex, true, utils.BasicDataLeafKey)
+	wanted1 := aw.calculateWitnessGasRange(callerAddr, zeroTreeIndex, true, utils.BasicDataLeafKey, utils.BasicDataLeafKey)
+	wanted2 := aw.calculateWitnessGasRange(targetAddr, zeroTreeIndex, true, utils.BasicDataLeafKey, utils.BasicDataLeafKey)
 	if wanted1+wanted2 == 0 {
 		return params.WarmStorageReadCostEIP2929
 	}
@@ -132,7 +132,7 @@ func (aw *AccessWitness) ValueTransferGas(callerAddr, targetAddr []byte) uint64 
 // address collision is done before the transfer, and so no write
 // are guaranteed to happen at this point.
 func (aw *AccessWitness) ContractCreateCheckGas(addr []byte) uint64 {
-	return aw.calculateWitnessGas(addr, zeroTreeIndex, false, utils.BasicDataLeafKey, utils.CodeHashLeafKey)
+	return aw.calculateWitnessGasRange(addr, zeroTreeIndex, false, utils.BasicDataLeafKey, utils.CodeHashLeafKey)
 }
 
 // TouchAndChargeContractCreateCheck charges access costs before
@@ -146,7 +146,7 @@ func (aw *AccessWitness) TouchContractCreateCheck(addr []byte) {
 
 // ContractCreateInitGas charges access costs to initiate a contract creation.
 func (aw *AccessWitness) ContractCreateInitGas(addr []byte) uint64 {
-	return aw.calculateWitnessGas(addr, zeroTreeIndex, true, utils.BasicDataLeafKey, utils.CodeHashLeafKey)
+	return aw.calculateWitnessGasRange(addr, zeroTreeIndex, true, utils.BasicDataLeafKey, utils.CodeHashLeafKey)
 }
 
 // TouchAndChargeContractCreateInit charges access costs to initiate
@@ -174,7 +174,7 @@ func (aw *AccessWitness) TouchTxTarget(targetAddr []byte, sendsValue, doesntExis
 
 func (aw *AccessWitness) SlotGas(addr []byte, slot common.Hash, isWrite bool) uint64 {
 	treeIndex, subIndex := utils.GetTreeKeyStorageSlotTreeIndexes(slot.Bytes())
-	wanted := aw.calculateWitnessGas(addr, *treeIndex, isWrite, subIndex)
+	wanted := aw.calculateWitnessGasRange(addr, *treeIndex, isWrite, uint64(subIndex), uint64(subIndex))
 	if wanted == 0 {
 		wanted = params.WarmStorageReadCostEIP2929
 	}
@@ -186,7 +186,7 @@ func (aw *AccessWitness) TouchSlot(addr []byte, slot common.Hash, isWrite bool) 
 	aw.touchLocation(addr, *treeIndex, subIndex, isWrite)
 }
 
-func (aw *AccessWitness) calculateWitnessGas(addr []byte, treeIndex uint256.Int, isWrite bool, subIndices ...byte) uint64 {
+func (aw *AccessWitness) calculateWitnessGasRange(addr []byte, treeIndex uint256.Int, isWrite bool, from, to uint64) uint64 {
 	var (
 		gas                     uint64
 		branchKey               = newBranchAccessKey(addr, treeIndex)
@@ -212,9 +212,9 @@ func (aw *AccessWitness) calculateWitnessGas(addr []byte, treeIndex uint256.Int,
 		gas += params.WitnessBranchWriteCost
 	}
 
-	for _, subIndex := range subIndices {
+	for subIndex := from; subIndex <= to; subIndex++ {
 		var chunkRead, chunkWrite, chunkFill bool
-		chunkKey := newChunkAccessKey(branchKey, subIndex)
+		chunkKey := newChunkAccessKey(branchKey, byte(subIndex))
 		if _, hasSelector := aw.chunks[chunkKey]; !hasSelector {
 			chunkRead = true
 
@@ -325,14 +325,29 @@ func (aw *AccessWitness) CodeChunksRangeGas(contractAddr []byte, startPC, size u
 	}
 
 	var statelessGasCharged uint64
-	for chunkNumber := startPC / 31; chunkNumber <= endPC/31; chunkNumber++ {
+	for chunkNumber := startPC / 31; chunkNumber <= endPC/31; {
+		startSubIndex := (chunkNumber + 128) % 256
+		var endSubIndex uint64
+		if chunkNumber < 128 {
+			// special case of finding the upper boundary for the header group
+			endSubIndex = min(endPC/31-chunkNumber, 128) + 128
+		} else {
+			endSubIndex = min(endPC/31-chunkNumber, 255)
+		}
+
 		treeIndex := *uint256.NewInt((chunkNumber + 128) / 256)
-		subIndex := byte((chunkNumber + 128) % 256)
-		wanted := aw.calculateWitnessGas(contractAddr, treeIndex, isWrite, subIndex)
+		wanted := aw.calculateWitnessGasRange(contractAddr, treeIndex, isWrite, startSubIndex, endSubIndex)
 		var overflow bool
 		statelessGasCharged, overflow = math.SafeAdd(statelessGasCharged, wanted)
 		if overflow {
 			return 0, errors.New("gas uint overflow")
+		}
+
+		// Find the next group boundary, taking the 128 offset into account.
+		if chunkNumber == 0 {
+			chunkNumber = 128
+		} else {
+			chunkNumber += 256
 		}
 	}
 
@@ -371,7 +386,7 @@ func (aw *AccessWitness) TouchBasicData(addr []byte, isWrite bool) {
 }
 
 func (aw *AccessWitness) BasicDataGas(addr []byte, isWrite bool, warmCostCharging bool) uint64 {
-	wanted := aw.calculateWitnessGas(addr, zeroTreeIndex, isWrite, utils.BasicDataLeafKey)
+	wanted := aw.calculateWitnessGasRange(addr, zeroTreeIndex, isWrite, utils.BasicDataLeafKey, utils.BasicDataLeafKey)
 	if wanted == 0 && warmCostCharging {
 		wanted = params.WarmStorageReadCostEIP2929
 	}
@@ -383,7 +398,7 @@ func (aw *AccessWitness) TouchCodeHash(addr []byte, isWrite bool) {
 }
 
 func (aw *AccessWitness) CodeHashGas(addr []byte, isWrite bool, chargeWarmCosts bool) uint64 {
-	wanted := aw.calculateWitnessGas(addr, zeroTreeIndex, isWrite, utils.CodeHashLeafKey)
+	wanted := aw.calculateWitnessGasRange(addr, zeroTreeIndex, isWrite, utils.CodeHashLeafKey, utils.CodeHashLeafKey)
 	if wanted == 0 && chargeWarmCosts {
 		wanted = params.WarmStorageReadCostEIP2929
 	}
