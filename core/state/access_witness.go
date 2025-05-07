@@ -330,7 +330,7 @@ func (aw *AccessWitness) CodeChunksRangeGas(contractAddr []byte, startPC, size u
 		var endSubIndex uint64
 		if chunkNumber < 128 {
 			// special case of finding the upper boundary for the header group
-			endSubIndex = min(endPC/31-chunkNumber, 128) + 128
+			endSubIndex = min(endPC/31, 128) + 128
 		} else {
 			endSubIndex = min(endPC/31-chunkNumber, 255)
 		}
