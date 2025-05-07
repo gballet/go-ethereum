@@ -330,9 +330,9 @@ func (aw *AccessWitness) CodeChunksRangeGas(contractAddr []byte, startPC, size u
 		var endSubIndex uint64
 		if chunkNumber < 128 {
 			// special case of finding the upper boundary for the header group
-			endSubIndex = min(endPC/31, 128) + 128
+			endSubIndex = min(endPC/31+128, 255)
 		} else {
-			endSubIndex = min(endPC/31-chunkNumber, 255)
+			endSubIndex = min(endPC/31-chunkNumber+(chunkNumber+128)%256, 255)
 		}
 
 		treeIndex := *uint256.NewInt((chunkNumber + 128) / 256)
@@ -344,7 +344,7 @@ func (aw *AccessWitness) CodeChunksRangeGas(contractAddr []byte, startPC, size u
 		}
 
 		// Find the next group boundary, taking the 128 offset into account.
-		if chunkNumber == 0 {
+		if chunkNumber < 128 {
 			chunkNumber = 128
 		} else {
 			chunkNumber += 256
