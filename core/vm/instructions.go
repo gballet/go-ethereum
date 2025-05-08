@@ -20,7 +20,6 @@ import (
 	"encoding/binary"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
@@ -262,6 +261,7 @@ func opAddress(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]
 func opBalance(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	slot := scope.Stack.peek()
 	address := common.Address(slot.Bytes20())
+	interpreter.evm.Accesses.TouchBasicData(address[:], false)
 	slot.SetFromBig(interpreter.evm.StateDB.GetBalance(address))
 	return nil, nil
 }
@@ -270,6 +270,7 @@ func opOrigin(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 	scope.Stack.push(new(uint256.Int).SetBytes(interpreter.evm.Origin.Bytes()))
 	return nil, nil
 }
+
 func opCaller(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	scope.Stack.push(new(uint256.Int).SetBytes(scope.Contract.Caller().Bytes()))
 	return nil, nil
@@ -345,6 +346,9 @@ func opReturnDataCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeConte
 func opExtCodeSize(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	slot := scope.Stack.peek()
 	address := slot.Bytes20()
+	if interpreter.evm.chainRules.IsEIP4762 {
+		interpreter.evm.Accesses.TouchBasicData(address[:], false)
+	}
 	cs := uint64(interpreter.evm.StateDB.GetCodeSize(address))
 	slot.SetUint64(cs)
 	return nil, nil
@@ -371,11 +375,15 @@ func opCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	codeAddr := scope.Contract.CodeAddr
 	paddedCodeCopy, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(scope.Contract.Code, uint64CodeOffset, length.Uint64())
 	if interpreter.evm.chainRules.IsEIP4762 && !scope.Contract.IsDeployment {
-		statelessGas, wanted := interpreter.evm.Accesses.TouchCodeChunksRangeAndChargeGas(codeAddr[:], copyOffset, nonPaddedCopyLength, uint64(len(scope.Contract.Code)), false, scope.Contract.Gas)
-		scope.Contract.UseGas(statelessGas)
-		if statelessGas < wanted {
+		statelessGas, err := interpreter.evm.Accesses.CodeChunksRangeGas(codeAddr[:], copyOffset, nonPaddedCopyLength, uint64(len(scope.Contract.Code)), false)
+		if err != nil {
+			return nil, err
+		}
+		ok := scope.Contract.UseGas(statelessGas)
+		if !ok {
 			return nil, ErrOutOfGas
 		}
+		interpreter.evm.Accesses.TouchCodeChunksRange(codeAddr[:], copyOffset, nonPaddedCopyLength, uint64(len(scope.Contract.Code)), false)
 	}
 	scope.Memory.Set(memOffset.Uint64(), uint64(len(paddedCodeCopy)), paddedCodeCopy)
 	return nil, nil
@@ -401,11 +409,15 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 			self: AccountRef(addr),
 		}
 		paddedCodeCopy, copyOffset, nonPaddedCopyLength := getDataAndAdjustedBounds(code, uint64CodeOffset, length.Uint64())
-		statelessGas, wanted := interpreter.evm.Accesses.TouchCodeChunksRangeAndChargeGas(addr[:], copyOffset, nonPaddedCopyLength, uint64(len(contract.Code)), false, scope.Contract.Gas)
-		scope.Contract.UseGas(statelessGas) // statelessGas <= contract.Gas, so no need to check the return value
-		if statelessGas < wanted {
+		statelessGas, err := interpreter.evm.Accesses.CodeChunksRangeGas(addr[:], copyOffset, nonPaddedCopyLength, uint64(len(contract.Code)), false)
+		if err != nil {
+			return nil, err
+		}
+		ok := scope.Contract.UseGas(statelessGas) // statelessGas <= contract.Gas, so no need to check the return value
+		if !ok {
 			return nil, ErrOutOfGas
 		}
+		interpreter.evm.Accesses.TouchCodeChunksRange(addr[:], copyOffset, nonPaddedCopyLength, uint64(len(contract.Code)), false)
 		scope.Memory.Set(memOffset.Uint64(), length.Uint64(), paddedCodeCopy)
 	} else {
 		codeCopy := getData(interpreter.evm.StateDB.GetCode(addr), uint64CodeOffset, length.Uint64())
@@ -444,6 +456,14 @@ func opExtCodeCopy(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 func opExtCodeHash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
 	slot := scope.Stack.peek()
 	address := common.Address(slot.Bytes20())
+	if interpreter.evm.chainRules.IsEIP4762 {
+		_, isPrecompile := interpreter.evm.precompile(address)
+		isSystemContract := interpreter.evm.isSystemContract(address)
+
+		if !isPrecompile && !isSystemContract {
+			interpreter.evm.Accesses.TouchCodeHash(address[:], false)
+		}
+	}
 	if interpreter.evm.StateDB.Empty(address) {
 		slot.Clear()
 	} else {
@@ -456,14 +476,6 @@ func opGasprice(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([
 	v, _ := uint256.FromBig(interpreter.evm.GasPrice)
 	scope.Stack.push(v)
 	return nil, nil
-}
-
-func getBlockHashFromContract(number uint64, statedb StateDB, witness *state.AccessWitness, availableGas uint64) (common.Hash, uint64) {
-	ringIndex := number % params.Eip2935BlockHashHistorySize
-	var pnum common.Hash
-	binary.BigEndian.PutUint64(pnum[24:], ringIndex)
-	statelessGas := witness.TouchSlotAndChargeGas(params.HistoryStorageAddress[:], pnum, false, availableGas, true)
-	return statedb.GetState(params.HistoryStorageAddress, pnum), statelessGas
 }
 
 func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byte, error) {
@@ -486,12 +498,17 @@ func opBlockhash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) (
 	if num64 >= lower && num64 < upper {
 		// if Verkle is active, read it from the history contract (EIP 2935).
 		if evm.chainRules.IsVerkle {
-			blockHash, statelessGas := getBlockHashFromContract(num64, evm.StateDB, evm.Accesses, scope.Contract.Gas)
+			ringIndex := num64 % params.Eip2935BlockHashHistorySize
+			var pnum common.Hash
 			if interpreter.evm.chainRules.IsEIP4762 {
+				binary.BigEndian.PutUint64(pnum[24:], ringIndex)
+				statelessGas := evm.Accesses.SlotGas(params.HistoryStorageAddress[:], pnum, false)
 				if !scope.Contract.UseGas(statelessGas) {
 					return nil, ErrOutOfGas
 				}
+				evm.Accesses.TouchSlot(params.HistoryStorageAddress[:], pnum, false)
 			}
+			blockHash := evm.StateDB.GetState(params.HistoryStorageAddress, pnum)
 			num.SetBytes(blockHash.Bytes())
 		} else {
 			num.SetBytes(interpreter.evm.Context.GetHash(num64).Bytes())
@@ -565,6 +582,9 @@ func opSload(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 	hash := common.Hash(loc.Bytes32())
 	val := interpreter.evm.StateDB.GetState(scope.Contract.Address(), hash)
 
+	if interpreter.evm.chainRules.IsEIP4762 {
+		interpreter.evm.Accesses.TouchSlot(scope.Contract.Address().Bytes(), loc.Bytes32(), false)
+	}
 	loc.SetBytes(val.Bytes())
 	return nil, nil
 }
@@ -575,6 +595,10 @@ func opSstore(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]b
 	}
 	loc := scope.Stack.pop()
 	val := scope.Stack.pop()
+
+	if interpreter.evm.chainRules.IsEIP4762 {
+		interpreter.evm.Accesses.TouchSlot(scope.Contract.Address().Bytes(), loc.Bytes32(), true)
+	}
 	interpreter.evm.StateDB.SetState(scope.Contract.Address(), loc.Bytes32(), val.Bytes32())
 	return nil, nil
 }
@@ -585,11 +609,15 @@ func opJump(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]byt
 	}
 	pos := scope.Stack.pop()
 	if interpreter.evm.chainRules.IsEIP4762 && !scope.Contract.IsDeployment {
-		statelessGas, wanted := interpreter.evm.TxContext.Accesses.TouchCodeChunksRangeAndChargeGas(scope.Contract.CodeAddr[:], pos.Uint64(), 1, uint64(len(scope.Contract.Code)), false, scope.Contract.Gas)
-		scope.Contract.UseGas(statelessGas)
-		if statelessGas < wanted {
+		statelessGas, err := interpreter.evm.TxContext.Accesses.CodeChunksRangeGas(scope.Contract.CodeAddr[:], pos.Uint64(), 1, uint64(len(scope.Contract.Code)), false)
+		if err != nil {
+			return nil, err
+		}
+		ok := scope.Contract.UseGas(statelessGas)
+		if !ok {
 			return nil, ErrOutOfGas
 		}
+		interpreter.evm.TxContext.Accesses.TouchCodeChunksRange(scope.Contract.CodeAddr[:], pos.Uint64(), 1, uint64(len(scope.Contract.Code)), false)
 	}
 	if !scope.Contract.validJumpdest(&pos) {
 		return nil, ErrInvalidJump
@@ -605,11 +633,15 @@ func opJumpi(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 	pos, cond := scope.Stack.pop(), scope.Stack.pop()
 	if !cond.IsZero() {
 		if interpreter.evm.chainRules.IsEIP4762 && !scope.Contract.IsDeployment {
-			statelessGas, wanted := interpreter.evm.TxContext.Accesses.TouchCodeChunksRangeAndChargeGas(scope.Contract.CodeAddr[:], pos.Uint64(), 1, uint64(len(scope.Contract.Code)), false, scope.Contract.Gas)
-			scope.Contract.UseGas(statelessGas)
-			if statelessGas < wanted {
+			statelessGas, err := interpreter.evm.TxContext.Accesses.CodeChunksRangeGas(scope.Contract.CodeAddr[:], pos.Uint64(), 1, uint64(len(scope.Contract.Code)), false)
+			if err != nil {
+				return nil, err
+			}
+			ok := scope.Contract.UseGas(statelessGas)
+			if !ok {
 				return nil, ErrOutOfGas
 			}
+			interpreter.evm.TxContext.Accesses.TouchCodeChunksRange(scope.Contract.CodeAddr[:], pos.Uint64(), 1, uint64(len(scope.Contract.Code)), false)
 		}
 		if !scope.Contract.validJumpdest(&pos) {
 			return nil, ErrInvalidJump
@@ -958,11 +990,15 @@ func opPush1(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext) ([]by
 			// touch next chunk if PUSH1 is at the boundary. if so, *pc has
 			// advanced past this boundary.
 			codeAddr := scope.Contract.CodeAddr
-			statelessGas, wanted := interpreter.evm.Accesses.TouchCodeChunksRangeAndChargeGas(codeAddr[:], *pc, uint64(1), uint64(len(scope.Contract.Code)), false, scope.Contract.Gas)
-			scope.Contract.UseGas(statelessGas)
-			if statelessGas < wanted {
+			statelessGas, err := interpreter.evm.Accesses.CodeChunksRangeGas(codeAddr[:], *pc, uint64(1), uint64(len(scope.Contract.Code)), false)
+			if err != nil {
+				return nil, err
+			}
+			ok := scope.Contract.UseGas(statelessGas)
+			if !ok {
 				return nil, ErrOutOfGas
 			}
+			interpreter.evm.Accesses.TouchCodeChunksRange(codeAddr[:], *pc, uint64(1), uint64(len(scope.Contract.Code)), false)
 		}
 	} else {
 		scope.Stack.push(integer.Clear())
@@ -987,11 +1023,15 @@ func makePush(size uint64, pushByteSize int) executionFunc {
 
 		if !scope.Contract.IsDeployment && interpreter.evm.chainRules.IsVerkle {
 			codeAddr := scope.Contract.CodeAddr
-			statelessGas, wanted := interpreter.evm.Accesses.TouchCodeChunksRangeAndChargeGas(codeAddr[:], uint64(startMin), uint64(pushByteSize), uint64(len(scope.Contract.Code)), false, scope.Contract.Gas)
-			scope.Contract.UseGas(statelessGas)
-			if statelessGas < wanted {
+			statelessGas, err := interpreter.evm.Accesses.CodeChunksRangeGas(codeAddr[:], uint64(startMin), uint64(pushByteSize), uint64(len(scope.Contract.Code)), false)
+			if err != nil {
+				return nil, err
+			}
+			ok := scope.Contract.UseGas(statelessGas)
+			if !ok {
 				return nil, ErrOutOfGas
 			}
+			interpreter.evm.Accesses.TouchCodeChunksRange(codeAddr[:], uint64(startMin), uint64(pushByteSize), uint64(len(scope.Contract.Code)), false)
 		}
 
 		integer := new(uint256.Int)
