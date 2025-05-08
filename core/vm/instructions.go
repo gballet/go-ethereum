@@ -457,7 +457,12 @@ func opExtCodeHash(pc *uint64, interpreter *EVMInterpreter, scope *ScopeContext)
 	slot := scope.Stack.peek()
 	address := common.Address(slot.Bytes20())
 	if interpreter.evm.chainRules.IsEIP4762 {
-		interpreter.evm.Accesses.TouchCodeHash(address[:], false)
+		_, isPrecompile := interpreter.evm.precompile(address)
+		isSystemContract := interpreter.evm.isSystemContract(address)
+
+		if !isPrecompile && !isSystemContract {
+			interpreter.evm.Accesses.TouchCodeHash(address[:], false)
+		}
 	}
 	if interpreter.evm.StateDB.Empty(address) {
 		slot.Clear()
