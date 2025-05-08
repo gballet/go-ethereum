@@ -246,6 +246,9 @@ func ImportChain(chain *core.BlockChain, fn string) error {
 			return fmt.Errorf("invalid block %d: %v", failnumber, err)
 		}
 
+		if batch%3 == 0 {
+			fmt.Println(batch * importBatchSize)
+		}
 		if batch%3 == 0 && batch > 5_000_000/2500 {
 			cfg := defaultNodeConfig()
 
