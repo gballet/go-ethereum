@@ -44,6 +44,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/internal/debug"
 	"github.com/ethereum/go-ethereum/internal/era"
+	"github.com/ethereum/go-ethereum/internal/version"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
@@ -148,6 +149,17 @@ func monitorFreeDiskSpace(sigc chan os.Signal, path string, freeDiskSpaceCritica
 	}
 }
 
+func defaultNodeConfig() node.Config {
+	git, _ := version.VCS()
+	cfg := node.DefaultConfig
+	cfg.Name = "geth"
+	cfg.Version = version.WithCommit(git.Commit, git.Date)
+	cfg.HTTPModules = append(cfg.HTTPModules, "eth")
+	cfg.WSModules = append(cfg.WSModules, "eth")
+	cfg.IPCPath = "geth" + ".ipc"
+	return cfg
+}
+
 func ImportChain(chain *core.BlockChain, fn string) error {
 	// Watch for Ctrl-C while the import is running.
 	// If a signal is received, the import will stop at the next batch.
@@ -232,6 +244,24 @@ func ImportChain(chain *core.BlockChain, fn string) error {
 				failnumber = missing[0].NumberU64()
 			}
 			return fmt.Errorf("invalid block %d: %v", failnumber, err)
+		}
+
+		if batch%3 == 0 && batch > 5_000_000/2500 {
+			cfg := defaultNodeConfig()
+
+			stack, err := node.New(&cfg)
+			if err != nil {
+				Fatalf("Failed to create the protocol stack: %v", err)
+			}
+			handles := MakeDatabaseHandles(0)
+			cache := 50 * 1024 / 100
+			db, err := stack.OpenDatabaseWithFreezer("chaindata", cache, handles, "", "eth/db/chaindata/", true)
+			if err != nil {
+				panic(fmt.Sprintf("error opening db, err=%d, batch=%d", err, batch))
+			}
+			defer db.Close()
+
+			rawdb.InspectDatabase(db, nil, nil)
 		}
 	}
 	return nil
