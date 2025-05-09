@@ -250,21 +250,7 @@ func ImportChain(chain *core.BlockChain, fn string) error {
 			fmt.Println(batch * importBatchSize)
 		}
 		if batch%3 == 0 && batch > 5_000_000/2500 {
-			cfg := defaultNodeConfig()
-
-			stack, err := node.New(&cfg)
-			if err != nil {
-				Fatalf("Failed to create the protocol stack: %v", err)
-			}
-			handles := MakeDatabaseHandles(0)
-			cache := 50 * 1024 / 100
-			db, err := stack.OpenDatabaseWithFreezer("chaindata", cache, handles, "", "eth/db/chaindata/", true)
-			if err != nil {
-				panic(fmt.Sprintf("error opening db, err=%d, batch=%d", err, batch))
-			}
-			defer db.Close()
-
-			rawdb.InspectDatabase(db, nil, nil)
+			rawdb.InspectDatabase(chain.TrieDB().Disk(), nil, nil)
 		}
 	}
 	return nil
