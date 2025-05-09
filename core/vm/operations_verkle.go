@@ -24,6 +24,10 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 )
 
+func isSystemContract(addr common.Address) bool {
+	return addr == params.HistoryStorageAddress || addr == params.BeaconRootsAddress || addr == params.WithdrawalQueueAddress || addr == params.ConsolidationQueueAddress
+}
+
 func gasSStore4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	return evm.AccessEvents.SlotGas(contract.Address(), stack.peek().Bytes32(), true, contract.Gas, true), nil
 }
@@ -39,16 +43,18 @@ func gasBalance4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, mem
 
 func gasExtCodeSize4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	address := stack.peek().Bytes20()
-	if _, isPrecompile := evm.precompile(address); isPrecompile {
-		return 0, nil
+	isSystemContract := isSystemContract(address)
+	_, isPrecompile := evm.precompile(address)
+	if isPrecompile || isSystemContract {
+		return params.WarmStorageReadCostEIP2929, nil
 	}
 	return evm.AccessEvents.BasicDataGas(address, false, contract.Gas, true), nil
 }
 
 func gasExtCodeHash4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	address := stack.peek().Bytes20()
-	if _, isPrecompile := evm.precompile(address); isPrecompile {
-		return 0, nil
+	if _, isPrecompile := evm.precompile(address); isPrecompile || isSystemContract(address) {
+		return params.WarmStorageReadCostEIP2929, nil
 	}
 	return evm.AccessEvents.CodeHashGas(address, false, contract.Gas, true), nil
 }
@@ -109,21 +115,17 @@ var (
 
 func gasSelfdestructEIP4762(evm *EVM, contract *Contract, stack *Stack, mem *Memory, memorySize uint64) (uint64, error) {
 	beneficiaryAddr := common.Address(stack.peek().Bytes20())
-	if _, isPrecompile := evm.precompile(beneficiaryAddr); isPrecompile {
-		return 0, nil
-	}
-	if contract.IsSystemCall {
-		return 0, nil
-	}
 	contractAddr := contract.Address()
+
 	wanted := evm.AccessEvents.BasicDataGas(contractAddr, false, contract.Gas, false)
 	if wanted > contract.Gas {
 		return wanted, nil
 	}
 	statelessGas := wanted
+
 	balanceIsZero := evm.StateDB.GetBalance(contractAddr).Sign() == 0
 	_, isPrecompile := evm.precompile(beneficiaryAddr)
-	isSystemContract := beneficiaryAddr == params.HistoryStorageAddress
+	isSystemContract := isSystemContract(beneficiaryAddr)
 
 	if (isPrecompile || isSystemContract) && balanceIsZero {
 		return statelessGas, nil
