@@ -18,6 +18,7 @@ package t8ntool
 
 import (
 	"fmt"
+	gomath "math"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -367,7 +368,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 		amount := new(big.Int).Mul(new(big.Int).SetUint64(w.Amount), big.NewInt(params.GWei))
 		statedb.AddBalance(w.Address, uint256.MustFromBig(amount), tracing.BalanceIncreaseWithdrawal)
 
-		statedb.AccessEvents().AddAccount(w.Address, true)
+		statedb.AccessEvents().AddAccount(w.Address, true, gomath.MaxUint64)
 	}
 
 	// Gather the execution-layer triggered requests.
