@@ -153,6 +153,10 @@ func (t *BlockTest) Run(snapshotter bool, scheme string, witness bool, tracer *t
 	engine := beacon.New(ethash.NewFaker())
 
 	cache := &core.CacheConfig{TrieCleanLimit: 0, StateScheme: scheme, Preimages: true}
+	if tconf.IsVerkle {
+		// force path scheme for verkle
+		cache.StateScheme = rawdb.PathScheme
+	}
 	if snapshotter {
 		cache.SnapshotLimit = 1
 		cache.SnapshotWait = true
