@@ -1,4 +1,4 @@
-// Copyright 2021 go-ethereum Authors
+// Copyright 2025 go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -49,6 +49,7 @@ type BinaryNode interface {
 	CollectNodes([]byte, NodeFlushFn) error
 
 	toDot(parent, path string) string
+	GetHeight() int
 }
 
 var (
@@ -93,6 +94,10 @@ func (h HashedNode) CollectNodes([]byte, NodeFlushFn) error {
 	panic("not implemented") // TODO: Implement
 }
 
+func (h HashedNode) GetHeight() int {
+	panic("should not get here, this is a bug") // TODO: Implement
+}
+
 type StemNode struct {
 	Stem   []byte
 	Values [][]byte
@@ -129,20 +134,32 @@ func (bt *StemNode) Copy() BinaryNode {
 	}
 }
 
+func (bt *StemNode) GetHeight() int {
+	return 1
+}
+
 func (bt *StemNode) Hash() common.Hash {
 	var data [verkle.NodeWidth]common.Hash
 	for i, v := range bt.Values {
-		h := blake3.Sum256(v)
-		data[i] = common.BytesToHash(h[:])
+		if v != nil {
+			h := blake3.Sum256(v)
+			data[i] = common.BytesToHash(h[:])
+		}
 	}
 
 	h := blake3.New()
 	for level := 1; level <= 8; level++ {
 		for i := 0; i < verkle.NodeWidth/(1<<level); i++ {
+			h.Reset()
+
+			if data[i*2] == (common.Hash{}) && data[i*2+1] == (common.Hash{}) {
+				data[i] = common.Hash{}
+				continue
+			}
+
 			h.Write(data[i*2][:])
 			h.Write(data[i*2+1][:])
 			data[i] = common.Hash(h.Sum(nil))
-			h.Reset()
 		}
 	}
 
@@ -312,6 +329,20 @@ func (bt *InternalNode) CollectNodes(path []byte, flushfn NodeFlushFn) error {
 	}
 	flushfn(path, bt)
 	return nil
+}
+
+func (bt *InternalNode) GetHeight() int {
+	var (
+		leftHeight  int
+		rightHeight int
+	)
+	if bt.left != nil {
+		leftHeight = bt.left.GetHeight()
+	}
+	if bt.right != nil {
+		rightHeight = bt.right.GetHeight()
+	}
+	return 1 + max(leftHeight, rightHeight)
 }
 
 func SerializeNode(node BinaryNode) []byte {
