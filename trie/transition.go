@@ -175,7 +175,7 @@ func (t *TransitionTrie) IsVerkle() bool {
 	return true
 }
 
-func (t *TransitionTrie) UpdateStem(key []byte, values [][]byte) error {
+func (t *TransitionTrie) UpdateStem(key []byte, values [][]byte) (BinaryNode, error) {
 	trie := t.overlay
 	switch root := trie.root.(type) {
 	case *InternalNode:

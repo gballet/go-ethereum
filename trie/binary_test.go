@@ -34,8 +34,11 @@ var (
 
 func TestSingleEntry(t *testing.T) {
 	tree := NewBinaryNode()
-	tree.Insert(zeroKey[:], oneKey[:], nil)
-	if tree.GetHeight() == 1 {
+	tree, err := tree.Insert(zeroKey[:], oneKey[:], nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tree.GetHeight() != 1 {
 		t.Fatal("invalid depth")
 	}
 	expected := common.HexToHash("694545468677064fd833cddc8455762fe6b21c6cabe2fc172529e0f573181cd5")
