@@ -42,14 +42,22 @@ func TestSingleEntry(t *testing.T) {
 		t.Fatal("invalid depth")
 	}
 	expected := common.HexToHash("694545468677064fd833cddc8455762fe6b21c6cabe2fc172529e0f573181cd5")
-	if tree.Hash() != expected {
-		t.Fatalf("invalid tree root, got %x, want %x", tree.Hash(), expected)
+	got := tree.Hash()
+	if got != expected {
+		t.Fatalf("invalid tree root, got %x, want %x", got, expected)
 	}
 }
 func TestTwoEntriesDiffFirstBit(t *testing.T) {
+	var err error
 	tree := NewBinaryNode()
-	tree.Insert(zeroKey[:], oneKey[:], nil)
-	tree.Insert(common.HexToHash("8000000000000000000000000000000000000000000000000000000000000000").Bytes(), twoKey[:], nil)
+	tree, err = tree.Insert(zeroKey[:], oneKey[:], nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err = tree.Insert(common.HexToHash("8000000000000000000000000000000000000000000000000000000000000000").Bytes(), twoKey[:], nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if tree.GetHeight() != 2 {
 		t.Fatal("invalid height")
 	}
@@ -59,11 +67,24 @@ func TestTwoEntriesDiffFirstBit(t *testing.T) {
 }
 
 func TestOneStemColocatedValues(t *testing.T) {
+	var err error
 	tree := NewBinaryNode()
-	tree.Insert(common.HexToHash("0000000000000000000000000000000000000000000000000000000000000003").Bytes(), oneKey[:], nil)
-	tree.Insert(common.HexToHash("0000000000000000000000000000000000000000000000000000000000000004").Bytes(), twoKey[:], nil)
-	tree.Insert(common.HexToHash("0000000000000000000000000000000000000000000000000000000000000009").Bytes(), threeKey[:], nil)
-	tree.Insert(common.HexToHash("00000000000000000000000000000000000000000000000000000000000000FF").Bytes(), fourKey[:], nil)
+	tree, err = tree.Insert(common.HexToHash("0000000000000000000000000000000000000000000000000000000000000003").Bytes(), oneKey[:], nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err = tree.Insert(common.HexToHash("0000000000000000000000000000000000000000000000000000000000000004").Bytes(), twoKey[:], nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err = tree.Insert(common.HexToHash("0000000000000000000000000000000000000000000000000000000000000009").Bytes(), threeKey[:], nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err = tree.Insert(common.HexToHash("00000000000000000000000000000000000000000000000000000000000000FF").Bytes(), fourKey[:], nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if tree.GetHeight() != 1 {
 		t.Fatal("invalid height")
 	}

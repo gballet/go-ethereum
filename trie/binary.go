@@ -270,6 +270,7 @@ func (bt *StemNode) Hash() common.Hash {
 		}
 	}
 
+	h.Reset()
 	h.Write(bt.Stem)
 	h.Write([]byte{0})
 	h.Write(data[0][:])
