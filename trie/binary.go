@@ -174,6 +174,7 @@ func (h HashedNode) GetHeight() int {
 type StemNode struct {
 	Stem   []byte
 	Values [][]byte
+	depth  int
 }
 
 func (bt *StemNode) Get(key []byte, _ NodeResolverFn) ([]byte, error) {
@@ -182,41 +183,38 @@ func (bt *StemNode) Get(key []byte, _ NodeResolverFn) ([]byte, error) {
 
 func (bt *StemNode) Insert(key []byte, value []byte, _ NodeResolverFn) (BinaryNode, error) {
 	if !bytes.Equal(bt.Stem, key[:31]) {
-		// look for the first bit that differs
-		// TODO maintaining a depth field would save some work
-		for depth := 0; depth < 31*8; depth++ {
-			bitStem := bt.Stem[depth/8] >> (7 - (depth % 8)) & 1
+		bitStem := bt.Stem[bt.depth/8] >> (7 - (bt.depth % 8)) & 1
 
-			new := &InternalNode{}
-			var child, other *BinaryNode
-			if bitStem == 0 {
-				new.left = bt
-				child = &new.left
-				other = &new.right
-			} else {
-				new.right = bt
-				child = &new.right
-				other = &new.left
-			}
-
-			bitKey := key[depth/8] >> (7 - (depth % 8)) & 1
-			if bitKey == bitStem {
-				var err error
-				*child, err = (*child).Insert(key, value, nil)
-				if err != nil {
-					return new, fmt.Errorf("insert error: %w", err)
-				}
-			} else {
-				var values [256][]byte
-				values[key[31]] = value
-				*other = &StemNode{
-					Stem:   append([]byte(nil), key[:31]...),
-					Values: values[:],
-				}
-			}
-
-			return new, nil
+		new := &InternalNode{depth: bt.depth}
+		bt.depth++
+		var child, other *BinaryNode
+		if bitStem == 0 {
+			new.left = bt
+			child = &new.left
+			other = &new.right
+		} else {
+			new.right = bt
+			child = &new.right
+			other = &new.left
 		}
+
+		bitKey := key[new.depth/8] >> (7 - (new.depth % 8)) & 1
+		if bitKey == bitStem {
+			var err error
+			*child, err = (*child).Insert(key, value, nil)
+			if err != nil {
+				return new, fmt.Errorf("insert error: %w", err)
+			}
+		} else {
+			var values [256][]byte
+			values[key[31]] = value
+			*other = &StemNode{
+				Stem:   append([]byte(nil), key[:31]...),
+				Values: values[:],
+			}
+		}
+
+		return new, nil
 	}
 	if len(value) != 32 {
 		return bt, errors.New("invalid insertion: value length")

@@ -17,6 +17,7 @@
 package trie
 
 import (
+	"bytes"
 	"encoding/binary"
 	"testing"
 
@@ -90,47 +91,78 @@ func TestOneStemColocatedValues(t *testing.T) {
 	}
 }
 func TestTwoStemColocatedValues(t *testing.T) {
+	var err error
 	tree := NewBinaryNode()
 	// stem: 0...0
-	tree.Insert(common.HexToHash("0000000000000000000000000000000000000000000000000000000000000003").Bytes(), oneKey[:], nil)
-	tree.Insert(common.HexToHash("0000000000000000000000000000000000000000000000000000000000000004").Bytes(), twoKey[:], nil)
+	tree, err = tree.Insert(common.HexToHash("0000000000000000000000000000000000000000000000000000000000000003").Bytes(), oneKey[:], nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err = tree.Insert(common.HexToHash("0000000000000000000000000000000000000000000000000000000000000004").Bytes(), twoKey[:], nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	// stem: 10...0
-	tree.Insert(common.HexToHash("8000000000000000000000000000000000000000000000000000000000000003").Bytes(), oneKey[:], nil)
-	tree.Insert(common.HexToHash("8000000000000000000000000000000000000000000000000000000000000004").Bytes(), twoKey[:], nil)
+	tree, err = tree.Insert(common.HexToHash("8000000000000000000000000000000000000000000000000000000000000003").Bytes(), oneKey[:], nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err = tree.Insert(common.HexToHash("8000000000000000000000000000000000000000000000000000000000000004").Bytes(), twoKey[:], nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if tree.GetHeight() != 2 {
 		t.Fatal("invalid height")
 	}
 }
 
 func TestTwoKeysMatchFirst42Bits(t *testing.T) {
+	var err error
 	tree := NewBinaryNode()
 	// key1 and key 2 have the same prefix of 42 bits (b0*42+b1+b1) and differ after.
 	key1 := common.HexToHash("0000000000C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0C0").Bytes()
 	key2 := common.HexToHash("0000000000E00000000000000000000000000000000000000000000000000000").Bytes()
-	tree.Insert(key1, oneKey[:], nil)
-	tree.Insert(key2, twoKey[:], nil)
+	tree, err = tree.Insert(key1, oneKey[:], nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err = tree.Insert(key2, twoKey[:], nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if tree.GetHeight() != 1+42+1 {
 		t.Fatal("invalid height")
 	}
 }
 func TestInsertDuplicateKey(t *testing.T) {
+	var err error
 	tree := NewBinaryNode()
-	tree.Insert(oneKey[:], oneKey[:], nil)
-	tree.Insert(oneKey[:], twoKey[:], nil)
+	tree, err = tree.Insert(oneKey[:], oneKey[:], nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tree, err = tree.Insert(oneKey[:], twoKey[:], nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if tree.GetHeight() != 1 {
 		t.Fatal("invalid height")
 	}
 	// Verify that the value is updated
-	// if tree.values[1] == twoKey[:] {
-	// 	t.Fatal("invalid height")
-	// }
+	if !bytes.Equal(tree.(*StemNode).Values[1], twoKey[:]) {
+		t.Fatal("invalid height")
+	}
 }
 func TestLargeNumberOfEntries(t *testing.T) {
+	var err error
 	tree := NewBinaryNode()
 	for i := 0; i < 256; i++ {
 		var key [32]byte
 		key[0] = byte(i)
-		tree.Insert(key[:], ffKey[:], nil)
+		tree, err = tree.Insert(key[:], ffKey[:], nil)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	if tree.GetHeight() != 1+8 {
 		t.Fatal("invalid height")
