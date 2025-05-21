@@ -48,6 +48,7 @@ func TestSingleEntry(t *testing.T) {
 		t.Fatalf("invalid tree root, got %x, want %x", got, expected)
 	}
 }
+
 func TestTwoEntriesDiffFirstBit(t *testing.T) {
 	var err error
 	tree := NewBinaryNode()
@@ -90,6 +91,7 @@ func TestOneStemColocatedValues(t *testing.T) {
 		t.Fatal("invalid height")
 	}
 }
+
 func TestTwoStemColocatedValues(t *testing.T) {
 	var err error
 	tree := NewBinaryNode()
@@ -164,12 +166,14 @@ func TestLargeNumberOfEntries(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if tree.GetHeight() != 1+8 {
-		t.Fatal("invalid height")
+	height := tree.GetHeight()
+	if height != 1+8 {
+		t.Fatalf("invalid height, wanted %d, got %d", 1+8, height)
 	}
 }
 
 func TestMerkleizeMultipleEntries(t *testing.T) {
+	var err error
 	tree := NewBinaryNode()
 	keys := [][]byte{
 		zeroKey[:],
@@ -180,7 +184,10 @@ func TestMerkleizeMultipleEntries(t *testing.T) {
 	for i, key := range keys {
 		var v [32]byte
 		binary.LittleEndian.PutUint64(v[:8], uint64(i))
-		tree.Insert(key, v[:], nil)
+		tree, err = tree.Insert(key, v[:], nil)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	got := tree.Hash()
 	expected := common.HexToHash("e93c209026b8b00d76062638102ece415028bd104e1d892d5399375a323f2218")

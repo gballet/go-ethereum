@@ -45,7 +45,7 @@ type BinaryNode interface {
 	Copy() BinaryNode
 	Hash() common.Hash
 	GetValuesAtStem([]byte, NodeResolverFn) ([][]byte, error)
-	InsertValuesAtStem([]byte, [][]byte, NodeResolverFn) (BinaryNode, error)
+	InsertValuesAtStem([]byte, [][]byte, NodeResolverFn, int) (BinaryNode, error)
 	CollectNodes([]byte, NodeFlushFn) error
 
 	toDot(parent, path string) string
@@ -84,10 +84,11 @@ func (e Empty) GetValuesAtStem(_ []byte, _ NodeResolverFn) ([][]byte, error) {
 	return values[:], nil
 }
 
-func (e Empty) InsertValuesAtStem(key []byte, values [][]byte, _ NodeResolverFn) (BinaryNode, error) {
+func (e Empty) InsertValuesAtStem(key []byte, values [][]byte, _ NodeResolverFn, depth int) (BinaryNode, error) {
 	return &StemNode{
 		Stem:   append([]byte(nil), key[:31]...),
 		Values: values,
+		depth:  depth,
 	}, nil
 }
 
@@ -96,7 +97,7 @@ func (e Empty) CollectNodes(_ []byte, _ NodeFlushFn) error {
 }
 
 func (e Empty) toDot(parent string, path string) string {
-	panic("not implemented") // TODO: Implement
+	return ""
 }
 
 func (e Empty) GetHeight() int {
@@ -142,7 +143,7 @@ func (h HashedNode) GetValuesAtStem(_ []byte, _ NodeResolverFn) ([][]byte, error
 	panic("not implemented") // TODO: Implement
 }
 
-func (h HashedNode) InsertValuesAtStem(key []byte, values [][]byte, resolver NodeResolverFn) (BinaryNode, error) {
+func (h HashedNode) InsertValuesAtStem(key []byte, values [][]byte, resolver NodeResolverFn, depth int) (BinaryNode, error) {
 	if resolver == nil {
 		return h, errors.New("resolver is nil")
 	}
@@ -156,7 +157,7 @@ func (h HashedNode) InsertValuesAtStem(key []byte, values [][]byte, resolver Nod
 		return nil, fmt.Errorf("insert node deserialization error: %w", err)
 	}
 
-	return node.InsertValuesAtStem(key, values, resolver)
+	return node.InsertValuesAtStem(key, values, resolver, depth)
 }
 
 func (h HashedNode) toDot(parent string, path string) string {
@@ -205,12 +206,14 @@ func (bt *StemNode) Insert(key []byte, value []byte, _ NodeResolverFn) (BinaryNo
 			if err != nil {
 				return new, fmt.Errorf("insert error: %w", err)
 			}
+			*other = Empty{}
 		} else {
 			var values [256][]byte
 			values[key[31]] = value
 			*other = &StemNode{
 				Stem:   append([]byte(nil), key[:31]...),
 				Values: values[:],
+				depth:  new.depth + 1,
 			}
 		}
 
@@ -284,9 +287,40 @@ func (bt *StemNode) GetValuesAtStem(_ []byte, _ NodeResolverFn) ([][]byte, error
 	return bt.Values[:], nil
 }
 
-func (bt *StemNode) InsertValuesAtStem(key []byte, values [][]byte, _ NodeResolverFn) (BinaryNode, error) {
+func (bt *StemNode) InsertValuesAtStem(key []byte, values [][]byte, _ NodeResolverFn, depth int) (BinaryNode, error) {
 	if !bytes.Equal(bt.Stem, key[:31]) {
-		return &InternalNode{}, nil
+		bitStem := bt.Stem[bt.depth/8] >> (7 - (bt.depth % 8)) & 1
+
+		new := &InternalNode{depth: bt.depth}
+		bt.depth++
+		var child, other *BinaryNode
+		if bitStem == 0 {
+			new.left = bt
+			child = &new.left
+			other = &new.right
+		} else {
+			new.right = bt
+			child = &new.right
+			other = &new.left
+		}
+
+		bitKey := key[new.depth/8] >> (7 - (new.depth % 8)) & 1
+		if bitKey == bitStem {
+			var err error
+			*child, err = (*child).InsertValuesAtStem(key, values, nil, depth+1)
+			if err != nil {
+				return new, fmt.Errorf("insert error: %w", err)
+			}
+			*other = Empty{}
+		} else {
+			*other = &StemNode{
+				Stem:   append([]byte(nil), key[:31]...),
+				Values: values,
+				depth:  new.depth + 1,
+			}
+		}
+
+		return new, nil
 	}
 
 	// same stem, just merge the two value lists
@@ -365,7 +399,7 @@ func (bt *InternalNode) Get(key []byte, resolver NodeResolverFn) ([]byte, error)
 func (bt *InternalNode) Insert(key []byte, value []byte, resolver NodeResolverFn) (BinaryNode, error) {
 	var values [256][]byte
 	values[key[31]] = value
-	return bt.InsertValuesAtStem(key[:31], values[:], resolver)
+	return bt.InsertValuesAtStem(key[:31], values[:], resolver, 0)
 }
 
 func (bt *InternalNode) Commit() common.Hash {
@@ -399,7 +433,7 @@ func (bt *InternalNode) Hash() common.Hash {
 	return common.BytesToHash(h.Sum(nil))
 }
 
-func (bt *InternalNode) InsertValuesAtStem(stem []byte, values [][]byte, resolver NodeResolverFn) (BinaryNode, error) {
+func (bt *InternalNode) InsertValuesAtStem(stem []byte, values [][]byte, resolver NodeResolverFn, depth int) (BinaryNode, error) {
 	bit := stem[bt.depth/8] >> (7 - (bt.depth % 8)) & 1
 	var (
 		child *BinaryNode
@@ -420,7 +454,7 @@ func (bt *InternalNode) InsertValuesAtStem(stem []byte, values [][]byte, resolve
 	// }
 	// XXX il faut vérifier si c'est un stemnode et aussi faire le resolve
 
-	*child, err = (*child).InsertValuesAtStem(stem, values, resolver)
+	*child, err = (*child).InsertValuesAtStem(stem, values, resolver, depth+1)
 	return bt, err
 }
 
@@ -678,7 +712,7 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount,
 
 	switch root := t.root.(type) {
 	case *InternalNode:
-		r, err := root.InsertValuesAtStem(stem, values, t.FlatdbNodeResolver)
+		r, err := root.InsertValuesAtStem(stem, values, t.FlatdbNodeResolver, 0)
 		if err != nil {
 			return fmt.Errorf("UpdateAccount (%x) error: %v", addr, err)
 		}
@@ -693,7 +727,7 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount,
 func (trie *VerkleTrie) UpdateStem(key []byte, values [][]byte) error {
 	switch root := trie.root.(type) {
 	case *InternalNode:
-		r, err := root.InsertValuesAtStem(key, values, trie.FlatdbNodeResolver)
+		r, err := root.InsertValuesAtStem(key, values, trie.FlatdbNodeResolver, 0)
 		if err != nil {
 			return fmt.Errorf("UpdateStem (%x) error: %v", key, err)
 		}

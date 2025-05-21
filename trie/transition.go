@@ -179,7 +179,7 @@ func (t *TransitionTrie) UpdateStem(key []byte, values [][]byte) (BinaryNode, er
 	trie := t.overlay
 	switch root := trie.root.(type) {
 	case *InternalNode:
-		return root.InsertValuesAtStem(key, values, t.overlay.FlatdbNodeResolver)
+		return root.InsertValuesAtStem(key, values, t.overlay.FlatdbNodeResolver, 0)
 	default:
 		panic("invalid root type")
 	}
