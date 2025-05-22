@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"slices"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -62,7 +63,7 @@ func (e Empty) Insert(key []byte, value []byte, _ NodeResolverFn) (BinaryNode, e
 	var values [256][]byte
 	values[key[31]] = value
 	return &StemNode{
-		Stem:   append([]byte(nil), key[:31]...),
+		Stem:   slices.Clone(key[:31]),
 		Values: values[:],
 	}, nil
 }
@@ -86,7 +87,7 @@ func (e Empty) GetValuesAtStem(_ []byte, _ NodeResolverFn) ([][]byte, error) {
 
 func (e Empty) InsertValuesAtStem(key []byte, values [][]byte, _ NodeResolverFn, depth int) (BinaryNode, error) {
 	return &StemNode{
-		Stem:   append([]byte(nil), key[:31]...),
+		Stem:   slices.Clone(key[:31]),
 		Values: values,
 		depth:  depth,
 	}, nil
@@ -211,7 +212,7 @@ func (bt *StemNode) Insert(key []byte, value []byte, _ NodeResolverFn) (BinaryNo
 			var values [256][]byte
 			values[key[31]] = value
 			*other = &StemNode{
-				Stem:   append([]byte(nil), key[:31]...),
+				Stem:   slices.Clone(key[:31]),
 				Values: values[:],
 				depth:  new.depth + 1,
 			}
@@ -234,11 +235,12 @@ func (bt *StemNode) Commit() common.Hash {
 func (bt *StemNode) Copy() BinaryNode {
 	var values [256][]byte
 	for i, v := range bt.Values {
-		values[i] = append([]byte(nil), v...)
+		values[i] = slices.Clone(v)
 	}
 	return &StemNode{
-		Stem:   append([]byte(nil), bt.Stem...),
+		Stem:   slices.Clone(bt.Stem),
 		Values: values[:],
+		depth:  bt.depth,
 	}
 }
 
@@ -257,7 +259,7 @@ func (bt *StemNode) Hash() common.Hash {
 
 	h := blake3.New()
 	for level := 1; level <= 8; level++ {
-		for i := 0; i < verkle.NodeWidth/(1<<level); i++ {
+		for i := range verkle.NodeWidth / (1 << level) {
 			h.Reset()
 
 			if data[i*2] == (common.Hash{}) && data[i*2+1] == (common.Hash{}) {
@@ -314,7 +316,7 @@ func (bt *StemNode) InsertValuesAtStem(key []byte, values [][]byte, _ NodeResolv
 			*other = Empty{}
 		} else {
 			*other = &StemNode{
-				Stem:   append([]byte(nil), key[:31]...),
+				Stem:   slices.Clone(key[:31]),
 				Values: values,
 				depth:  new.depth + 1,
 			}
@@ -541,7 +543,7 @@ func DeserializeNode(serialized []byte, depth int) (BinaryNode, error) {
 		var values [256][]byte
 		bitmap := serialized[32:64]
 		offset := 64
-		for i := 0; i < 256; i++ {
+		for i := range 256 {
 			if bitmap[i/8]>>(7-(i%8))&1 == 1 {
 				values[i] = serialized[offset : offset+32]
 				offset += 32
@@ -643,10 +645,16 @@ func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 		values [][]byte
 		err    error
 	)
-	switch t.root.(type) {
+	switch r := t.root.(type) {
 	case *InternalNode:
-		values, err = t.root.(*InternalNode).GetValuesAtStem(versionkey[:31], t.FlatdbNodeResolver)
+		values, err = r.GetValuesAtStem(versionkey[:31], t.FlatdbNodeResolver)
+	case *StemNode:
+		values = r.Values
+	case Empty:
+		return nil, nil
 	default:
+		// This will cover HashedNode but that should be fine since the
+		// root node should always be resolved.
 		return nil, errInvalidRootType
 	}
 	if err != nil {
@@ -690,6 +698,7 @@ var zero [32]byte
 
 func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount, codeLen int) error {
 	var (
+		err       error
 		basicData [32]byte
 		values    = make([][]byte, verkle.NodeWidth)
 		stem      = t.pointCache.GetTreeKeyBasicDataCached(addr[:])
@@ -710,32 +719,14 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount,
 	values[utils.BasicDataLeafKey] = basicData[:]
 	values[utils.CodeHashLeafKey] = acc.CodeHash[:]
 
-	switch root := t.root.(type) {
-	case *InternalNode:
-		r, err := root.InsertValuesAtStem(stem, values, t.FlatdbNodeResolver, 0)
-		if err != nil {
-			return fmt.Errorf("UpdateAccount (%x) error: %v", addr, err)
-		}
-		t.root = r
-	default:
-		return errInvalidRootType
-	}
-
-	return nil
+	t.root, err = t.root.InsertValuesAtStem(stem, values, t.FlatdbNodeResolver, 0)
+	return err
 }
 
 func (trie *VerkleTrie) UpdateStem(key []byte, values [][]byte) error {
-	switch root := trie.root.(type) {
-	case *InternalNode:
-		r, err := root.InsertValuesAtStem(key, values, trie.FlatdbNodeResolver, 0)
-		if err != nil {
-			return fmt.Errorf("UpdateStem (%x) error: %v", key, err)
-		}
-		trie.root = r
-		return nil
-	default:
-		panic("invalid root type")
-	}
+	var err error
+	trie.root, err = trie.root.InsertValuesAtStem(key, values, trie.FlatdbNodeResolver, 0)
+	return err
 }
 
 // Update associates key with value in the trie. If value has length zero, any
@@ -881,13 +872,10 @@ func ChunkifyCode(code []byte) ChunkedCode {
 		chunkCount++
 	}
 	chunks := make([]byte, chunkCount*32)
-	for i := 0; i < chunkCount; i++ {
+	for i := range chunkCount {
 		// number of bytes to copy, 31 unless
 		// the end of the code has been reached.
-		end := 31 * (i + 1)
-		if len(code) < end {
-			end = len(code)
-		}
+		end := min(31*(i+1), len(code))
 
 		// Copy the code itself
 		copy(chunks[i*32+1:], code[31*i:end])
