@@ -359,24 +359,25 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	// Add the witness to the execution result
 	var vktProof *verkle.VerkleProof
 	var vktStateDiff verkle.StateDiff
-	if chainConfig.IsVerkle(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) {
-		keys := statedb.Witness().Keys()
-		if len(keys) > 0 && vtrpre != nil {
-			var proofTrie *trie.VerkleTrie
-			switch tr := statedb.GetTrie().(type) {
-			case *trie.VerkleTrie:
-				proofTrie = tr
-			case *trie.TransitionTrie:
-				proofTrie = tr.Overlay()
-			default:
-				return nil, nil, fmt.Errorf("invalid tree type in proof generation: %v", tr)
-			}
-			vktProof, vktStateDiff, err = trie.ProveAndSerialize(vtrpre, proofTrie, keys, vtrpre.FlatdbNodeResolver)
-			if err != nil {
-				return nil, nil, fmt.Errorf("error generating verkle proof for block %d: %w", pre.Env.Number, err)
-			}
-		}
-	}
+	// TODO(gballet) uncomment when a proof system has been selected
+	// if chainConfig.IsVerkle(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) {
+	// 	keys := statedb.Witness().Keys()
+	// 	if len(keys) > 0 && vtrpre != nil {
+	// 		var proofTrie *trie.VerkleTrie
+	// 		switch tr := statedb.GetTrie().(type) {
+	// 		case *trie.VerkleTrie:
+	// 			proofTrie = tr
+	// 		case *trie.TransitionTrie:
+	// 			proofTrie = tr.Overlay()
+	// 		default:
+	// 			return nil, nil, fmt.Errorf("invalid tree type in proof generation: %v", tr)
+	// 		}
+	// 		vktProof, vktStateDiff, err = trie.ProveAndSerialize(vtrpre, proofTrie, keys, vtrpre.FlatdbNodeResolver)
+	// 		if err != nil {
+	// 			return nil, nil, fmt.Errorf("error generating verkle proof for block %d: %w", pre.Env.Number, err)
+	// 		}
+	// 	}
+	// }
 
 	execRs := &ExecutionResult{
 		StateRoot:   root,

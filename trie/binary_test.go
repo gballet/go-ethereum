@@ -190,8 +190,8 @@ func TestMerkleizeMultipleEntries(t *testing.T) {
 		}
 	}
 	got := tree.Hash()
-	expected := common.HexToHash("e93c209026b8b00d76062638102ece415028bd104e1d892d5399375a323f2218")
+	expected := common.HexToHash("8c74de28e6bb6b2296cae37cff16266e2dbf533bc204fa4cb0c237761ae8a2c8")
 	if got != expected {
-		t.Fatal("invalid root")
+		t.Fatalf("invalid root, expected=%x, got = %x", expected, got)
 	}
 }

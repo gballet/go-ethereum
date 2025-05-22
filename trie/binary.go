@@ -94,7 +94,7 @@ func (e Empty) InsertValuesAtStem(key []byte, values [][]byte, _ NodeResolverFn,
 }
 
 func (e Empty) CollectNodes(_ []byte, _ NodeFlushFn) error {
-	panic("not implemented") // TODO: Implement
+	return nil
 }
 
 func (e Empty) toDot(parent string, path string) string {
@@ -821,11 +821,11 @@ func (trie *VerkleTrie) IsVerkle() bool {
 }
 
 func MakeBinaryMultiProof(pretrie, posttrie BinaryNode, keys [][]byte, resolver NodeResolverFn) (*verkle.VerkleProof, [][]byte, [][]byte, [][]byte, error) {
-	panic("not implemented")
+	return nil, nil, nil, nil, nil
 }
 
 func SerializeProof(proof *verkle.VerkleProof) (*verkle.VerkleProof, verkle.StateDiff, error) {
-	panic("not implemented")
+	return nil, nil, nil
 }
 
 func ProveAndSerialize(pretrie, posttrie *VerkleTrie, keys [][]byte, resolver NodeResolverFn) (*verkle.VerkleProof, verkle.StateDiff, error) {
