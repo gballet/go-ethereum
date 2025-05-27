@@ -23,6 +23,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"time"
 
 	"github.com/ethereum/go-ethereum/cmd/utils"
@@ -159,6 +160,17 @@ block is used.
 				Description: `
 The export-preimages command exports hash preimages to a flat file, in exactly
 the expected order for the overlay tree migration.
+`,
+			},
+			{
+				Name:      "bloat-state",
+				Usage:     "A tool for BloatNet, that traverses the state and copies it many times over",
+				ArgsUsage: "<root> <multiplier>",
+				Action:    bloatState,
+				Flags:     slices.Concat(utils.NetworkFlags, utils.DatabaseFlags),
+				Description: `
+geth snapshot traverse-state <state-root> <multiplier>
+will copy the state n times over, usef BloatNet.
 `,
 			},
 		},
@@ -367,6 +379,182 @@ func traverseState(ctx *cli.Context) error {
 		return accIter.Err
 	}
 	log.Info("State is complete", "accounts", accounts, "slots", slots, "codes", codes, "elapsed", common.PrettyDuration(time.Since(start)))
+	return nil
+}
+
+func bloatState(ctx *cli.Context) error {
+	stack, _ := makeConfigNode(ctx)
+	defer stack.Close()
+
+	chaindb := utils.MakeChainDatabase(ctx, stack, true)
+	defer chaindb.Close()
+
+	triedb := utils.MakeTrieDatabase(ctx, chaindb, false, true, false)
+	defer triedb.Close()
+
+	headBlock := rawdb.ReadHeadBlock(chaindb)
+	if headBlock == nil {
+		log.Error("Failed to load head block")
+		return errors.New("no head block")
+	}
+	if ctx.NArg() > 1 {
+		log.Error("Too many arguments given")
+		return errors.New("too many arguments")
+	}
+	var (
+		root         common.Hash
+		err          error
+		lastReport   time.Time
+		start        = time.Now()
+		accounts     int
+		slots        int
+		codes        int
+		accountsSize int // This is not a grammar mistake, I mean the size of
+		slotsSize    int // accounts, slots and codes pooled together, not the
+		codesSize    int // indvidual size of each item.
+	)
+	if ctx.NArg() == 0 {
+		log.Error("Need a replication multiplier")
+		return errors.New("no replication multiplier provided")
+	}
+	multiplier, err := strconv.Atoi(ctx.Args().First())
+	if err != nil {
+		log.Error("Multiplier isn't an integer", "err", err)
+		return err
+	}
+	if ctx.NArg() >= 2 {
+		root, err = parseRoot(ctx.Args().Get(1))
+		if err != nil {
+			log.Error("Failed to resolve state root", "err", err)
+			return err
+		}
+		log.Info("Start traversing the state", "root", root)
+	} else {
+		root = headBlock.Root()
+		log.Info("Start traversing the state", "root", root, "number", headBlock.NumberU64())
+	}
+	snapConfig := snapshot.Config{
+		CacheSize:  256,
+		Recovery:   false,
+		NoBuild:    true,
+		AsyncBuild: false,
+	}
+	snaptree, err := snapshot.New(snapConfig, chaindb, triedb, headBlock.Root())
+	if err != nil {
+		log.Error("Failed to open snapshot tree", "err", err)
+		return err
+	}
+	acctrie, err := trie.NewStateTrie(trie.StateTrieID(root), triedb)
+	if err != nil {
+		log.Error("Failed to open trie", "root", root, "err", err)
+		return err
+	}
+	accIt, err := snaptree.AccountIterator(root, common.Hash{})
+	if err != nil {
+		log.Error("Failed to open iterator", "root", root, "err", err)
+		return err
+	}
+	for accIt.Next() {
+		accounts += 1
+		accountsSize += len(accIt.Account())
+		var acc types.StateAccount
+		if err := rlp.DecodeBytes(accIt.Account(), &acc); err != nil {
+			log.Error("Invalid account encountered during traversal", "err", err)
+			return err
+		}
+		for ncopy := range multiplier {
+			// Create a new address based on the hash of the address + iteration value
+			instanceAddr := accIt.Hash()
+			instanceAddr[ncopy] = byte(ncopy)
+			instanceAcc := acc.Copy()
+
+			if acc.Root != types.EmptyRootHash {
+				storageIt, err := snaptree.StorageIterator(acc.Root, accIt.Hash(), common.Hash{})
+				if err != nil {
+					log.Error("Failed to open storage iterator", "root", acc.Root, "err", err)
+					return err
+				}
+				// TODO open a new storage tree so that it can be filled with data. This
+				// just needs to be a copy of the account tree at first, but when we will
+				// want to edit that tree as well to make it even bigger in v2.
+				// id := trie.StorageTrieID(root, common.BytesToHash(accIter.Key), acc.Root)
+				// strie, err := trie.NewStateTrie(id, triedb)
+				// if err != nil {
+				// 	log.Error("Failed to open storage trie", "root", acc.Root, "err", err)
+				// 	return err
+				// }
+
+				for storageIt.Next() {
+					for range multiplier {
+						// slotsSize += len(storageIt.Slot())
+
+						if time.Since(lastReport) > time.Second*8 {
+							log.Info("Traversing state", "accounts", accounts, "slots", slots, "codes", codes, "elapsed", common.PrettyDuration(time.Since(start)))
+							lastReport = time.Now()
+						}
+					}
+				}
+				if storageIt.Error() != nil {
+					log.Error("Failed to traverse storage trie", "root", acc.Root, "err", storageIt.Error())
+					return storageIt.Error()
+				}
+			}
+
+			// mutate the code by adding zeroes at the end
+			if !bytes.Equal(acc.CodeHash, types.EmptyCodeHash.Bytes()) {
+				if !rawdb.HasCode(chaindb, common.BytesToHash(acc.CodeHash)) {
+					log.Error("Code is missing", "hash", common.BytesToHash(acc.CodeHash))
+					return errors.New("missing code")
+				}
+
+				instanceCode := rawdb.ReadCode(chaindb, common.BytesToHash(acc.CodeHash))
+				for range ncopy + 1 {
+					instanceCode = append(instanceCode, 0)
+				}
+				codesSize += len(instanceCode)
+
+				instanceAcc.CodeHash = crypto.Keccak256Hash(instanceCode).Bytes()
+				rawdb.WriteCode(chaindb, common.BytesToHash(instanceAcc.CodeHash), instanceCode)
+			}
+			acctrie.UpdateAccount(common.Address(instanceAddr[:20]), instanceAcc, 0)
+
+			if time.Since(lastReport) > time.Second*8 {
+				log.Info("Traversing state", "accounts", accounts, "slots", slots, "codes", codes, "elapsed", common.PrettyDuration(time.Since(start)))
+				lastReport = time.Now()
+			}
+
+			// Save tree state every so often, in order not to OOM
+			if accountsSize+codesSize+slotsSize > 256*1024*1024 {
+				newroot, nodeset := acctrie.Commit(false)
+				if err := triedb.Update(newroot, parentroot, blocknr, nodeset, nil); err != nil {
+					log.Error("Saving current tree", "err", err)
+					return err
+				}
+			}
+		}
+	}
+	if accIt.Error() != nil {
+		log.Error("Failed to traverse state trie", "root", root, "err", accIt.Error())
+		return accIt.Error()
+	}
+	log.Info("State is complete", "accounts", accounts, "slots", slots, "codes", codes, "elapsed", common.PrettyDuration(time.Since(start)))
+
+	// regenerate the snapshot as this one got invalidated
+	snaptree.Rebuild(root)
+
+	// Construct new block, and set new head
+	batch := chaindb.NewBatch()
+	rawdb.WriteHeadHeaderHash(batch, headBlock.Hash())
+	rawdb.WriteHeadFastBlockHash(batch, headBlock.Hash())
+	rawdb.WriteCanonicalHash(batch, headBlock.Hash(), headBlock.NumberU64())
+	rawdb.WriteTxLookupEntriesByBlock(batch, headBlock)
+	rawdb.WriteHeadBlockHash(batch, headBlock.Hash())
+
+	// Flush the whole batch into the disk, exit the node if failed
+	if err := batch.Write(); err != nil {
+		log.Crit("Failed to update chain indexes and markers", "err", err)
+	}
+
 	return nil
 }
 
