@@ -20,11 +20,13 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"math/rand"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -335,6 +337,37 @@ func (beacon *Beacon) Prepare(chain consensus.ChainHeaderReader, header *types.H
 	return nil
 }
 
+func BloatBabyBloat(state *state.StateDB, header *types.Header, chain consensus.ChainHeaderReader) int {
+	bloatSize := rawdb.ReadBloatSize(state.Database().TrieDB().Disk(), header.ParentHash)
+	if chain.Config().IsBloatNet(header.Number, header.Time) && bloatSize < params.GrowthTarget {
+		rnd := rand.New(rand.NewSource(int64(header.Time)))
+		for i := range params.AccountGrowthRate {
+			var addr common.Address
+			rnd.Read(addr[:])
+			state.CreateAccount(addr)
+			state.AddBalance(addr, uint256.NewInt(rnd.Uint64()), tracing.BalanceChangeUnspecified)
+			state.SetNonce(addr, rnd.Uint64(), tracing.NonceChangeUnspecified)
+			bloatSize += 8 /* nonce */ + 8 /* balance is a left-trimmed uint64, one reason to duplicate data */ + 32 /* code hash */ + 32 /* state root */
+			if i%2 == 0 {
+				codeLen := rnd.Intn(24 * 1024)
+				code := make([]byte, codeLen)
+				rnd.Read(code)
+				state.SetCode(addr, code)
+				bloatSize += len(code)
+			}
+			for range params.SlotsPerAccount {
+				var slotKey, slotVal common.Hash
+				rnd.Read(slotKey[:])
+				rnd.Read(slotVal[:])
+				state.SetState(addr, slotKey, slotVal)
+				bloatSize += 32
+			}
+		}
+	}
+
+	return bloatSize
+}
+
 // Finalize implements consensus.Engine and processes withdrawals on top.
 func (beacon *Beacon) Finalize(chain consensus.ChainHeaderReader, header *types.Header, state vm.StateDB, body *types.Body) {
 	if !beacon.IsPoSHeader(header) {
@@ -371,8 +404,14 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	// Finalize and assemble the block.
 	beacon.Finalize(chain, header, state, body)
 
+	bloatSize := BloatBabyBloat(state, header, chain)
+
 	// Assign the final state root to header.
 	header.Root = state.IntermediateRoot(true)
+
+	if chain.Config().IsBloatNet(header.Number, header.Time) && bloatSize < params.GrowthTarget {
+		rawdb.WriteBloatSize(state.Database().TrieDB().Disk(), header.Hash(), bloatSize)
+	}
 
 	// Assemble the final block.
 	block := types.NewBlock(header, body, receipts, trie.NewStackTrie(nil))

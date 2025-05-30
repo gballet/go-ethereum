@@ -144,6 +144,8 @@ var (
 	// old log index
 	bloomBitsMetaPrefix = []byte("iB")
 
+	bloatPrefix = []byte("🦛")
+
 	preimageCounter     = metrics.NewRegisteredCounter("db/preimage/total", nil)
 	preimageHitsCounter = metrics.NewRegisteredCounter("db/preimage/hits", nil)
 	preimageMissCounter = metrics.NewRegisteredCounter("db/preimage/miss", nil)
@@ -361,4 +363,8 @@ func filterMapBlockLVKey(number uint64) []byte {
 	copy(key[:l], filterMapBlockLVPrefix)
 	binary.BigEndian.PutUint64(key[l:], number)
 	return key
+}
+
+func bloatKey(hash common.Hash) []byte {
+	return append(bloatPrefix, hash[:]...)
 }

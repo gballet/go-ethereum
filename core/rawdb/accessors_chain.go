@@ -926,3 +926,18 @@ func ReadHeadBlock(db ethdb.Reader) *types.Block {
 	}
 	return ReadBlock(db, headBlockHash, *headBlockNumber)
 }
+
+func ReadBloatSize(db ethdb.Reader, hash common.Hash) int {
+	data, _ := db.Get(bloatKey(hash))
+	if len(data) == 0 {
+		return 0
+	}
+
+	size := binary.LittleEndian.Uint64(data)
+	return int(size)
+}
+func WriteBloatSize(db ethdb.KeyValueWriter, hash common.Hash, size int) {
+	var data [8]byte
+	binary.LittleEndian.PutUint64(data[:], uint64(size))
+	db.Put(bloatKey(hash), data[:])
+}
