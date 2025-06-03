@@ -18,7 +18,6 @@ package state
 
 import (
 	"fmt"
-	"reflect"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/lru"
@@ -29,7 +28,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/ethereum/go-ethereum/trie/utils"
@@ -157,19 +155,19 @@ type CachingDB struct {
 	pointCache    *utils.PointCache
 
 	// Transition-specific fields
-	TransitionStatePerRoot lru.BasicLRU[common.Hash, *overlay.TransitionState]
+	transitions *lru.Cache[common.Hash, *overlay.TransitionState]
 }
 
 // NewDatabase creates a state database with the provided data sources.
 func NewDatabase(triedb *triedb.Database, snap *snapshot.Tree) *CachingDB {
 	return &CachingDB{
-		disk:                   triedb.Disk(),
-		triedb:                 triedb,
-		snap:                   snap,
-		codeCache:              lru.NewSizeConstrainedCache[common.Hash, []byte](codeCacheSize),
-		codeSizeCache:          lru.NewCache[common.Hash, int](codeSizeCacheSize),
-		pointCache:             utils.NewPointCache(pointCacheSize),
-		TransitionStatePerRoot: lru.NewBasicLRU[common.Hash, *overlay.TransitionState](1000),
+		disk:          triedb.Disk(),
+		triedb:        triedb,
+		snap:          snap,
+		codeCache:     lru.NewSizeConstrainedCache[common.Hash, []byte](codeCacheSize),
+		codeSizeCache: lru.NewCache[common.Hash, int](codeSizeCacheSize),
+		pointCache:    utils.NewPointCache(pointCacheSize),
+		transitions:   lru.NewCache[common.Hash, *overlay.TransitionState](1000),
 	}
 }
 
@@ -201,10 +199,9 @@ func (db *CachingDB) Reader(stateRoot common.Hash) (Reader, error) {
 			readers = append(readers, newFlatReader(reader)) // state reader is optional
 		}
 	}
-	ts := db.LoadTransitionState(stateRoot)
 	// Set up the trie reader, which is expected to always be available
 	// as the gatekeeper unless the state is corrupted.
-	tr, err := newTrieReader(stateRoot, db.triedb, db.pointCache, ts)
+	tr, err := newTrieReader(stateRoot, db.triedb, db.pointCache)
 	if err != nil {
 		return nil, err
 	}
@@ -219,11 +216,7 @@ func (db *CachingDB) Reader(stateRoot common.Hash) (Reader, error) {
 
 // OpenTrie opens the main account trie at a specific root hash.
 func (db *CachingDB) OpenTrie(root common.Hash) (Trie, error) {
-	ts := db.LoadTransitionState(root)
-	if ts.InTransition() {
-		panic("transition isn't supported yet")
-	}
-	if ts.Transitioned() {
+	if db.triedb.IsVerkle() {
 		return trie.NewVerkleTrie(root, db.triedb, db.pointCache)
 	}
 	tr, err := trie.NewStateTrie(trie.StateTrieID(root), db.triedb)
@@ -235,11 +228,10 @@ func (db *CachingDB) OpenTrie(root common.Hash) (Trie, error) {
 
 // OpenStorageTrie opens the storage trie of an account.
 func (db *CachingDB) OpenStorageTrie(stateRoot common.Hash, address common.Address, root common.Hash, self Trie) (Trie, error) {
-	ts := db.LoadTransitionState(stateRoot)
 	// In the verkle case, there is only one tree. But the two-tree structure
 	// is hardcoded in the codebase. So we need to return the same trie in this
 	// case.
-	if ts.InTransition() || ts.Transitioned() {
+	if db.triedb.IsVerkle() {
 		return self, nil
 	}
 	tr, err := trie.NewStateTrie(trie.StorageTrieID(stateRoot, crypto.Keccak256Hash(address.Bytes()), root), db.triedb)
@@ -292,76 +284,37 @@ func mustCopyTrie(t Trie) Trie {
 	}
 }
 
-// SaveTransitionState saves the transition state to the cache and commits
-// it to the database if it's not already in the cache.
-func (db *CachingDB) SaveTransitionState(root common.Hash, ts *overlay.TransitionState) {
-	if ts == nil {
-		panic("nil transition state")
+// SaveTransitionState stores the given transition state associated with the
+// specified root. It writes the state to persistent storage and also updates
+// the in-memory cache.
+func (db *CachingDB) SaveTransitionState(root common.Hash, ts *overlay.TransitionState) error {
+	if err := overlay.StoreTransitionState(db.disk, root, ts); err != nil {
+		return err
 	}
-
-	enc, err := rlp.EncodeToBytes(ts)
-	if err != nil {
-		log.Error("failed to encode transition state", "err", err)
-		return
-	}
-
-	if !db.TransitionStatePerRoot.Contains(root) {
-		// Copy so that the address pointer isn't updated after
-		// it has been saved.
-		db.TransitionStatePerRoot.Add(root, ts.Copy())
-		rawdb.WriteVerkleTransitionState(db.TrieDB().Disk(), root, enc)
-	} else {
-		// Check that the state is consistent with what is in the cache,
-		// which is not strictly necessary but a good sanity check. Can
-		// be removed when the transition is stable.
-		cachedState, _ := db.TransitionStatePerRoot.Get(root)
-		if !reflect.DeepEqual(cachedState, ts) {
-			fmt.Println("transition state mismatch", "cached state", cachedState, "new state", ts)
-			panic("transition state mismatch")
-		}
-	}
-
-	log.Debug("saving transition state", "storage processed", ts.StorageProcessed, "addr", ts.CurrentAccountAddress, "slot hash", ts.CurrentSlotHash, "root", root, "ended", ts.Ended, "started", ts.Started)
+	db.transitions.Add(root, ts)
+	log.Debug("Saved transition state", ts.LogAttrs(root)...)
+	return nil
 }
 
-func (db *CachingDB) LoadTransitionState(root common.Hash) *overlay.TransitionState {
-	// Try to get the transition state from the cache and
-	// the DB if it's not there.
-	ts, ok := db.TransitionStatePerRoot.Get(root)
-	if !ok {
-		// Not in the cache, try getting it from the DB
-		data, _ := rawdb.ReadVerkleTransitionState(db.TrieDB().Disk(), root)
-
-		// if a state could be read from the db, attempt to decode it
-		if len(data) > 0 {
-			var newts overlay.TransitionState
-
-			// Decode transition state
-			err := rlp.DecodeBytes(data, &newts)
-			if err != nil {
-				log.Error("failed to decode transition state", "err", err)
-				return nil
-			}
-			ts = &newts
-		}
-
-		// Fallback that should only happen before the transition
-		if ts == nil {
-			// Initialize the first transition state, with the "ended"
-			// field set to true if the database was created
-			// as a verkle database.
-			log.Debug("no transition state found, starting fresh", "is verkle", db.triedb.IsVerkle())
-			// Start with a fresh state
-			ts = &overlay.TransitionState{Ended: db.triedb.IsVerkle()}
-		}
-
-		db.TransitionStatePerRoot.Add(root, ts)
+// LoadTransitionState loads the transition state associated with the specified
+// root. The transition state may be unavailable in the following cases:
+//
+// - Verkle has not been activated yet (the legacy MPT state should be used)
+// - The first block immediately since Verkle activation
+// - The block after the Verkle transition has completed
+func (db *CachingDB) LoadTransitionState(root common.Hash) (*overlay.TransitionState, error) {
+	ts, ok := db.transitions.Get(root)
+	if ok {
+		return ts, nil
 	}
-
-	// Copy so that the CurrentAddress pointer in the map
-	// doesn't get overwritten.
-	// db.CurrentTransitionState = ts.Copy()
-
-	log.Debug("loaded transition state", "storage processed", ts.StorageProcessed, "addr", ts.CurrentAccountAddress, "slot hash", ts.CurrentSlotHash, "root", root, "ended", ts.Ended, "started", ts.Started)
-	return ts
+	ts, err := overlay.LoadTransitionState(db.disk, root)
+	if err != nil {
+		return nil, err
+	}
+	if ts == nil {
+		log.Debug("Transition state is not found", "root", root)
+		return nil, nil
+	}
+	log.Debug("Loaded transition state", ts.LogAttrs(root)...)
+	return ts, nil
 }

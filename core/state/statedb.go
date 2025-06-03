@@ -181,7 +181,7 @@ func New(root common.Hash, db Database) (*StateDB, error) {
 		accessList:           newAccessList(),
 		transientStorage:     newTransientStorage(),
 	}
-	if tr.IsVerkle() {
+	if db.TrieDB().IsVerkle() {
 		sdb.accessEvents = NewAccessEvents(db.PointCache())
 	}
 	return sdb, nil

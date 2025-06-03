@@ -25,7 +25,6 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip1559"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
-	"github.com/ethereum/go-ethereum/core/overlay"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -382,8 +381,6 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	// Create the block witness and attach to block.
 	// This step needs to happen as late as possible to catch all access events.
 	if chain.Config().IsVerkle(header.Number, header.Time) {
-		// TODO(gballet) move this to the end of the overlay conversion function in a subsequent PR
-		statedb.Database().(*state.CachingDB).SaveTransitionState(header.Root, &overlay.TransitionState{Ended: true})
 		keys := statedb.AccessEvents().Keys()
 
 		// Open the pre-tree to prove the pre-state against
