@@ -160,6 +160,9 @@ type Config struct {
 	// OverridePrague (TODO: remove after the fork)
 	OverridePrague *uint64 `toml:",omitempty"`
 
+	// OverrideBloat (TODO: remove after the fork)
+	OverrideBloat *uint64 `toml:",omitempty"`
+
 	// OverrideVerkle (TODO: remove after the fork)
 	OverrideVerkle *uint64 `toml:",omitempty"`
 }

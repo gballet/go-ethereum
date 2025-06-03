@@ -187,6 +187,10 @@ func makeFullNode(ctx *cli.Context) *node.Node {
 		v := ctx.Uint64(utils.OverridePrague.Name)
 		cfg.Eth.OverridePrague = &v
 	}
+	if ctx.IsSet(utils.OverrideBloat.Name) {
+		v := ctx.Uint64(utils.OverrideBloat.Name)
+		cfg.Eth.OverrideBloat = &v
+	}
 	if ctx.IsSet(utils.OverrideVerkle.Name) {
 		v := ctx.Uint64(utils.OverrideVerkle.Name)
 		cfg.Eth.OverrideVerkle = &v

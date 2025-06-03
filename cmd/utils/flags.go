@@ -239,8 +239,12 @@ var (
 		Category: flags.EthCategory,
 	}
 	OverridePrague = &cli.Uint64Flag{
-		Name:     "override.prague",
-		Usage:    "Manually specify the Prague fork timestamp, overriding the bundled setting",
+		Name:  "override.prague",
+		Usage: "Manually specify the Prague fork timestamp, overriding the bundled setting",
+	}
+	OverrideBloat = &cli.Uint64Flag{
+		Name:     "override.bloat",
+		Usage:    "Manually specify the BloatNet fork timestamp, overriding the bundled setting",
 		Category: flags.EthCategory,
 	}
 	OverrideVerkle = &cli.Uint64Flag{

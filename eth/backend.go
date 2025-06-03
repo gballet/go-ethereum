@@ -223,6 +223,9 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	if config.OverridePrague != nil {
 		overrides.OverridePrague = config.OverridePrague
 	}
+	if config.OverrideBloat != nil {
+		overrides.OverrideBloat = config.OverrideBloat
+	}
 	if config.OverrideVerkle != nil {
 		overrides.OverrideVerkle = config.OverrideVerkle
 	}
