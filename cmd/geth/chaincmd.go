@@ -58,6 +58,7 @@ var (
 		Flags: slices.Concat([]cli.Flag{
 			utils.CachePreimagesFlag,
 			utils.OverridePrague,
+			utils.OverrideBloat,
 			utils.OverrideVerkle,
 		}, utils.DatabaseFlags),
 		Description: `
@@ -271,6 +272,10 @@ func initGenesis(ctx *cli.Context) error {
 	if ctx.IsSet(utils.OverridePrague.Name) {
 		v := ctx.Uint64(utils.OverridePrague.Name)
 		overrides.OverridePrague = &v
+	}
+	if ctx.IsSet(utils.OverrideBloat.Name) {
+		v := ctx.Uint64(utils.OverrideBloat.Name)
+		overrides.OverrideBloat = &v
 	}
 	if ctx.IsSet(utils.OverrideVerkle.Name) {
 		v := ctx.Uint64(utils.OverrideVerkle.Name)

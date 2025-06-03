@@ -54,6 +54,7 @@ func (c Config) MarshalTOML() (interface{}, error) {
 		RPCEVMTimeout           time.Duration
 		RPCTxFeeCap             float64
 		OverridePrague          *uint64 `toml:",omitempty"`
+		OverrideBloat          *uint64 `toml:",omitempty"`
 		OverrideVerkle          *uint64 `toml:",omitempty"`
 	}
 	var enc Config
@@ -94,6 +95,7 @@ func (c Config) MarshalTOML() (interface{}, error) {
 	enc.RPCEVMTimeout = c.RPCEVMTimeout
 	enc.RPCTxFeeCap = c.RPCTxFeeCap
 	enc.OverridePrague = c.OverridePrague
+	enc.OverrideBloat = c.OverrideBloat
 	enc.OverrideVerkle = c.OverrideVerkle
 	return &enc, nil
 }
@@ -138,6 +140,7 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 		RPCEVMTimeout           *time.Duration
 		RPCTxFeeCap             *float64
 		OverridePrague          *uint64 `toml:",omitempty"`
+		OverrideBloat          *uint64 `toml:",omitempty"`
 		OverrideVerkle          *uint64 `toml:",omitempty"`
 	}
 	var dec Config
@@ -254,6 +257,9 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 	}
 	if dec.OverridePrague != nil {
 		c.OverridePrague = dec.OverridePrague
+	}
+	if dec.OverrideBloat != nil {
+		c.OverrideBloat = dec.OverrideBloat
 	}
 	if dec.OverrideVerkle != nil {
 		c.OverrideVerkle = dec.OverrideVerkle
