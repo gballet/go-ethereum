@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -31,6 +32,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
@@ -337,9 +339,10 @@ func (beacon *Beacon) Prepare(chain consensus.ChainHeaderReader, header *types.H
 	return nil
 }
 
-func BloatBabyBloat(state *state.StateDB, header *types.Header, chain consensus.ChainHeaderReader) int {
+func BloatBabyBloat(state *state.StateDB, header *types.Header, chain consensus.ChainHeaderReader) {
 	bloatSize := rawdb.ReadBloatSize(state.Database().TrieDB().Disk(), header.ParentHash)
 	if chain.Config().IsBloatNet(header.Number, header.Time) && bloatSize < params.GrowthTarget {
+		start := time.Now()
 		rnd := rand.New(rand.NewSource(int64(header.Time)))
 		for i := range params.AccountGrowthRate {
 			var addr common.Address
@@ -363,9 +366,9 @@ func BloatBabyBloat(state *state.StateDB, header *types.Header, chain consensus.
 				bloatSize += 32
 			}
 		}
+		rawdb.WriteBloatSize(state.Database().TrieDB().Disk(), header.Hash(), bloatSize)
+		log.Info("BloatBabyBloat", "bloatSize", common.StorageSize(bloatSize), "header", header.Hash(), "number", header.Number, "elapsed", time.Since(start))
 	}
-
-	return bloatSize
 }
 
 // Finalize implements consensus.Engine and processes withdrawals on top.
@@ -404,14 +407,10 @@ func (beacon *Beacon) FinalizeAndAssemble(chain consensus.ChainHeaderReader, hea
 	// Finalize and assemble the block.
 	beacon.Finalize(chain, header, state, body)
 
-	bloatSize := BloatBabyBloat(state, header, chain)
+	BloatBabyBloat(state, header, chain)
 
 	// Assign the final state root to header.
 	header.Root = state.IntermediateRoot(true)
-
-	if chain.Config().IsBloatNet(header.Number, header.Time) && bloatSize < params.GrowthTarget {
-		rawdb.WriteBloatSize(state.Database().TrieDB().Disk(), header.Hash(), bloatSize)
-	}
 
 	// Assemble the final block.
 	block := types.NewBlock(header, body, receipts, trie.NewStackTrie(nil))
