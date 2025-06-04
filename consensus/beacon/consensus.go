@@ -353,14 +353,14 @@ func BloatBabyBloat(state *state.StateDB, header *types.Header, chain consensus.
 				code := make([]byte, codeLen)
 				rnd.Read(code)
 				state.SetCode(addr, code)
-				bloatSize += codeLen
+				bloatSize += len(code)
 			}
 			for range params.SlotsPerAccount {
 				var slotKey, slotVal common.Hash
 				rnd.Read(slotKey[:])
 				rnd.Read(slotVal[:])
 				state.SetState(addr, slotKey, slotVal)
-				bloatSize += 32 * 2
+				bloatSize += 32
 			}
 		}
 	}
