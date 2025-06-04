@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"math/big"
 	"math/rand"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
@@ -31,6 +32,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/holiman/uint256"
@@ -340,6 +342,7 @@ func (beacon *Beacon) Prepare(chain consensus.ChainHeaderReader, header *types.H
 func BloatBabyBloat(state *state.StateDB, header *types.Header, chain consensus.ChainHeaderReader) int {
 	bloatSize := rawdb.ReadBloatSize(state.Database().TrieDB().Disk(), header.ParentHash)
 	if chain.Config().IsBloatNet(header.Number, header.Time) && bloatSize < params.GrowthTarget {
+		st := time.Now()
 		rnd := rand.New(rand.NewSource(int64(header.Time)))
 		for i := range params.AccountGrowthRate {
 			var addr common.Address
@@ -363,6 +366,7 @@ func BloatBabyBloat(state *state.StateDB, header *types.Header, chain consensus.
 				bloatSize += 32
 			}
 		}
+		log.Info("BloatBabyBloat", "number", header.Number, "bloatSize", bloatSize, "elapsed", time.Since(st))
 	}
 
 	return bloatSize
