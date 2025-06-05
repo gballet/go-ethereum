@@ -223,11 +223,11 @@ func (sc *StateUpdate) IntoChangeset() *StateChangeset {
 		}
 		if len(newValue) == 0 {
 			accounts -= 1
-			accountSize -= common.AddressLength
+			accountSize -= common.HashLength
 		}
 		if len(oldValue) == 0 {
 			accounts += 1
-			accountSize += common.AddressLength
+			accountSize += common.HashLength
 		}
 		accountSize += len(newValue) - len(oldValue)
 	}
@@ -254,11 +254,11 @@ func (sc *StateUpdate) IntoChangeset() *StateChangeset {
 			}
 			if len(newValue) == 0 {
 				storages -= 1
-				storageSize -= common.HashLength
+				storageSize -= common.HashLength * 2
 			}
 			if len(oldValue) == 0 {
 				storages += 1
-				storageSize += common.HashLength
+				storageSize += common.HashLength * 2
 			}
 			storageSize += len(newValue) - len(oldValue)
 		}

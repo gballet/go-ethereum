@@ -347,7 +347,7 @@ func BloatBabyBloat(state *state.StateDB, header *types.Header, chain consensus.
 			state.CreateAccount(addr)
 			state.AddBalance(addr, uint256.NewInt(rnd.Uint64()), tracing.BalanceChangeUnspecified)
 			state.SetNonce(addr, rnd.Uint64(), tracing.NonceChangeUnspecified)
-			bloatSize += 8 /* nonce */ + 8 /* balance is a left-trimmed uint64, one reason to duplicate data */ + 32 /* code hash */ + 32 /* state root */
+			bloatSize += 32 /* account hash */ + 8 /* nonce */ + 8 /* balance is a left-trimmed uint64, one reason to duplicate data */ + 32 /* code hash */ + 32 /* state root */
 			if i%2 == 0 {
 				codeLen := rnd.Intn(24 * 1024)
 				code := make([]byte, codeLen)
@@ -360,7 +360,7 @@ func BloatBabyBloat(state *state.StateDB, header *types.Header, chain consensus.
 				rnd.Read(slotKey[:])
 				rnd.Read(slotVal[:])
 				state.SetState(addr, slotKey, slotVal)
-				bloatSize += 32
+				bloatSize += 32 * 2 // account hash + storage hash
 			}
 		}
 	}
