@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -51,11 +52,24 @@ const journalVersion uint64 = 3
 
 // loadJournal tries to parse the layer journal from the disk.
 func (db *Database) loadJournal(diskRoot common.Hash) (layer, error) {
-	journal := rawdb.ReadTrieJournal(db.diskdb)
-	if len(journal) == 0 {
-		return nil, errMissJournal
+	var reader io.Reader
+	if db.config.Journal != "" && common.FileExist(db.config.Journal) {
+		log.Info("Load pathdb disklayer journal", "path", db.config.Journal)
+		// If a journal file is specified, read it from there
+		f, err := os.OpenFile(db.config.Journal, os.O_RDONLY, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read journal file %s: %w", db.config.Journal, err)
+		}
+		defer f.Close()
+		reader = f
+	} else {
+		journal := rawdb.ReadTrieJournal(db.diskdb)
+		if len(journal) == 0 {
+			return nil, errMissJournal
+		}
+		reader = bytes.NewReader(journal)
 	}
-	r := rlp.NewStream(bytes.NewReader(journal), 0)
+	r := rlp.NewStream(reader, 0)
 
 	// Firstly, resolve the first element as the journal version
 	version, err := r.Uint64()
@@ -333,8 +347,20 @@ func (db *Database) Journal(root common.Hash) error {
 	if err := l.journal(journal); err != nil {
 		return err
 	}
+
 	// Store the journal into the database and return
-	rawdb.WriteTrieJournal(db.diskdb, journal.Bytes())
+	if db.config.Journal != "" {
+		file, err := os.OpenFile(db.config.Journal, os.O_WRONLY|os.O_CREATE, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to open journal file %s: %w", db.config.Journal, err)
+		}
+		defer file.Close()
+		if _, err := file.Write(journal.Bytes()); err != nil {
+			return fmt.Errorf("failed to write journal file %s: %w", db.config.Journal, err)
+		}
+	} else {
+		rawdb.WriteTrieJournal(db.diskdb, journal.Bytes())
+	}
 
 	// Set the db in read only mode to reject all following mutations
 	db.readOnly = true

@@ -1674,6 +1674,9 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	if ctx.IsSet(CacheFlag.Name) || ctx.IsSet(CacheSnapshotFlag.Name) {
 		cfg.SnapshotCache = ctx.Int(CacheFlag.Name) * ctx.Int(CacheSnapshotFlag.Name) / 100
 	}
+	if journal := ctx.String(CacheTrieJournalFlag.Name); journal != "" {
+		cfg.TrieJournal = stack.ResolvePath(journal)
+	}
 	if ctx.IsSet(CacheLogSizeFlag.Name) {
 		cfg.FilterLogCacheSize = ctx.Int(CacheLogSizeFlag.Name)
 	}
@@ -2178,6 +2181,9 @@ func MakeChain(ctx *cli.Context, stack *node.Node, readonly bool) (*core.BlockCh
 		Preimages:           ctx.Bool(CachePreimagesFlag.Name),
 		StateScheme:         scheme,
 		StateHistory:        ctx.Uint64(StateHistoryFlag.Name),
+	}
+	if journal := ctx.String(CacheTrieJournalFlag.Name); journal != "" {
+		cache.TrieJournal = stack.ResolvePath(journal)
 	}
 	if cache.TrieDirtyDisabled && !cache.Preimages {
 		cache.Preimages = true

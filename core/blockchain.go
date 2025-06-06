@@ -166,6 +166,7 @@ type CacheConfig struct {
 	Preimages           bool          // Whether to store preimage of trie key to the disk
 	StateHistory        uint64        // Number of blocks from head whose state histories are reserved.
 	StateScheme         string        // Scheme used to store ethereum states and merkle tree nodes on top
+	TrieJournal         string        // Path used to store the trie pathdb journal
 
 	SnapshotNoBuild bool // Whether the background generation is allowed
 	SnapshotWait    bool // Wait for snapshot construction on startup. TODO(karalabe): This is a dirty hack for testing, nuke it
@@ -196,6 +197,7 @@ func (c *CacheConfig) triedbConfig(isVerkle bool) *triedb.Config {
 			// for flushing both trie data and state data to disk. The config name
 			// should be updated to eliminate the confusion.
 			WriteBufferSize: c.TrieDirtyLimit * 1024 * 1024,
+			Journal:     c.TrieJournal,
 		}
 	}
 	return config
