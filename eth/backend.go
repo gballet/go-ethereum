@@ -205,6 +205,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 			StateHistory:        config.StateHistory,
 			StateScheme:         scheme,
 			ChainHistoryMode:    config.HistoryMode,
+			TrieJournal:         config.TrieJournal,
 		}
 	)
 	if config.VMTrace != "" {
