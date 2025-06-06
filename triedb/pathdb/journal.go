@@ -329,8 +329,21 @@ func (db *Database) Journal(root common.Hash) error {
 	if db.readOnly {
 		return errDatabaseReadOnly
 	}
+
+	var journal io.Writer
+	// Store the journal into the database and return
+	if db.config.Journal != "" {
+		file, err := os.OpenFile(db.config.Journal, os.O_WRONLY|os.O_CREATE, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to open journal file %s: %w", db.config.Journal, err)
+		}
+		defer file.Close()
+		journal = file
+	} else {
+		journal = new(bytes.Buffer)
+	}
+
 	// Firstly write out the metadata of journal
-	journal := new(bytes.Buffer)
 	if err := rlp.Encode(journal, journalVersion); err != nil {
 		return err
 	}
@@ -349,21 +362,18 @@ func (db *Database) Journal(root common.Hash) error {
 	}
 
 	// Store the journal into the database and return
-	if db.config.Journal != "" {
-		file, err := os.OpenFile(db.config.Journal, os.O_WRONLY|os.O_CREATE, 0644)
-		if err != nil {
-			return fmt.Errorf("failed to open journal file %s: %w", db.config.Journal, err)
-		}
-		defer file.Close()
-		if _, err := file.Write(journal.Bytes()); err != nil {
-			return fmt.Errorf("failed to write journal file %s: %w", db.config.Journal, err)
-		}
+	var size int
+	if db.config.Journal == "" {
+		data := journal.(*bytes.Buffer)
+		size = data.Len()
+		rawdb.WriteTrieJournal(db.diskdb, data.Bytes())
 	} else {
-		rawdb.WriteTrieJournal(db.diskdb, journal.Bytes())
+		stat, _ := journal.(*os.File).Stat()
+		size = int(stat.Size())
 	}
 
 	// Set the db in read only mode to reject all following mutations
 	db.readOnly = true
-	log.Info("Persisted dirty state to disk", "size", common.StorageSize(journal.Len()), "elapsed", common.PrettyDuration(time.Since(start)))
+	log.Info("Persisted dirty state to disk", "size", common.StorageSize(size), "elapsed", common.PrettyDuration(time.Since(start)))
 	return nil
 }
