@@ -18,5 +18,5 @@ package params
 
 var (
 	SlotsPerAccount = 30                       // The number of slots per account, used to calculate the bloat size
-	GrowthTarget    = 200 * 1024 * 1024 * 1024 // The target bloat size for the bloat net
+	GrowthTarget    = 500 * 1024 * 1024 * 1024 // The target bloat size for the bloat net
 )
