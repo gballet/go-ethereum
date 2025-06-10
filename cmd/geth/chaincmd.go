@@ -20,6 +20,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
+	"math/rand"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -47,6 +49,9 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/ethereum/go-ethereum/trie"
+	"github.com/holiman/uint256"
 	"github.com/urfave/cli/v2"
 )
 
@@ -244,6 +249,8 @@ var (
 	}
 )
 
+func newUint64(val uint64) *uint64 { return &val }
+
 // initGenesis will initialise the given JSON format genesis file and writes it as
 // the zero'd block (i.e. genesis) or will fail hard if it can't succeed.
 func initGenesis(ctx *cli.Context) error {
@@ -260,6 +267,35 @@ func initGenesis(ctx *cli.Context) error {
 	}
 	defer file.Close()
 
+	chainCfg := &params.ChainConfig{
+		ChainID:                 big.NewInt(0xB10A7),
+		HomesteadBlock:          big.NewInt(0),
+		DAOForkBlock:            nil,
+		DAOForkSupport:          true,
+		EIP150Block:             big.NewInt(0),
+		EIP155Block:             big.NewInt(0),
+		EIP158Block:             big.NewInt(0),
+		ByzantiumBlock:          big.NewInt(0),
+		ConstantinopleBlock:     big.NewInt(0),
+		PetersburgBlock:         big.NewInt(0),
+		IstanbulBlock:           big.NewInt(0),
+		MuirGlacierBlock:        big.NewInt(0),
+		BerlinBlock:             big.NewInt(0),
+		LondonBlock:             big.NewInt(0),
+		ArrowGlacierBlock:       nil,
+		GrayGlacierBlock:        nil,
+		TerminalTotalDifficulty: big.NewInt(0),
+		MergeNetsplitBlock:      big.NewInt(0),
+		ShanghaiTime:            newUint64(0),
+		CancunTime:              newUint64(0),
+		PragueTime:              newUint64(0),
+		DepositContractAddress:  common.HexToAddress("0x00000000219ab540356cBB839Cbe05303d7705Fa"),
+		Ethash:                  new(params.EthashConfig),
+		BlobScheduleConfig: &params.BlobScheduleConfig{
+			Cancun: params.DefaultCancunBlobConfig,
+			Prague: params.DefaultPragueBlobConfig,
+		},
+	}
 	genesis := new(core.Genesis)
 	if err := json.NewDecoder(file).Decode(genesis); err != nil {
 		utils.Fatalf("invalid genesis file: %v", err)
@@ -284,14 +320,83 @@ func initGenesis(ctx *cli.Context) error {
 	triedb := utils.MakeTrieDatabase(ctx, chaindb, ctx.Bool(utils.CachePreimagesFlag.Name), false, genesis.IsVerkle())
 	defer triedb.Close()
 
-	_, hash, compatErr, err := core.SetupGenesisBlockWithOverride(chaindb, triedb, genesis, &overrides)
+	batch := chaindb.NewBatch()
+	accounttr := trie.NewStackTrie(func(path []byte, hash common.Hash, blob []byte) {
+		rawdb.WriteAccountTrieNode(batch, path, blob)
+		if batch.ValueSize() > ethdb.IdealBatchSize {
+			batch.Write()
+			batch.Reset()
+		}
+	})
+
+	// Generate state usig the stack trie
+	bloatSize := 0
+	// XXX timestamp no
+	rnd := rand.New(rand.NewSource(int64(genesis.Timestamp)))
+	for i := 0; bloatSize < params.GrowthTarget; i++ {
+		var addr common.Address
+		rnd.Read(addr[:])
+		var addrHash = crypto.Keccak256Hash(addr[:])
+		codeHash := types.EmptyCodeHash
+		root := types.EmptyRootHash
+		if i%2 == 0 {
+			// one in every two accounts is a contract
+			codeLen := rnd.Intn(24 * 1024)
+			code := make([]byte, codeLen)
+			rnd.Read(code)
+			codeHash = crypto.Keccak256Hash(code)
+			rawdb.WriteCode(batch, codeHash, code)
+			bloatSize += len(code)
+
+			sttr := trie.NewStackTrie(func(path []byte, hash common.Hash, blob []byte) {
+				rawdb.WriteStorageTrieNode(batch, addrHash, path, blob)
+				if batch.ValueSize() > ethdb.IdealBatchSize {
+					batch.Write()
+					batch.Reset()
+				}
+			})
+			for range params.SlotsPerAccount {
+				var slotKey, slotVal common.Hash
+				rnd.Read(slotKey[:])
+				rnd.Read(slotVal[:])
+				sttr.Update(slotKey[:], slotVal[:])
+				bloatSize += 64
+			}
+			root = sttr.Hash()
+		}
+		account := &types.StateAccount{
+			Nonce:    rnd.Uint64(),
+			Balance:  uint256.NewInt(rnd.Uint64()),
+			CodeHash: codeHash[:],
+			Root:     root,
+		}
+		data, err := rlp.EncodeToBytes(account)
+		if err != nil {
+			return err
+		}
+		bloatSize += 8 /* nonce */ + 8 /* balance is a left-trimmed uint64, one reason to duplicate data */ + 32 /* code hash */ + 32 /* state root */
+		if err := accounttr.Update(addrHash[:], data); err != nil {
+			return err
+		}
+	}
+
+	blob, err := json.Marshal(types.GenesisAlloc{})
 	if err != nil {
-		utils.Fatalf("Failed to write genesis block: %v", err)
+		return err
 	}
-	if compatErr != nil {
-		utils.Fatalf("Failed to write chain config: %v", compatErr)
+	block := genesis.ToBlockWithRoot(accounttr.Hash())
+	rawdb.WriteGenesisStateSpec(batch, block.Hash(), blob)
+	rawdb.WriteBlock(batch, block)
+	rawdb.WriteReceipts(batch, block.Hash(), 0, nil)
+	rawdb.WriteCanonicalHash(batch, block.Hash(), block.NumberU64())
+	rawdb.WriteHeadBlockHash(batch, block.Hash())
+	rawdb.WriteHeadFastBlockHash(batch, block.Hash())
+	rawdb.WriteHeadHeaderHash(batch, block.Hash())
+	rawdb.WriteChainConfig(batch, block.Hash(), chainCfg)
+	if err := batch.Write(); err != nil {
+		return fmt.Errorf("error writing state: %w", err)
 	}
-	log.Info("Successfully wrote genesis state", "database", "chaindata", "hash", hash)
+	log.Info("Successfully wrote genesis state", "database", "chaindata", "hash", block.Hash())
 
 	return nil
 }

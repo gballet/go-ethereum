@@ -458,6 +458,10 @@ func (g *Genesis) ToBlock() *types.Block {
 	return g.toBlockWithRoot(root)
 }
 
+func (g *Genesis) ToBlockWithRoot(root common.Hash) *types.Block {
+	return g.toBlockWithRoot(root)
+}
+
 // toBlockWithRoot constructs the genesis block with the given genesis state root.
 func (g *Genesis) toBlockWithRoot(root common.Hash) *types.Block {
 	head := &types.Header{
