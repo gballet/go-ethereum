@@ -17,6 +17,7 @@
 package main
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -254,10 +255,6 @@ func newUint64(val uint64) *uint64 { return &val }
 // initGenesis will initialise the given JSON format genesis file and writes it as
 // the zero'd block (i.e. genesis) or will fail hard if it can't succeed.
 func initGenesis(ctx *cli.Context) error {
-	if ctx.Args().Len() != 1 {
-		utils.Fatalf("need genesis.json file as the only argument")
-	}
-
 	chainCfg := &params.ChainConfig{
 		ChainID:                 big.NewInt(0xB10A7),
 		HomesteadBlock:          big.NewInt(0),
@@ -330,9 +327,8 @@ func initGenesis(ctx *cli.Context) error {
 	// XXX timestamp no
 	rnd := rand.New(rand.NewSource(int64(genesis.Timestamp)))
 	for i := 0; bloatSize < params.GrowthTarget; i++ {
-		var addr common.Address
-		rnd.Read(addr[:])
-		var addrHash = crypto.Keccak256Hash(addr[:])
+		var addrHash common.Hash
+		binary.BigEndian.PutUint64(addrHash[:8], uint64(i))
 		codeHash := types.EmptyCodeHash
 		root := types.EmptyRootHash
 		if i%2 == 0 {
@@ -351,9 +347,10 @@ func initGenesis(ctx *cli.Context) error {
 					batch.Reset()
 				}
 			})
-			for range params.SlotsPerAccount {
+			for j := range params.SlotsPerAccount {
 				var slotKey, slotVal common.Hash
-				rnd.Read(slotKey[:])
+				// rnd.Read(slotKey[:])
+				binary.BigEndian.PutUint64(slotKey[:8], uint64(j))
 				rnd.Read(slotVal[:])
 				sttr.Update(slotKey[:], slotVal[:])
 				bloatSize += 64
