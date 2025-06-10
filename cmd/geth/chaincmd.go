@@ -257,15 +257,6 @@ func initGenesis(ctx *cli.Context) error {
 	if ctx.Args().Len() != 1 {
 		utils.Fatalf("need genesis.json file as the only argument")
 	}
-	genesisPath := ctx.Args().First()
-	if len(genesisPath) == 0 {
-		utils.Fatalf("invalid path to genesis file")
-	}
-	file, err := os.Open(genesisPath)
-	if err != nil {
-		utils.Fatalf("Failed to read genesis file: %v", err)
-	}
-	defer file.Close()
 
 	chainCfg := &params.ChainConfig{
 		ChainID:                 big.NewInt(0xB10A7),
@@ -296,9 +287,14 @@ func initGenesis(ctx *cli.Context) error {
 			Prague: params.DefaultPragueBlobConfig,
 		},
 	}
-	genesis := new(core.Genesis)
-	if err := json.NewDecoder(file).Decode(genesis); err != nil {
-		utils.Fatalf("invalid genesis file: %v", err)
+	genesis := &core.Genesis{
+		Config: chainCfg,
+		Alloc: types.GenesisAlloc{
+			params.BeaconRootsAddress: {Code: params.BeaconRootsCode},
+		},
+		BaseFee:    big.NewInt(params.InitialBaseFee),
+		Difficulty: common.Big1,
+		GasLimit:   5_000_000,
 	}
 	// Open and initialise both full and light databases
 	stack, _ := makeConfigNode(ctx)

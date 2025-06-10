@@ -694,6 +694,7 @@ func (s *Syncer) Sync(root common.Hash, cancel chan struct{}) error {
 
 		if len(s.tasks) == 0 {
 			// Sync phase done, run heal phase
+			log.Info("Starting healing phase")
 			s.assignTrienodeHealTasks(trienodeHealResps, trienodeHealReqFails, cancel)
 			s.assignBytecodeHealTasks(bytecodeHealResps, bytecodeHealReqFails, cancel)
 		}
