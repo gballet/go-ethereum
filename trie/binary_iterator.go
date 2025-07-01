@@ -128,6 +128,9 @@ func (it *verkleNodeIterator) Next(descend bool) bool {
 			parent.Node.(*InternalNode).right = it.current
 		}
 		return it.Next(descend)
+	case Empty:
+		// do nothing
+		return false
 	default:
 		panic("invalid node type")
 	}

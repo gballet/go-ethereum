@@ -165,15 +165,14 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	}
 	var (
 		parentStateRoot, statedb = MakePreState(rawdb.NewMemoryDatabase(), chainConfig, pre, chainConfig.IsVerkle(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp))
-		vtrpre                   *trie.VerkleTrie
-		signer                   = types.MakeSigner(chainConfig, new(big.Int).SetUint64(pre.Env.Number), pre.Env.Timestamp)
-		gaspool                  = new(core.GasPool)
-		blockHash                = common.Hash{0x13, 0x37}
-		rejectedTxs              []*rejectedTx
-		includedTxs              types.Transactions
-		gasUsed                  = uint64(0)
-		receipts                 = make(types.Receipts, 0)
-		txIndex                  = 0
+		signer      = types.MakeSigner(chainConfig, new(big.Int).SetUint64(pre.Env.Number), pre.Env.Timestamp)
+		gaspool     = new(core.GasPool)
+		blockHash   = common.Hash{0x13, 0x37}
+		rejectedTxs []*rejectedTx
+		includedTxs types.Transactions
+		gasUsed     = uint64(0)
+		receipts    = make(types.Receipts, 0)
+		txIndex     = 0
 	)
 
 	gaspool.AddGas(pre.Env.GasLimit)
@@ -190,10 +189,6 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 
 	// We save the current state of the Verkle Tree before applying the transactions.
 	// Note that if the Verkle fork isn't active, this will be a noop.
-	switch tr := statedb.GetTrie().(type) {
-	case *trie.VerkleTrie:
-		vtrpre = tr.Copy()
-	}
 
 	// If currentBaseFee is defined, add it to the vmContext.
 	if pre.Env.BaseFee != nil {
