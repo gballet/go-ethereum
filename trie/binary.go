@@ -18,6 +18,7 @@ package trie
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -30,7 +31,6 @@ import (
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/ethereum/go-verkle"
-	"github.com/holiman/uint256"
 	"github.com/zeebo/blake3"
 )
 
@@ -561,10 +561,8 @@ func DeserializeNode(serialized []byte, depth int) (BinaryNode, error) {
 // VerkleTrie is a wrapper around VerkleNode that implements the trie.Trie
 // interface so that Verkle trees can be reused verbatim.
 type VerkleTrie struct {
-	root       BinaryNode
-	db         *Database
-	pointCache *utils.PointCache
-	ended      bool
+	root BinaryNode
+	db   *Database
 }
 
 func (vt *VerkleTrie) ToDot() string {
@@ -591,10 +589,8 @@ func (n *InternalNode) toDot(parent, path string) string {
 
 func NewVerkleTrie(root BinaryNode, db *Database, pointCache *utils.PointCache, ended bool) *VerkleTrie {
 	return &VerkleTrie{
-		root:       root,
-		db:         db,
-		pointCache: pointCache,
-		ended:      ended,
+		root: root,
+		db:   db,
 	}
 }
 
@@ -617,6 +613,15 @@ var (
 	FlatDBVerkleNodeKeyPrefix = []byte("flat-") // prefix for flatdb keys
 )
 
+func GetTreeKey(addr common.Address, key []byte) []byte {
+	hasher := sha256.New()
+	hasher.Write(zero[:12])
+	hasher.Write(addr[:])
+	k := hasher.Sum(key[:31])
+	k[31] = key[31]
+	return k
+}
+
 // GetKey returns the sha3 preimage of a hashed key that was previously used
 // to store a value.
 func (trie *VerkleTrie) GetKey(key []byte) []byte {
@@ -627,9 +632,7 @@ func (trie *VerkleTrie) GetKey(key []byte) []byte {
 // not be modified by the caller. If a node was not found in the database, a
 // trie.MissingNodeError is returned.
 func (trie *VerkleTrie) GetStorage(addr common.Address, key []byte) ([]byte, error) {
-	pointEval := trie.pointCache.GetTreeKeyHeader(addr[:])
-	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(pointEval, key)
-	return trie.root.Get(k, trie.FlatdbNodeResolver)
+	return trie.root.Get(GetTreeKey(addr, key), trie.FlatdbNodeResolver)
 }
 
 // GetWithHashedKey returns the value, assuming that the key has already
@@ -640,7 +643,7 @@ func (trie *VerkleTrie) GetWithHashedKey(key []byte) ([]byte, error) {
 
 func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error) {
 	acc := &types.StateAccount{}
-	versionkey := t.pointCache.GetTreeKeyBasicDataCached(addr[:])
+	versionkey := GetTreeKey(addr, zero[:])
 	var (
 		values [][]byte
 		err    error
@@ -678,11 +681,7 @@ func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 	// been recreated after that, then its code keccak will NOT be 0. So return `nil` if
 	// the nonce, and values[10], and code keccak is 0.
 	if bytes.Equal(values[utils.BasicDataLeafKey], zero[:]) && len(values) > 10 && len(values[10]) > 0 && bytes.Equal(values[utils.CodeHashLeafKey], zero[:]) {
-		if !t.ended {
-			return nil, errDeletedAccount
-		} else {
-			return nil, nil
-		}
+		return nil, nil
 	}
 
 	acc.Nonce = binary.BigEndian.Uint64(values[utils.BasicDataLeafKey][utils.BasicDataNonceOffset:])
@@ -701,7 +700,7 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount,
 		err       error
 		basicData [32]byte
 		values    = make([][]byte, verkle.NodeWidth)
-		stem      = t.pointCache.GetTreeKeyBasicDataCached(addr[:])
+		stem      = GetTreeKey(addr, zero[:])
 	)
 
 	binary.BigEndian.PutUint32(basicData[utils.BasicDataCodeSizeOffset-1:], uint32(codeLen))
@@ -729,12 +728,32 @@ func (trie *VerkleTrie) UpdateStem(key []byte, values [][]byte) error {
 	return err
 }
 
+func GetTreeKeyStorageSlot(address common.Address, key []byte) []byte {
+	var k [32]byte
+
+	// Case when the key belongs to the account header
+	if bytes.Equal(key[:31], zero[:31]) && key[31] < 64 {
+		k[31] = 64 + key[31]
+		return GetTreeKey(address, k[:])
+	}
+
+	// Set the main storage offset
+	// note that the first 64 bytes of the main offset storage
+	// are unreachable, which is consistent with the spec and
+	// what verkle does.
+	k[0] = 1 // 1 << 248
+	copy(k[1:], key[:31])
+	k[31] = key[31]
+
+	return GetTreeKey(address, k[:])
+}
+
 // Update associates key with value in the trie. If value has length zero, any
 // existing value is deleted from the trie. The value bytes must not be modified
 // by the caller while they are stored in the trie. If a node was not found in the
 // database, a trie.MissingNodeError is returned.
 func (trie *VerkleTrie) UpdateStorage(address common.Address, key, value []byte) error {
-	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(trie.pointCache.GetTreeKeyHeader(address[:]), key)
+	k := GetTreeKeyStorageSlot(address, key)
 	var v [32]byte
 	if len(value) >= 32 {
 		copy(v[:], value[:32])
@@ -756,8 +775,7 @@ func (t *VerkleTrie) DeleteAccount(addr common.Address) error {
 // Delete removes any existing value for key from the trie. If a node was not
 // found in the database, a trie.MissingNodeError is returned.
 func (trie *VerkleTrie) DeleteStorage(addr common.Address, key []byte) error {
-	pointEval := trie.pointCache.GetTreeKeyHeader(addr[:])
-	k := utils.GetTreeKeyStorageSlotWithEvaluatedAddress(pointEval, key)
+	k := GetTreeKey(addr, key)
 	var zero [32]byte
 	root, err := trie.root.Insert(k, zero[:], trie.FlatdbNodeResolver)
 	if err != nil {
@@ -810,9 +828,8 @@ func (trie *VerkleTrie) Prove(key []byte, proofDb ethdb.KeyValueWriter) error {
 
 func (trie *VerkleTrie) Copy() *VerkleTrie {
 	return &VerkleTrie{
-		root:       trie.root.Copy(),
-		db:         trie.db,
-		pointCache: trie.pointCache,
+		root: trie.root.Copy(),
+		db:   trie.db,
 	}
 }
 
@@ -929,7 +946,9 @@ func (t *VerkleTrie) UpdateContractCode(addr common.Address, codeHash common.Has
 		groupOffset := (chunknr + 128) % 256
 		if groupOffset == 0 /* start of new group */ || chunknr == 0 /* first chunk in header group */ {
 			values = make([][]byte, verkle.NodeWidth)
-			key = utils.GetTreeKeyCodeChunkWithEvaluatedAddress(t.pointCache.GetTreeKeyHeader(addr[:]), uint256.NewInt(chunknr))
+			var offset [32]byte
+			binary.LittleEndian.PutUint64(offset[24:], chunknr+128)
+			key = GetTreeKey(addr, offset[:])
 		}
 		values[groupOffset] = chunks[i : i+32]
 
