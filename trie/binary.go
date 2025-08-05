@@ -129,7 +129,7 @@ func (h HashedNode) Insert(key []byte, value []byte, resolver NodeResolverFn) (B
 }
 
 func (h HashedNode) Commit() common.Hash {
-	panic("not implemented") // TODO: Implement
+	return common.Hash(h)
 }
 
 func (h HashedNode) Copy() BinaryNode {
@@ -137,7 +137,7 @@ func (h HashedNode) Copy() BinaryNode {
 }
 
 func (h HashedNode) Hash() common.Hash {
-	panic("not implemented") // TODO: Implement
+	return common.Hash(h)
 }
 
 func (h HashedNode) GetValuesAtStem(_ []byte, _ NodeResolverFn) ([][]byte, error) {
