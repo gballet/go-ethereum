@@ -187,7 +187,7 @@ func (s *StateDB) Snaps() *snapshot.Tree {
 }
 
 func (s *StateDB) NewAccessWitness() *AccessWitness {
-	return NewAccessWitness(s.db.(*cachingDB).addrToPoint)
+	return NewAccessWitness()
 }
 
 func (s *StateDB) Witness() *AccessWitness {

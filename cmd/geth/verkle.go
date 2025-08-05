@@ -179,8 +179,8 @@ func convertToVerkle(ctx *cli.Context) error {
 		if addr == nil {
 			return fmt.Errorf("could not find preimage for address %x %v %v", accIt.Hash(), acc, accIt.Error())
 		}
-		addrPoint := tutils.EvaluateAddressPoint(addr)
-		stem := tutils.GetTreeKeyBasicDataEvaluatedAddress(addrPoint)
+		var zero [32]byte
+		stem := tutils.GetTreeKey(common.BytesToAddress(addr), zero[:])
 
 		// Store the account code if present
 		if !bytes.Equal(acc.CodeHash, types.EmptyRootHash[:]) {
@@ -193,7 +193,7 @@ func convertToVerkle(ctx *cli.Context) error {
 
 			for i := 128; i < len(chunks)/32; {
 				values := make([][]byte, 256)
-				chunkkey := tutils.GetTreeKeyCodeChunkWithEvaluatedAddress(addrPoint, uint256.NewInt(uint64(i)))
+				chunkkey := tutils.GetTreeKeyCodeChunk(common.BytesToAddress(addr), uint256.NewInt(uint64(i)))
 				j := i
 				for ; (j-i) < 256 && j < len(chunks)/32; j++ {
 					values[(j-128)%256] = chunks[32*j : 32*(j+1)]
@@ -245,7 +245,7 @@ func convertToVerkle(ctx *cli.Context) error {
 				}
 
 				// Slot not in the header group, get its tree key
-				slotkey := tutils.GetTreeKeyStorageSlotWithEvaluatedAddress(addrPoint, slotnr)
+				slotkey := tutils.GetTreeKeyStorageSlot(common.BytesToAddress(addr), slotnr)
 
 				// Create the group if need be
 				values := translatedStorage[string(slotkey[:31])]
@@ -340,7 +340,7 @@ func checkChildren(root verkle.VerkleNode, resolver verkle.NodeResolverFn) error
 	case *verkle.LeafNode:
 		// sanity check: ensure at least one value is non-zero
 
-		for i := 0; i < verkle.NodeWidth; i++ {
+		for i := range verkle.NodeWidth {
 			if len(node.Value(i)) != 0 {
 				return nil
 			}

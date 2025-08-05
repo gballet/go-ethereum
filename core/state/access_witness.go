@@ -42,15 +42,12 @@ var zeroTreeIndex uint256.Int
 type AccessWitness struct {
 	branches map[branchAccessKey]mode
 	chunks   map[chunkAccessKey]mode
-
-	pointCache *utils.PointCache
 }
 
-func NewAccessWitness(pointCache *utils.PointCache) *AccessWitness {
+func NewAccessWitness() *AccessWitness {
 	return &AccessWitness{
-		branches:   make(map[branchAccessKey]mode),
-		chunks:     make(map[chunkAccessKey]mode),
-		pointCache: pointCache,
+		branches: make(map[branchAccessKey]mode),
+		chunks:   make(map[chunkAccessKey]mode),
 	}
 }
 
@@ -72,8 +69,12 @@ func (aw *AccessWitness) Keys() [][]byte {
 	// TODO: consider if parallelizing this is worth it, probably depending on len(aw.chunks).
 	keys := make([][]byte, 0, len(aw.chunks))
 	for chunk := range aw.chunks {
-		basePoint := aw.pointCache.GetTreeKeyHeader(chunk.addr[:])
-		key := utils.GetTreeKeyWithEvaluatedAddess(basePoint, &chunk.treeIndex, chunk.leafKey)
+		// TODO this is inherited from verkle, and needs to be more
+		// efficient, but right now, this is meant to unblock Gabriel.
+		chunkOffset := new(uint256.Int).Lsh(&chunk.treeIndex, 8)
+		chunkOffset.Add(chunkOffset, uint256.NewInt(uint64(chunk.leafKey)))
+
+		key := utils.GetTreeKey(chunk.addr, chunkOffset.Bytes())
 		keys = append(keys, key)
 	}
 	return keys
@@ -81,9 +82,8 @@ func (aw *AccessWitness) Keys() [][]byte {
 
 func (aw *AccessWitness) Copy() *AccessWitness {
 	naw := &AccessWitness{
-		branches:   make(map[branchAccessKey]mode),
-		chunks:     make(map[chunkAccessKey]mode),
-		pointCache: aw.pointCache,
+		branches: make(map[branchAccessKey]mode),
+		chunks:   make(map[chunkAccessKey]mode),
 	}
 	naw.Merge(aw)
 	return naw
@@ -157,7 +157,9 @@ func (aw *AccessWitness) TouchTxTarget(targetAddr []byte, sendsValue, doesntExis
 }
 
 func (aw *AccessWitness) TouchSlotAndChargeGas(addr []byte, slot common.Hash, isWrite bool, availableGas uint64, warmCostCharging bool) uint64 {
-	treeIndex, subIndex := utils.GetTreeKeyStorageSlotTreeIndexes(slot.Bytes())
+	slotkey := utils.GetTreeKeyStorageSlot(common.BytesToAddress(addr), slot.Bytes())
+	subIndex := slotkey[31]
+	treeIndex := uint256.NewInt(0).SetBytes(slotkey[:31])
 	_, wanted := aw.touchAddressAndChargeGas(addr, *treeIndex, subIndex, isWrite, availableGas)
 	if wanted == 0 && warmCostCharging {
 		wanted = params.WarmStorageReadCostEIP2929
