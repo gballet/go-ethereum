@@ -150,7 +150,11 @@ func (h HashedNode) InsertValuesAtStem(key []byte, values [][]byte, resolver Nod
 		return h, errors.New("resolver is nil")
 	}
 
-	resolved, err := resolver(h[:])
+	path, err := keyToPath(depth, key)
+	if err != nil {
+		return nil, fmt.Errorf("resolving node in insert: %w", err)
+	}
+	resolved, err := resolver(path)
 	if err != nil {
 		return nil, fmt.Errorf("insert error: %w", err)
 	}
@@ -367,6 +371,21 @@ func NewBinaryNode() BinaryNode {
 	return Empty{}
 }
 
+func keyToPath(depth int, key []byte) ([]byte, error) {
+	path := make([]byte, 0, depth+1)
+
+	if depth > 31*8 {
+		return nil, errors.New("node too deep")
+	}
+
+	for i := range depth + 1 {
+		bit := key[i/8] >> (7 - (i % 8)) & 1
+		path = append(path, bit)
+	}
+
+	return path, nil
+}
+
 func (bt *InternalNode) GetValuesAtStem(stem []byte, resolver NodeResolverFn) ([][]byte, error) {
 	if bt.depth > 31*8 {
 		return nil, errors.New("node too deep")
@@ -380,8 +399,12 @@ func (bt *InternalNode) GetValuesAtStem(stem []byte, resolver NodeResolverFn) ([
 		child = &bt.right
 	}
 
-	if hn, ok := (*child).(HashedNode); ok {
-		data, err := resolver(hn[:])
+	if _, ok := (*child).(HashedNode); ok {
+		path, err := keyToPath(bt.depth, stem)
+		if err != nil {
+			return nil, fmt.Errorf("GetValuesAtStem resolve error: %w", err)
+		}
+		data, err := resolver(path)
 		if err != nil {
 			return nil, fmt.Errorf("GetValuesAtStem resolve error: %w", err)
 		}
