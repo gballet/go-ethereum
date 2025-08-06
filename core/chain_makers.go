@@ -384,7 +384,7 @@ func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine
 		b := &BlockGen{i: i, chain: blocks, parent: parent, statedb: statedb, config: config, engine: engine}
 		b.header = makeHeader(chainreader, parent, statedb, b.engine)
 		preState := statedb.Copy()
-		fmt.Println("prestate", preState.GetTrie().(*trie.VerkleTrie).ToDot())
+		fmt.Println("prestate", preState.GetTrie().(*trie.BinaryTrie).ToDot())
 
 		if config.IsVerkle(b.header.Number, b.header.Time) {
 			if !config.IsVerkle(b.parent.Number(), b.parent.Time()) {

@@ -557,14 +557,14 @@ func DeserializeNode(serialized []byte, depth int) (BinaryNode, error) {
 	}
 }
 
-// VerkleTrie is a wrapper around VerkleNode that implements the trie.Trie
+// BinaryTrie is a wrapper around VerkleNode that implements the trie.Trie
 // interface so that Verkle trees can be reused verbatim.
-type VerkleTrie struct {
+type BinaryTrie struct {
 	root BinaryNode
 	db   *Database
 }
 
-func (vt *VerkleTrie) ToDot() string {
+func (vt *BinaryTrie) ToDot() string {
 	vt.root.Commit()
 	return vt.root.toDot("", "")
 }
@@ -586,14 +586,14 @@ func (n *InternalNode) toDot(parent, path string) string {
 	return ret
 }
 
-func NewVerkleTrie(root BinaryNode, db *Database, ended bool) *VerkleTrie {
-	return &VerkleTrie{
+func NewVerkleTrie(root BinaryNode, db *Database, ended bool) *BinaryTrie {
+	return &BinaryTrie{
 		root: root,
 		db:   db,
 	}
 }
 
-func (trie *VerkleTrie) FlatdbNodeResolver(path []byte) ([]byte, error) {
+func (trie *BinaryTrie) FlatdbNodeResolver(path []byte) ([]byte, error) {
 	return trie.db.diskdb.Get(append(FlatDBVerkleNodeKeyPrefix, path...))
 }
 
@@ -614,24 +614,24 @@ var (
 
 // GetKey returns the sha3 preimage of a hashed key that was previously used
 // to store a value.
-func (trie *VerkleTrie) GetKey(key []byte) []byte {
+func (trie *BinaryTrie) GetKey(key []byte) []byte {
 	return key
 }
 
 // Get returns the value for key stored in the trie. The value bytes must
 // not be modified by the caller. If a node was not found in the database, a
 // trie.MissingNodeError is returned.
-func (trie *VerkleTrie) GetStorage(addr common.Address, key []byte) ([]byte, error) {
+func (trie *BinaryTrie) GetStorage(addr common.Address, key []byte) ([]byte, error) {
 	return trie.root.Get(utils.GetTreeKey(addr, key), trie.FlatdbNodeResolver)
 }
 
 // GetWithHashedKey returns the value, assuming that the key has already
 // been hashed.
-func (trie *VerkleTrie) GetWithHashedKey(key []byte) ([]byte, error) {
+func (trie *BinaryTrie) GetWithHashedKey(key []byte) ([]byte, error) {
 	return trie.root.Get(key, trie.FlatdbNodeResolver)
 }
 
-func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error) {
+func (t *BinaryTrie) GetAccount(addr common.Address) (*types.StateAccount, error) {
 	acc := &types.StateAccount{}
 	versionkey := utils.GetTreeKey(addr, zero[:])
 	var (
@@ -685,7 +685,7 @@ func (t *VerkleTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 
 var zero [32]byte
 
-func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount, codeLen int) error {
+func (t *BinaryTrie) UpdateAccount(addr common.Address, acc *types.StateAccount, codeLen int) error {
 	var (
 		err       error
 		basicData [32]byte
@@ -712,7 +712,7 @@ func (t *VerkleTrie) UpdateAccount(addr common.Address, acc *types.StateAccount,
 	return err
 }
 
-func (trie *VerkleTrie) UpdateStem(key []byte, values [][]byte) error {
+func (trie *BinaryTrie) UpdateStem(key []byte, values [][]byte) error {
 	var err error
 	trie.root, err = trie.root.InsertValuesAtStem(key, values, trie.FlatdbNodeResolver, 0)
 	return err
@@ -722,7 +722,7 @@ func (trie *VerkleTrie) UpdateStem(key []byte, values [][]byte) error {
 // existing value is deleted from the trie. The value bytes must not be modified
 // by the caller while they are stored in the trie. If a node was not found in the
 // database, a trie.MissingNodeError is returned.
-func (trie *VerkleTrie) UpdateStorage(address common.Address, key, value []byte) error {
+func (trie *BinaryTrie) UpdateStorage(address common.Address, key, value []byte) error {
 	k := utils.GetTreeKeyStorageSlot(address, key)
 	var v [32]byte
 	if len(value) >= 32 {
@@ -738,13 +738,13 @@ func (trie *VerkleTrie) UpdateStorage(address common.Address, key, value []byte)
 	return nil
 }
 
-func (t *VerkleTrie) DeleteAccount(addr common.Address) error {
+func (t *BinaryTrie) DeleteAccount(addr common.Address) error {
 	return nil
 }
 
 // Delete removes any existing value for key from the trie. If a node was not
 // found in the database, a trie.MissingNodeError is returned.
-func (trie *VerkleTrie) DeleteStorage(addr common.Address, key []byte) error {
+func (trie *BinaryTrie) DeleteStorage(addr common.Address, key []byte) error {
 	k := utils.GetTreeKey(addr, key)
 	var zero [32]byte
 	root, err := trie.root.Insert(k, zero[:], trie.FlatdbNodeResolver)
@@ -757,13 +757,13 @@ func (trie *VerkleTrie) DeleteStorage(addr common.Address, key []byte) error {
 
 // Hash returns the root hash of the trie. It does not write to the database and
 // can be used even if the trie doesn't have one.
-func (trie *VerkleTrie) Hash() common.Hash {
+func (trie *BinaryTrie) Hash() common.Hash {
 	return trie.root.Commit()
 }
 
 // Commit writes all nodes to the trie's memory database, tracking the internal
 // and external (for account tries) references.
-func (trie *VerkleTrie) Commit(_ bool) (common.Hash, *trienode.NodeSet, error) {
+func (trie *BinaryTrie) Commit(_ bool) (common.Hash, *trienode.NodeSet, error) {
 	root := trie.root.(*InternalNode)
 	nodeset := trienode.NewNodeSet(common.Hash{})
 
@@ -781,7 +781,7 @@ func (trie *VerkleTrie) Commit(_ bool) (common.Hash, *trienode.NodeSet, error) {
 
 // NodeIterator returns an iterator that returns nodes of the trie. Iteration
 // starts at the key after the given start key.
-func (trie *VerkleTrie) NodeIterator(startKey []byte) (NodeIterator, error) {
+func (trie *BinaryTrie) NodeIterator(startKey []byte) (NodeIterator, error) {
 	return newVerkleNodeIterator(trie, nil)
 }
 
@@ -792,18 +792,18 @@ func (trie *VerkleTrie) NodeIterator(startKey []byte) (NodeIterator, error) {
 // If the trie does not contain a value for key, the returned proof contains all
 // nodes of the longest existing prefix of the key (at least the root), ending
 // with the node that proves the absence of the key.
-func (trie *VerkleTrie) Prove(key []byte, proofDb ethdb.KeyValueWriter) error {
+func (trie *BinaryTrie) Prove(key []byte, proofDb ethdb.KeyValueWriter) error {
 	panic("not implemented")
 }
 
-func (trie *VerkleTrie) Copy() *VerkleTrie {
-	return &VerkleTrie{
+func (trie *BinaryTrie) Copy() *BinaryTrie {
+	return &BinaryTrie{
 		root: trie.root.Copy(),
 		db:   trie.db,
 	}
 }
 
-func (trie *VerkleTrie) IsVerkle() bool {
+func (trie *BinaryTrie) IsVerkle() bool {
 	return true
 }
 
@@ -815,7 +815,7 @@ func SerializeProof(proof *verkle.VerkleProof) (*verkle.VerkleProof, verkle.Stat
 	return nil, nil, nil
 }
 
-func ProveAndSerialize(pretrie, posttrie *VerkleTrie, keys [][]byte, resolver NodeResolverFn) (*verkle.VerkleProof, verkle.StateDiff, error) {
+func ProveAndSerialize(pretrie, posttrie *BinaryTrie, keys [][]byte, resolver NodeResolverFn) (*verkle.VerkleProof, verkle.StateDiff, error) {
 	var postroot BinaryNode
 	if posttrie != nil {
 		postroot = posttrie.root
@@ -896,16 +896,16 @@ func ChunkifyCode(code []byte) ChunkedCode {
 	return chunks
 }
 
-func (t *VerkleTrie) SetStorageRootConversion(addr common.Address, root common.Hash) {
+func (t *BinaryTrie) SetStorageRootConversion(addr common.Address, root common.Hash) {
 	t.db.SetStorageRootConversion(addr, root)
 }
 
-func (t *VerkleTrie) ClearStrorageRootConversion(addr common.Address) {
+func (t *BinaryTrie) ClearStrorageRootConversion(addr common.Address) {
 	t.db.ClearStorageRootConversion(addr)
 }
 
 // Note: the basic data leaf needs to have been previously created for this to work
-func (t *VerkleTrie) UpdateContractCode(addr common.Address, codeHash common.Hash, code []byte) error {
+func (t *BinaryTrie) UpdateContractCode(addr common.Address, codeHash common.Hash, code []byte) error {
 	var (
 		chunks = ChunkifyCode(code)
 		values [][]byte

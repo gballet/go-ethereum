@@ -165,14 +165,14 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	}
 	var (
 		parentStateRoot, statedb = MakePreState(rawdb.NewMemoryDatabase(), chainConfig, pre, chainConfig.IsVerkle(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp))
-		signer      = types.MakeSigner(chainConfig, new(big.Int).SetUint64(pre.Env.Number), pre.Env.Timestamp)
-		gaspool     = new(core.GasPool)
-		blockHash   = common.Hash{0x13, 0x37}
-		rejectedTxs []*rejectedTx
-		includedTxs types.Transactions
-		gasUsed     = uint64(0)
-		receipts    = make(types.Receipts, 0)
-		txIndex     = 0
+		signer                   = types.MakeSigner(chainConfig, new(big.Int).SetUint64(pre.Env.Number), pre.Env.Timestamp)
+		gaspool                  = new(core.GasPool)
+		blockHash                = common.Hash{0x13, 0x37}
+		rejectedTxs              []*rejectedTx
+		includedTxs              types.Transactions
+		gasUsed                  = uint64(0)
+		receipts                 = make(types.Receipts, 0)
+		txIndex                  = 0
 	)
 
 	gaspool.AddGas(pre.Env.GasLimit)
@@ -433,7 +433,7 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 	statedb, _ := state.New(types.EmptyRootHash, sdb, nil)
 
 	if pre.Env.Ended != nil && *pre.Env.Ended {
-		vtr := statedb.GetTrie().(*trie.VerkleTrie)
+		vtr := statedb.GetTrie().(*trie.BinaryTrie)
 
 		// create the vkt, should be empty on first insert
 		for k, v := range pre.VKT {
@@ -478,7 +478,7 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 	if verkle {
 		// If the current tree is a VerkleTrie, it means the state conversion has ended.
 		// We don't need to continue with conversion setups and can return early.
-		if _, ok := statedb.GetTrie().(*trie.VerkleTrie); ok {
+		if _, ok := statedb.GetTrie().(*trie.BinaryTrie); ok {
 			return parentRoot, statedb
 		}
 
@@ -530,9 +530,9 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		}
 
 		// Load verkle tree from prestate
-		var vtr *trie.VerkleTrie
+		var vtr *trie.BinaryTrie
 		switch tr := statedb.GetTrie().(type) {
-		case *trie.VerkleTrie:
+		case *trie.BinaryTrie:
 			vtr = tr
 		case *trie.TransitionTrie:
 			vtr = tr.Overlay()

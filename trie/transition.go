@@ -26,12 +26,12 @@ import (
 )
 
 type TransitionTrie struct {
-	overlay *VerkleTrie
+	overlay *BinaryTrie
 	base    *SecureTrie
 	storage bool
 }
 
-func NewTransitionTree(base *SecureTrie, overlay *VerkleTrie, st bool) *TransitionTrie {
+func NewTransitionTree(base *SecureTrie, overlay *BinaryTrie, st bool) *TransitionTrie {
 	return &TransitionTrie{
 		overlay: overlay,
 		base:    base,
@@ -44,7 +44,7 @@ func (t *TransitionTrie) Base() *SecureTrie {
 }
 
 // TODO(gballet/jsign): consider removing this API.
-func (t *TransitionTrie) Overlay() *VerkleTrie {
+func (t *TransitionTrie) Overlay() *BinaryTrie {
 	return t.overlay
 }
 

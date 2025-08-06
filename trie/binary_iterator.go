@@ -26,14 +26,14 @@ type verkleNodeIteratorState struct {
 }
 
 type verkleNodeIterator struct {
-	trie    *VerkleTrie
+	trie    *BinaryTrie
 	current BinaryNode
 	lastErr error
 
 	stack []verkleNodeIteratorState
 }
 
-func newVerkleNodeIterator(trie *VerkleTrie, _ []byte) (NodeIterator, error) {
+func newVerkleNodeIterator(trie *BinaryTrie, _ []byte) (NodeIterator, error) {
 	if trie.Hash() == zero {
 		return new(nodeIterator), nil
 	}

@@ -374,7 +374,7 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 			return nil, err
 		}
 
-		return trie.NewTransitionTree(mpt.(*trie.SecureTrie), vkt.(*trie.VerkleTrie), false), nil
+		return trie.NewTransitionTree(mpt.(*trie.SecureTrie), vkt.(*trie.BinaryTrie), false), nil
 	}
 
 	log.Info("not in transition, opening mpt alone", "root", root)
@@ -400,7 +400,7 @@ func (db *cachingDB) OpenStorageTrie(stateRoot common.Hash, address common.Addre
 		// Return a "storage trie" that is an adapter between the storge MPT
 		// and the unique verkle tree.
 		switch self := self.(type) {
-		case *trie.VerkleTrie:
+		case *trie.BinaryTrie:
 			return trie.NewTransitionTree(mpt.(*trie.StateTrie), self, true), nil
 		case *trie.TransitionTrie:
 			return trie.NewTransitionTree(mpt.(*trie.StateTrie), self.Overlay(), true), nil
@@ -417,7 +417,7 @@ func (db *cachingDB) OpenStorageTrie(stateRoot common.Hash, address common.Addre
 		// Return a "storage trie" that is an adapter between the storge MPT
 		// and the unique verkle tree.
 		switch self := self.(type) {
-		case *trie.VerkleTrie:
+		case *trie.BinaryTrie:
 			return trie.NewTransitionTree(mpt.(*trie.SecureTrie), self, true), nil
 		case *trie.TransitionTrie:
 			return trie.NewTransitionTree(mpt.(*trie.SecureTrie), self.Overlay(), true), nil
@@ -436,7 +436,7 @@ func (db *cachingDB) CopyTrie(t Trie) Trie {
 		return t.Copy()
 	case *trie.TransitionTrie:
 		return t.Copy()
-	case *trie.VerkleTrie:
+	case *trie.BinaryTrie:
 		return t.Copy()
 	default:
 		panic(fmt.Errorf("unknown trie type %T", t))
