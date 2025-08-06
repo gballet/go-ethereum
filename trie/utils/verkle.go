@@ -54,7 +54,8 @@ func GetTreeKey(addr common.Address, key []byte) []byte {
 	hasher := sha256.New()
 	hasher.Write(zero[:12])
 	hasher.Write(addr[:])
-	k := hasher.Sum(key[:31])
+	hasher.Write(key[:31])
+	k := hasher.Sum(nil)
 	k[31] = key[31]
 	return k
 }
