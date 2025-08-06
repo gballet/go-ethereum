@@ -132,7 +132,9 @@ func (h HashedNode) Commit() common.Hash {
 }
 
 func (h HashedNode) Copy() BinaryNode {
-	panic("not implemented") // TODO: Implement
+	var nh common.Hash
+	nh = common.Hash(h)
+	return HashedNode(nh)
 }
 
 func (h HashedNode) Hash() common.Hash {
@@ -161,7 +163,10 @@ func (h HashedNode) InsertValuesAtStem(key []byte, values [][]byte, resolver Nod
 }
 
 func (h HashedNode) toDot(parent string, path string) string {
-	panic("not implemented") // TODO: Implement
+	me := fmt.Sprintf("hash%s", path)
+	ret := fmt.Sprintf("%s [label=\"%x\"]\n", me, h)
+	ret = fmt.Sprintf("%s %s -> %s\n", ret, parent, me)
+	return ret
 }
 
 func (h HashedNode) CollectNodes([]byte, NodeFlushFn) error {
