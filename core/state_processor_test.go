@@ -1106,6 +1106,7 @@ func TestProcessVerkleBalanceOpcode(t *testing.T) {
 		gen.AddTx(tx)
 	})
 
+	var zero [32]byte
 	account2BalanceTreeKey := utils.GetTreeKey(account2, zero[:])
 
 	var stateDiffIdx = -1
@@ -1119,7 +1120,6 @@ func TestProcessVerkleBalanceOpcode(t *testing.T) {
 		t.Fatalf("no state diff found for stem")
 	}
 
-	var zero [32]byte
 	balanceStateDiff := statediff[0][stateDiffIdx].SuffixDiffs[0]
 	if balanceStateDiff.Suffix != utils.BasicDataLeafKey {
 		t.Fatalf("invalid suffix diff")
