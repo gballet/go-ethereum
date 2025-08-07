@@ -26,7 +26,7 @@ import (
 )
 
 func TestVerkleIterator(t *testing.T) {
-	trie := NewVerkleTrie(NewBinaryNode(), NewDatabase(rawdb.NewMemoryDatabase()), true)
+	trie := NewBinaryTrie(NewBinaryNode(), NewDatabase(rawdb.NewMemoryDatabase()), true)
 	account0 := &types.StateAccount{
 		Nonce:    1,
 		Balance:  big.NewInt(2),

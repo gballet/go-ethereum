@@ -584,7 +584,7 @@ func (n *InternalNode) toDot(parent, path string) string {
 	return ret
 }
 
-func NewVerkleTrie(root BinaryNode, db *Database, ended bool) *BinaryTrie {
+func NewBinaryTrie(root BinaryNode, db *Database, ended bool) *BinaryTrie {
 	return &BinaryTrie{
 		root: root,
 		db:   db,

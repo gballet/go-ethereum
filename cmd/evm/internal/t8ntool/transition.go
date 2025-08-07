@@ -601,7 +601,7 @@ func VerkleRoot(ctx *cli.Context) error {
 }
 
 func genVktFromAlloc(alloc core.GenesisAlloc) (*trie.BinaryTrie, error) {
-	vkt := trie.NewVerkleTrie(trie.NewBinaryNode(), trie.NewDatabase(rawdb.NewMemoryDatabase()), true)
+	vkt := trie.NewBinaryTrie(trie.NewBinaryNode(), trie.NewDatabase(rawdb.NewMemoryDatabase()), true)
 
 	for addr, acc := range alloc {
 		for slot, value := range acc.Storage {

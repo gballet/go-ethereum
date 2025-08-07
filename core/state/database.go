@@ -337,14 +337,14 @@ func (db *cachingDB) openMPTTrie(root common.Hash) (Trie, error) {
 func (db *cachingDB) openVKTrie(_ common.Hash) (Trie, error) {
 	payload, err := db.DiskDB().Get(trie.FlatDBVerkleNodeKeyPrefix)
 	if err != nil {
-		return trie.NewVerkleTrie(trie.NewBinaryNode(), db.triedb, db.CurrentTransitionState.Ended), nil
+		return trie.NewBinaryTrie(trie.NewBinaryNode(), db.triedb, db.CurrentTransitionState.Ended), nil
 	}
 
 	r, err := trie.DeserializeNode(payload, 0)
 	if err != nil {
 		panic(err)
 	}
-	return trie.NewVerkleTrie(r, db.triedb, db.CurrentTransitionState.Ended), err
+	return trie.NewBinaryTrie(r, db.triedb, db.CurrentTransitionState.Ended), err
 }
 
 // OpenTrie opens the main account trie at a specific root hash.
