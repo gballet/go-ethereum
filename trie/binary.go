@@ -35,7 +35,7 @@ import (
 
 type (
 	NodeFlushFn    func([]byte, BinaryNode)
-	NodeResolverFn func([]byte) ([]byte, error)
+	NodeResolverFn func([]byte, common.Hash) ([]byte, error)
 )
 
 type BinaryNode interface {
@@ -115,7 +115,7 @@ func (h HashedNode) Insert(key []byte, value []byte, resolver NodeResolverFn) (B
 		return h, errors.New("resolver is nil")
 	}
 
-	resolved, err := resolver(h[:])
+	resolved, err := resolver(h[:], common.Hash(h))
 	if err != nil {
 		return nil, fmt.Errorf("insert error: %w", err)
 	}
@@ -132,8 +132,7 @@ func (h HashedNode) Commit() common.Hash {
 }
 
 func (h HashedNode) Copy() BinaryNode {
-	var nh common.Hash
-	nh = common.Hash(h)
+	nh := common.Hash(h)
 	return HashedNode(nh)
 }
 
@@ -154,7 +153,7 @@ func (h HashedNode) InsertValuesAtStem(key []byte, values [][]byte, resolver Nod
 	if err != nil {
 		return nil, fmt.Errorf("resolving node in insert: %w", err)
 	}
-	resolved, err := resolver(path)
+	resolved, err := resolver(path, common.Hash(h))
 	if err != nil {
 		return nil, fmt.Errorf("insert error: %w", err)
 	}
@@ -399,12 +398,12 @@ func (bt *InternalNode) GetValuesAtStem(stem []byte, resolver NodeResolverFn) ([
 		child = &bt.right
 	}
 
-	if _, ok := (*child).(HashedNode); ok {
+	if hn, ok := (*child).(HashedNode); ok {
 		path, err := keyToPath(bt.depth, stem)
 		if err != nil {
 			return nil, fmt.Errorf("GetValuesAtStem resolve error: %w", err)
 		}
-		data, err := resolver(path)
+		data, err := resolver(path, common.Hash(hn))
 		if err != nil {
 			return nil, fmt.Errorf("GetValuesAtStem resolve error: %w", err)
 		}
@@ -553,7 +552,7 @@ func SerializeNode(node BinaryNode) []byte {
 
 func DeserializeNode(serialized []byte, depth int) (BinaryNode, error) {
 	if len(serialized) == 0 {
-		return nil, errors.New("empty serialized node")
+		return Empty{}, nil
 	}
 
 	switch serialized[0] {
@@ -621,7 +620,10 @@ func NewVerkleTrie(root BinaryNode, db *Database, ended bool) *BinaryTrie {
 	}
 }
 
-func (trie *BinaryTrie) FlatdbNodeResolver(path []byte) ([]byte, error) {
+func (trie *BinaryTrie) FlatdbNodeResolver(path []byte, hash common.Hash) ([]byte, error) {
+	if hash == (common.Hash{}) {
+		return nil, nil // empty node
+	}
 	return trie.db.diskdb.Get(append(FlatDBVerkleNodeKeyPrefix, path...))
 }
 
