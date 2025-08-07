@@ -23,16 +23,15 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/trie/trienode"
-	"github.com/ethereum/go-verkle"
 )
 
 type TransitionTrie struct {
-	overlay *VerkleTrie
+	overlay *BinaryTrie
 	base    *SecureTrie
 	storage bool
 }
 
-func NewTransitionTree(base *SecureTrie, overlay *VerkleTrie, st bool) *TransitionTrie {
+func NewTransitionTree(base *SecureTrie, overlay *BinaryTrie, st bool) *TransitionTrie {
 	return &TransitionTrie{
 		overlay: overlay,
 		base:    base,
@@ -45,7 +44,7 @@ func (t *TransitionTrie) Base() *SecureTrie {
 }
 
 // TODO(gballet/jsign): consider removing this API.
-func (t *TransitionTrie) Overlay() *VerkleTrie {
+func (t *TransitionTrie) Overlay() *BinaryTrie {
 	return t.overlay
 }
 
@@ -176,11 +175,11 @@ func (t *TransitionTrie) IsVerkle() bool {
 	return true
 }
 
-func (t *TransitionTrie) UpdateStem(key []byte, values [][]byte) error {
+func (t *TransitionTrie) UpdateStem(key []byte, values [][]byte) (BinaryNode, error) {
 	trie := t.overlay
 	switch root := trie.root.(type) {
-	case *verkle.InternalNode:
-		return root.InsertValuesAtStem(key, values, t.overlay.FlatdbNodeResolver)
+	case *InternalNode:
+		return root.InsertValuesAtStem(key, values, t.overlay.FlatdbNodeResolver, 0)
 	default:
 		panic("invalid root type")
 	}

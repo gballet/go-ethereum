@@ -165,7 +165,6 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	}
 	var (
 		parentStateRoot, statedb = MakePreState(rawdb.NewMemoryDatabase(), chainConfig, pre, chainConfig.IsVerkle(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp))
-		vtrpre                   *trie.VerkleTrie
 		signer                   = types.MakeSigner(chainConfig, new(big.Int).SetUint64(pre.Env.Number), pre.Env.Timestamp)
 		gaspool                  = new(core.GasPool)
 		blockHash                = common.Hash{0x13, 0x37}
@@ -190,10 +189,6 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 
 	// We save the current state of the Verkle Tree before applying the transactions.
 	// Note that if the Verkle fork isn't active, this will be a noop.
-	switch tr := statedb.GetTrie().(type) {
-	case *trie.VerkleTrie:
-		vtrpre = tr.Copy()
-	}
 
 	// If currentBaseFee is defined, add it to the vmContext.
 	if pre.Env.BaseFee != nil {
@@ -359,24 +354,25 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig,
 	// Add the witness to the execution result
 	var vktProof *verkle.VerkleProof
 	var vktStateDiff verkle.StateDiff
-	if chainConfig.IsVerkle(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) {
-		keys := statedb.Witness().Keys()
-		if len(keys) > 0 && vtrpre != nil {
-			var proofTrie *trie.VerkleTrie
-			switch tr := statedb.GetTrie().(type) {
-			case *trie.VerkleTrie:
-				proofTrie = tr
-			case *trie.TransitionTrie:
-				proofTrie = tr.Overlay()
-			default:
-				return nil, nil, fmt.Errorf("invalid tree type in proof generation: %v", tr)
-			}
-			vktProof, vktStateDiff, err = trie.ProveAndSerialize(vtrpre, proofTrie, keys, vtrpre.FlatdbNodeResolver)
-			if err != nil {
-				return nil, nil, fmt.Errorf("error generating verkle proof for block %d: %w", pre.Env.Number, err)
-			}
-		}
-	}
+	// TODO(gballet) uncomment when a proof system has been selected
+	// if chainConfig.IsVerkle(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp) {
+	// 	keys := statedb.Witness().Keys()
+	// 	if len(keys) > 0 && vtrpre != nil {
+	// 		var proofTrie *trie.VerkleTrie
+	// 		switch tr := statedb.GetTrie().(type) {
+	// 		case *trie.VerkleTrie:
+	// 			proofTrie = tr
+	// 		case *trie.TransitionTrie:
+	// 			proofTrie = tr.Overlay()
+	// 		default:
+	// 			return nil, nil, fmt.Errorf("invalid tree type in proof generation: %v", tr)
+	// 		}
+	// 		vktProof, vktStateDiff, err = trie.ProveAndSerialize(vtrpre, proofTrie, keys, vtrpre.FlatdbNodeResolver)
+	// 		if err != nil {
+	// 			return nil, nil, fmt.Errorf("error generating verkle proof for block %d: %w", pre.Env.Number, err)
+	// 		}
+	// 	}
+	// }
 
 	execRs := &ExecutionResult{
 		StateRoot:   root,
@@ -437,7 +433,7 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 	statedb, _ := state.New(types.EmptyRootHash, sdb, nil)
 
 	if pre.Env.Ended != nil && *pre.Env.Ended {
-		vtr := statedb.GetTrie().(*trie.VerkleTrie)
+		vtr := statedb.GetTrie().(*trie.BinaryTrie)
 
 		// create the vkt, should be empty on first insert
 		for k, v := range pre.VKT {
@@ -482,7 +478,7 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 	if verkle {
 		// If the current tree is a VerkleTrie, it means the state conversion has ended.
 		// We don't need to continue with conversion setups and can return early.
-		if _, ok := statedb.GetTrie().(*trie.VerkleTrie); ok {
+		if _, ok := statedb.GetTrie().(*trie.BinaryTrie); ok {
 			return parentRoot, statedb
 		}
 
@@ -534,9 +530,9 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 		}
 
 		// Load verkle tree from prestate
-		var vtr *trie.VerkleTrie
+		var vtr *trie.BinaryTrie
 		switch tr := statedb.GetTrie().(type) {
-		case *trie.VerkleTrie:
+		case *trie.BinaryTrie:
 			vtr = tr
 		case *trie.TransitionTrie:
 			vtr = tr.Overlay()

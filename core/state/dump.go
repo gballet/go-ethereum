@@ -221,9 +221,9 @@ func (s *StateDB) DumpToCollector(c DumpCollector, conf *DumpConfig) (nextKey []
 }
 
 func (s *StateDB) DumpVKTLeaves(collector map[common.Hash]hexutil.Bytes) {
-	var vtr *trie.VerkleTrie
+	var vtr *trie.BinaryTrie
 	switch tr := s.trie.(type) {
-	case *trie.VerkleTrie:
+	case *trie.BinaryTrie:
 		vtr = tr
 	case *trie.TransitionTrie:
 		vtr = tr.Overlay()

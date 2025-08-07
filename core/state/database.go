@@ -33,8 +33,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/trienode"
-	"github.com/ethereum/go-ethereum/trie/utils"
-	"github.com/ethereum/go-verkle"
 )
 
 const (
@@ -206,7 +204,6 @@ func NewDatabaseWithConfig(db ethdb.Database, config *trie.Config) Database {
 		codeSizeCache:          lru.NewCache[common.Hash, int](codeSizeCacheSize),
 		codeCache:              lru.NewSizeConstrainedCache[common.Hash, []byte](codeCacheSize),
 		triedb:                 trie.NewDatabaseWithConfig(db, config),
-		addrToPoint:            utils.NewPointCache(),
 		TransitionStatePerRoot: lru.NewBasicLRU[common.Hash, *TransitionState](100),
 	}
 }
@@ -218,7 +215,6 @@ func NewDatabaseWithNodeDB(db ethdb.Database, triedb *trie.Database) Database {
 		codeSizeCache:          lru.NewCache[common.Hash, int](codeSizeCacheSize),
 		codeCache:              lru.NewSizeConstrainedCache[common.Hash, []byte](codeCacheSize),
 		triedb:                 triedb,
-		addrToPoint:            utils.NewPointCache(),
 		TransitionStatePerRoot: lru.NewBasicLRU[common.Hash, *TransitionState](100),
 	}
 }
@@ -327,8 +323,6 @@ type cachingDB struct {
 	TransitionStatePerRoot lru.BasicLRU[common.Hash, *TransitionState]
 	transitionStateLock    sync.Mutex
 
-	addrToPoint *utils.PointCache
-
 	baseRoot common.Hash // hash of the read-only base tree
 }
 
@@ -343,14 +337,14 @@ func (db *cachingDB) openMPTTrie(root common.Hash) (Trie, error) {
 func (db *cachingDB) openVKTrie(_ common.Hash) (Trie, error) {
 	payload, err := db.DiskDB().Get(trie.FlatDBVerkleNodeKeyPrefix)
 	if err != nil {
-		return trie.NewVerkleTrie(verkle.New(), db.triedb, db.addrToPoint, db.CurrentTransitionState.Ended), nil
+		return trie.NewBinaryTrie(trie.NewBinaryNode(), db.triedb, db.CurrentTransitionState.Ended), nil
 	}
 
-	r, err := verkle.ParseNode(payload, 0)
+	r, err := trie.DeserializeNode(payload, 0)
 	if err != nil {
 		panic(err)
 	}
-	return trie.NewVerkleTrie(r, db.triedb, db.addrToPoint, db.CurrentTransitionState.Ended), err
+	return trie.NewBinaryTrie(r, db.triedb, db.CurrentTransitionState.Ended), err
 }
 
 // OpenTrie opens the main account trie at a specific root hash.
@@ -380,7 +374,7 @@ func (db *cachingDB) OpenTrie(root common.Hash) (Trie, error) {
 			return nil, err
 		}
 
-		return trie.NewTransitionTree(mpt.(*trie.SecureTrie), vkt.(*trie.VerkleTrie), false), nil
+		return trie.NewTransitionTree(mpt.(*trie.SecureTrie), vkt.(*trie.BinaryTrie), false), nil
 	}
 
 	log.Info("not in transition, opening mpt alone", "root", root)
@@ -406,7 +400,7 @@ func (db *cachingDB) OpenStorageTrie(stateRoot common.Hash, address common.Addre
 		// Return a "storage trie" that is an adapter between the storge MPT
 		// and the unique verkle tree.
 		switch self := self.(type) {
-		case *trie.VerkleTrie:
+		case *trie.BinaryTrie:
 			return trie.NewTransitionTree(mpt.(*trie.StateTrie), self, true), nil
 		case *trie.TransitionTrie:
 			return trie.NewTransitionTree(mpt.(*trie.StateTrie), self.Overlay(), true), nil
@@ -423,7 +417,7 @@ func (db *cachingDB) OpenStorageTrie(stateRoot common.Hash, address common.Addre
 		// Return a "storage trie" that is an adapter between the storge MPT
 		// and the unique verkle tree.
 		switch self := self.(type) {
-		case *trie.VerkleTrie:
+		case *trie.BinaryTrie:
 			return trie.NewTransitionTree(mpt.(*trie.SecureTrie), self, true), nil
 		case *trie.TransitionTrie:
 			return trie.NewTransitionTree(mpt.(*trie.SecureTrie), self.Overlay(), true), nil
@@ -442,7 +436,7 @@ func (db *cachingDB) CopyTrie(t Trie) Trie {
 		return t.Copy()
 	case *trie.TransitionTrie:
 		return t.Copy()
-	case *trie.VerkleTrie:
+	case *trie.BinaryTrie:
 		return t.Copy()
 	default:
 		panic(fmt.Errorf("unknown trie type %T", t))
@@ -498,10 +492,6 @@ func (db *cachingDB) DiskDB() ethdb.KeyValueStore {
 // TrieDB retrieves any intermediate trie-node caching layer.
 func (db *cachingDB) TrieDB() *trie.Database {
 	return db.triedb
-}
-
-func (db *cachingDB) GetTreeKeyHeader(addr []byte) *verkle.Point {
-	return db.addrToPoint.GetTreeKeyHeader(addr)
 }
 
 func (db *cachingDB) SetCurrentAccountAddress(addr common.Address) {

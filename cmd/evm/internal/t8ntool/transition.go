@@ -519,15 +519,15 @@ func VerkleKey(ctx *cli.Context) error {
 		return fmt.Errorf("error decoding address: %w", err)
 	}
 
-	ap := utils.EvaluateAddressPoint(addr)
 	if ctx.Args().Len() == 2 {
 		slot, err := hexutil.Decode(ctx.Args().Get(1))
 		if err != nil {
 			return fmt.Errorf("error decoding slot: %w", err)
 		}
-		fmt.Printf("%#x\n", utils.GetTreeKeyStorageSlotWithEvaluatedAddress(ap, slot))
+		fmt.Printf("%#x\n", utils.GetTreeKeyStorageSlot(common.BytesToAddress(addr), slot))
 	} else {
-		fmt.Printf("%#x\n", utils.GetTreeKeyBasicDataEvaluatedAddress(ap))
+		var zero [32]byte
+		fmt.Printf("%#x\n", utils.GetTreeKey(common.BytesToAddress(addr), zero[:]))
 	}
 	return nil
 }
@@ -600,8 +600,8 @@ func VerkleRoot(ctx *cli.Context) error {
 	return nil
 }
 
-func genVktFromAlloc(alloc core.GenesisAlloc) (*trie.VerkleTrie, error) {
-	vkt := trie.NewVerkleTrie(verkle.New(), trie.NewDatabase(rawdb.NewMemoryDatabase()), utils.NewPointCache(), true)
+func genVktFromAlloc(alloc core.GenesisAlloc) (*trie.BinaryTrie, error) {
+	vkt := trie.NewBinaryTrie(trie.NewBinaryNode(), trie.NewDatabase(rawdb.NewMemoryDatabase()), true)
 
 	for addr, acc := range alloc {
 		for slot, value := range acc.Storage {
@@ -647,7 +647,7 @@ func VerkleCodeChunkKey(ctx *cli.Context) error {
 	var chunkNumber uint256.Int
 	chunkNumber.SetBytes(chunkNumberBytes)
 
-	fmt.Printf("%#x\n", utils.GetTreeKeyCodeChunk(addr, &chunkNumber))
+	fmt.Printf("%#x\n", utils.GetTreeKeyCodeChunk(common.BytesToAddress(addr), &chunkNumber))
 
 	return nil
 }

@@ -1007,7 +1007,7 @@ func TestProcessVerklExtCodeHashOpcode(t *testing.T) {
 		}
 	})
 
-	contractKeccakTreeKey := utils.GetTreeKeyCodeHash(dummyContractAddr[:])
+	contractKeccakTreeKey := utils.GetTreeKeyCodeHash(dummyContractAddr)
 
 	var stateDiffIdx = -1
 	for i, stemStateDiff := range statediff[1] {
@@ -1106,7 +1106,8 @@ func TestProcessVerkleBalanceOpcode(t *testing.T) {
 		gen.AddTx(tx)
 	})
 
-	account2BalanceTreeKey := utils.GetTreeKeyBasicData(account2[:])
+	var zero [32]byte
+	account2BalanceTreeKey := utils.GetTreeKey(account2, zero[:])
 
 	var stateDiffIdx = -1
 	for i, stemStateDiff := range statediff[0] {
@@ -1119,7 +1120,6 @@ func TestProcessVerkleBalanceOpcode(t *testing.T) {
 		t.Fatalf("no state diff found for stem")
 	}
 
-	var zero [32]byte
 	balanceStateDiff := statediff[0][stateDiffIdx].SuffixDiffs[0]
 	if balanceStateDiff.Suffix != utils.BasicDataLeafKey {
 		t.Fatalf("invalid suffix diff")
@@ -1224,7 +1224,7 @@ func TestProcessVerkleSelfDestructInSeparateTx(t *testing.T) {
 
 	var zero [32]byte
 	{ // Check self-destructed contract in the witness
-		selfDestructContractTreeKey := utils.GetTreeKeyCodeHash(selfDestructContractAddr[:])
+		selfDestructContractTreeKey := utils.GetTreeKeyCodeHash(selfDestructContractAddr)
 
 		var stateDiffIdx = -1
 		for i, stemStateDiff := range statediff[1] {
@@ -1255,7 +1255,7 @@ func TestProcessVerkleSelfDestructInSeparateTx(t *testing.T) {
 		}
 	}
 	{ // Check self-destructed target in the witness.
-		selfDestructTargetTreeKey := utils.GetTreeKeyCodeHash(account2[:])
+		selfDestructTargetTreeKey := utils.GetTreeKeyCodeHash(account2)
 
 		var stateDiffIdx = -1
 		for i, stemStateDiff := range statediff[1] {
@@ -1356,7 +1356,7 @@ func TestProcessVerkleSelfDestructInSameTx(t *testing.T) {
 	})
 
 	{ // Check self-destructed contract in the witness
-		selfDestructContractTreeKey := utils.GetTreeKeyCodeHash(selfDestructContractAddr[:])
+		selfDestructContractTreeKey := utils.GetTreeKeyCodeHash(selfDestructContractAddr)
 
 		var stateDiffIdx = -1
 		for i, stemStateDiff := range statediff[0] {
@@ -1383,7 +1383,7 @@ func TestProcessVerkleSelfDestructInSameTx(t *testing.T) {
 		}
 	}
 	{ // Check self-destructed target in the witness.
-		selfDestructTargetTreeKey := utils.GetTreeKeyCodeHash(account2[:])
+		selfDestructTargetTreeKey := utils.GetTreeKeyCodeHash(account2)
 
 		var stateDiffIdx = -1
 		for i, stemStateDiff := range statediff[0] {
@@ -1506,7 +1506,7 @@ func TestProcessVerkleSelfDestructInSeparateTxWithSelfBeneficiary(t *testing.T) 
 		// to the beneficiary. In this case both addresses are the same, thus this might be optimizable from a gas
 		// perspective. But until that happens, we need to honor this "balance reading" adding it to the witness.
 
-		selfDestructContractTreeKey := utils.GetTreeKeyCodeHash(selfDestructContractAddr[:])
+		selfDestructContractTreeKey := utils.GetTreeKeyCodeHash(selfDestructContractAddr)
 
 		var stateDiffIdx = -1
 		for i, stemStateDiff := range statediff[1] {
@@ -1609,7 +1609,7 @@ func TestProcessVerkleSelfDestructInSameTxWithSelfBeneficiary(t *testing.T) {
 	})
 
 	{ // Check self-destructed contract in the witness
-		selfDestructContractTreeKey := utils.GetTreeKeyCodeHash(selfDestructContractAddr[:])
+		selfDestructContractTreeKey := utils.GetTreeKeyCodeHash(selfDestructContractAddr)
 
 		var stateDiffIdx = -1
 		for i, stemStateDiff := range statediff[0] {

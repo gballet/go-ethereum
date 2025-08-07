@@ -384,7 +384,7 @@ func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine
 		b := &BlockGen{i: i, chain: blocks, parent: parent, statedb: statedb, config: config, engine: engine}
 		b.header = makeHeader(chainreader, parent, statedb, b.engine)
 		preState := statedb.Copy()
-		fmt.Println("prestate", preState.GetTrie().(*trie.VerkleTrie).ToDot())
+		fmt.Println("prestate", preState.GetTrie().(*trie.BinaryTrie).ToDot())
 
 		if config.IsVerkle(b.header.Number, b.header.Time) {
 			if !config.IsVerkle(b.parent.Number(), b.parent.Time()) {
@@ -431,12 +431,6 @@ func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine
 			keyvals = append(keyvals, block.ExecutionWitness().StateDiff)
 			proots = append(proots, parent.Root())
 
-			// quick check that we are self-consistent
-			err = verkle.Verify(block.ExecutionWitness().VerkleProof, block.ExecutionWitness().ParentStateRoot[:], block.Root().Bytes(), block.ExecutionWitness().StateDiff)
-			if err != nil {
-				panic(err)
-			}
-
 			return block, b.receipts
 		}
 		return nil, nil
@@ -446,7 +440,7 @@ func GenerateVerkleChain(config *params.ChainConfig, parent *types.Block, engine
 	db.StartVerkleTransition(common.Hash{}, common.Hash{}, config, config.VerkleTime, common.Hash{})
 	db.EndVerkleTransition()
 	db.SaveTransitionState(parent.Root())
-	for i := 0; i < n; i++ {
+	for i := range n {
 		statedb, err := state.New(parent.Root(), db, snaps)
 		if err != nil {
 			panic(fmt.Sprintf("could not find state for block %d: err=%v, parent root=%x", i, err, parent.Root()))
