@@ -578,6 +578,7 @@ func DeserializeNode(serialized []byte, depth int) (BinaryNode, error) {
 		return &StemNode{
 			Stem:   serialized[1:32],
 			Values: values[:],
+			depth:  depth,
 		}, nil
 	default:
 		return nil, errors.New("invalid node type")
