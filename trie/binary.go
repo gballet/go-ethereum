@@ -111,20 +111,7 @@ func (h HashedNode) Get(_ []byte, _ NodeResolverFn) ([]byte, error) {
 }
 
 func (h HashedNode) Insert(key []byte, value []byte, resolver NodeResolverFn) (BinaryNode, error) {
-	if resolver == nil {
-		return h, errors.New("resolver is nil")
-	}
-
-	resolved, err := resolver(h[:], common.Hash(h))
-	if err != nil {
-		return nil, fmt.Errorf("insert error: %w", err)
-	}
-	node, err := DeserializeNode(resolved, 0)
-	if err != nil {
-		return nil, fmt.Errorf("insert node deserialization error: %w", err)
-	}
-
-	return node.Insert(key, value, resolver)
+	return nil, errors.New("insert not implemented for hashed node")
 }
 
 func (h HashedNode) Commit() common.Hash {
@@ -145,24 +132,7 @@ func (h HashedNode) GetValuesAtStem(_ []byte, _ NodeResolverFn) ([][]byte, error
 }
 
 func (h HashedNode) InsertValuesAtStem(key []byte, values [][]byte, resolver NodeResolverFn, depth int) (BinaryNode, error) {
-	if resolver == nil {
-		return h, errors.New("resolver is nil")
-	}
-
-	path, err := keyToPath(depth, key)
-	if err != nil {
-		return nil, fmt.Errorf("resolving node in insert: %w", err)
-	}
-	resolved, err := resolver(path, common.Hash(h))
-	if err != nil {
-		return nil, fmt.Errorf("insert error: %w", err)
-	}
-	node, err := DeserializeNode(resolved, 0)
-	if err != nil {
-		return nil, fmt.Errorf("insert node deserialization error: %w", err)
-	}
-
-	return node.InsertValuesAtStem(key, values, resolver, depth)
+	return nil, errors.New("insertValuesAtStem not implemented for hashed node")
 }
 
 func (h HashedNode) toDot(parent string, path string) string {
