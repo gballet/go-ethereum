@@ -144,7 +144,9 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 		return h
 	}
 	var (
-		statedb     = MakePreState(rawdb.NewMemoryDatabase(), chainConfig, pre, chainConfig.IsVerkle(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp))
+		isEIP4762   = chainConfig.IsVerkle(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp)
+		statedb     = MakePreState(rawdb.NewMemoryDatabase(), chainConfig, pre, isEIP4762)
+		isVerkleDb  = statedb.Database().TrieDB().IsVerkle()
 		signer      = types.MakeSigner(chainConfig, new(big.Int).SetUint64(pre.Env.Number), pre.Env.Timestamp)
 		gaspool     = new(core.GasPool)
 		blockHash   = common.Hash{0x13, 0x37}
@@ -253,7 +255,6 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 			}
 		}
 		statedb.SetTxContext(tx.Hash(), txIndex)
-		evm.AccessEvents = state.NewAccessEvents(evm.StateDB.PointCache())
 		var (
 			snapshot = statedb.Snapshot()
 			prevGas  = gaspool.Gas()
@@ -318,7 +319,9 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 				evm.Config.Tracer.OnTxEnd(receipt, nil)
 			}
 		}
-		statedb.AccessEvents().Merge(evm.AccessEvents)
+		if isVerkleDb && isEIP4762 {
+			statedb.AccessEvents().Merge(evm.AccessEvents)
+		}
 		txIndex++
 	}
 	statedb.IntermediateRoot(chainConfig.IsEIP158(vmContext.BlockNumber))
@@ -352,7 +355,9 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 		amount := new(big.Int).Mul(new(big.Int).SetUint64(w.Amount), big.NewInt(params.GWei))
 		statedb.AddBalance(w.Address, uint256.MustFromBig(amount), tracing.BalanceIncreaseWithdrawal)
 
-		statedb.AccessEvents().AddAccount(w.Address, true)
+		if isVerkleDb {
+			statedb.AccessEvents().AddAccount(w.Address, true)
+		}
 	}
 
 	// Gather the execution-layer triggered requests.
