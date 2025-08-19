@@ -146,7 +146,6 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 	var (
 		isEIP4762   = chainConfig.IsVerkle(big.NewInt(int64(pre.Env.Number)), pre.Env.Timestamp)
 		statedb     = MakePreState(rawdb.NewMemoryDatabase(), chainConfig, pre, isEIP4762)
-		isVerkleDb  = statedb.Database().TrieDB().IsVerkle()
 		signer      = types.MakeSigner(chainConfig, new(big.Int).SetUint64(pre.Env.Number), pre.Env.Timestamp)
 		gaspool     = new(core.GasPool)
 		blockHash   = common.Hash{0x13, 0x37}
@@ -319,7 +318,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 				evm.Config.Tracer.OnTxEnd(receipt, nil)
 			}
 		}
-		if isVerkleDb && isEIP4762 {
+		if isEIP4762 {
 			statedb.AccessEvents().Merge(evm.AccessEvents)
 		}
 		txIndex++
@@ -355,7 +354,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 		amount := new(big.Int).Mul(new(big.Int).SetUint64(w.Amount), big.NewInt(params.GWei))
 		statedb.AddBalance(w.Address, uint256.MustFromBig(amount), tracing.BalanceIncreaseWithdrawal)
 
-		if isVerkleDb {
+		if isEIP4762 {
 			statedb.AccessEvents().AddAccount(w.Address, true)
 		}
 	}
@@ -425,7 +424,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 }
 
 func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prestate, verkle bool) *state.StateDB {
-	tdb := triedb.NewDatabase(db, &triedb.Config{Preimages: true})
+	tdb := triedb.NewDatabase(db, &triedb.Config{Preimages: true, IsVerkle: verkle})
 	sdb := state.NewDatabase(tdb, nil)
 
 	statedb, _ := state.New(types.EmptyRootHash, sdb)
