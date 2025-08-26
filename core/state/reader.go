@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/trie/bintrie"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/ethereum/go-ethereum/triedb/database"
@@ -242,7 +243,7 @@ func newTrieReader(root common.Hash, db *triedb.Database, cache *utils.PointCach
 	if !db.IsVerkle() {
 		tr, err = trie.NewStateTrie(trie.StateTrieID(root), db)
 	} else {
-		tr, err = trie.NewVerkleTrie(root, db, cache)
+		tr, err = bintrie.NewBinaryTrie(root, db)
 
 		// Based on the transition status, determine if the overlay
 		// tree needs to be created, or if a single, target tree is
