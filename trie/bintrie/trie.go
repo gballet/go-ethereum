@@ -27,7 +27,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/trienode"
-	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/ethereum/go-ethereum/triedb/database"
 	"github.com/holiman/uint256"
 )
@@ -39,8 +38,7 @@ func NewBinaryNode() BinaryNode {
 	return Empty{}
 }
 
-// BinaryTrie is a wrapper around VerkleNode that implements the trie.Trie
-// interface so that Verkle trees can be reused verbatim.
+// BinaryTrie is the implementation of https://eips.ethereum.org/EIPS/eip-7864.
 type BinaryTrie struct {
 	root   BinaryNode
 	reader *trie.Reader
@@ -59,33 +57,39 @@ func NewBinaryTrie(root common.Hash, db database.NodeDatabase) (*BinaryTrie, err
 	if err != nil {
 		return nil, err
 	}
-	// Parse the root verkle node if it's not empty.
-	node := NewBinaryNode()
-	if root != types.EmptyVerkleHash && root != types.EmptyRootHash {
-		blob, err := reader.Node(nil, common.Hash{})
-		if err != nil {
-			return nil, err
-		}
-		node, err = DeserializeNode(blob, 0)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return &BinaryTrie{
-		root:   node,
+	t := &BinaryTrie{
+		root:   NewBinaryNode(),
 		reader: reader,
 		tracer: trie.NewPrevalueTracer(),
-	}, nil
+	}
+	// Parse the root node if it's not empty
+	if root != types.EmptyBinaryHash && root != types.EmptyRootHash {
+		blob, err := t.nodeResolver(nil, root)
+		if err != nil {
+			return nil, err
+		}
+		node, err := DeserializeNode(blob, 0)
+		if err != nil {
+			return nil, err
+		}
+		t.root = node
+	}
+	return t, nil
 }
 
-// FlatdbNodeResolver is a node resolver that reads nodes from the flatdb.
-func (t *BinaryTrie) FlatdbNodeResolver(path []byte, hash common.Hash) ([]byte, error) {
+// nodeResolver is a node resolver that reads nodes from the flatdb.
+func (t *BinaryTrie) nodeResolver(path []byte, hash common.Hash) ([]byte, error) {
 	// empty nodes will be serialized as common.Hash{}, so capture
 	// this special use case.
 	if hash == (common.Hash{}) {
 		return nil, nil // empty node
 	}
-	return t.reader.Node(path, hash)
+	blob, err := t.reader.Node(path, hash)
+	if err != nil {
+		return nil, err
+	}
+	t.tracer.Put(path, blob)
+	return blob, nil
 }
 
 // GetKey returns the sha3 preimage of a hashed key that was previously used
@@ -94,30 +98,23 @@ func (t *BinaryTrie) GetKey(key []byte) []byte {
 	return key
 }
 
-// Get returns the value for key stored in the trie. The value bytes must
-// not be modified by the caller. If a node was not found in the database, a
-// trie.MissingNodeError is returned.
-func (t *BinaryTrie) GetStorage(addr common.Address, key []byte) ([]byte, error) {
-	return t.root.Get(utils.GetBinaryTreeKey(addr, key), t.FlatdbNodeResolver)
-}
-
 // GetWithHashedKey returns the value, assuming that the key has already
 // been hashed.
 func (t *BinaryTrie) GetWithHashedKey(key []byte) ([]byte, error) {
-	return t.root.Get(key, t.FlatdbNodeResolver)
+	return t.root.Get(key, t.nodeResolver)
 }
 
 // GetAccount returns the account information for the given address.
 func (t *BinaryTrie) GetAccount(addr common.Address) (*types.StateAccount, error) {
-	acc := &types.StateAccount{}
-	versionkey := utils.GetBinaryTreeKey(addr, zero[:])
 	var (
 		values [][]byte
 		err    error
+		acc    = &types.StateAccount{}
+		key    = GetBinaryTreeKey(addr, zero[:])
 	)
 	switch r := t.root.(type) {
 	case *InternalNode:
-		values, err = r.GetValuesAtStem(versionkey[:31], t.FlatdbNodeResolver)
+		values, err = r.GetValuesAtStem(key[:31], t.nodeResolver)
 	case *StemNode:
 		values = r.Values
 	case Empty:
@@ -138,7 +135,7 @@ func (t *BinaryTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 	// TODO: we can simplify this logic depending if the conversion is in progress or finished.
 	emptyAccount := true
 
-	for i := 0; values != nil && i <= utils.CodeHashLeafKey && emptyAccount; i++ {
+	for i := 0; values != nil && i <= CodeHashLeafKey && emptyAccount; i++ {
 		emptyAccount = emptyAccount && values[i] == nil
 	}
 	if emptyAccount {
@@ -148,17 +145,24 @@ func (t *BinaryTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 	// if the account has been deleted, then values[10] will be 0 and not nil. If it has
 	// been recreated after that, then its code keccak will NOT be 0. So return `nil` if
 	// the nonce, and values[10], and code keccak is 0.
-	if bytes.Equal(values[utils.BasicDataLeafKey], zero[:]) && len(values) > 10 && len(values[10]) > 0 && bytes.Equal(values[utils.CodeHashLeafKey], zero[:]) {
+	if bytes.Equal(values[BasicDataLeafKey], zero[:]) && len(values) > 10 && len(values[10]) > 0 && bytes.Equal(values[CodeHashLeafKey], zero[:]) {
 		return nil, nil
 	}
 
-	acc.Nonce = binary.BigEndian.Uint64(values[utils.BasicDataLeafKey][utils.BasicDataNonceOffset:])
+	acc.Nonce = binary.BigEndian.Uint64(values[BasicDataLeafKey][BasicDataNonceOffset:])
 	var balance [16]byte
-	copy(balance[:], values[utils.BasicDataLeafKey][utils.BasicDataBalanceOffset:])
+	copy(balance[:], values[BasicDataLeafKey][BasicDataBalanceOffset:])
 	acc.Balance = new(uint256.Int).SetBytes(balance[:])
-	acc.CodeHash = values[utils.CodeHashLeafKey]
+	acc.CodeHash = values[CodeHashLeafKey]
 
 	return acc, nil
+}
+
+// GetStorage returns the value for key stored in the trie. The value bytes must
+// not be modified by the caller. If a node was not found in the database, a
+// trie.MissingNodeError is returned.
+func (t *BinaryTrie) GetStorage(addr common.Address, key []byte) ([]byte, error) {
+	return t.root.Get(GetBinaryTreeKey(addr, key), t.nodeResolver)
 }
 
 // UpdateAccount updates the account information for the given address.
@@ -167,11 +171,11 @@ func (t *BinaryTrie) UpdateAccount(addr common.Address, acc *types.StateAccount,
 		err       error
 		basicData [32]byte
 		values    = make([][]byte, NodeWidth)
-		stem      = utils.GetBinaryTreeKey(addr, zero[:])
+		stem      = GetBinaryTreeKey(addr, zero[:])
 	)
+	binary.BigEndian.PutUint32(basicData[BasicDataCodeSizeOffset-1:], uint32(codeLen))
+	binary.BigEndian.PutUint64(basicData[BasicDataNonceOffset:], acc.Nonce)
 
-	binary.BigEndian.PutUint32(basicData[utils.BasicDataCodeSizeOffset-1:], uint32(codeLen))
-	binary.BigEndian.PutUint64(basicData[utils.BasicDataNonceOffset:], acc.Nonce)
 	// Because the balance is a max of 16 bytes, truncate
 	// the extra values. This happens in devmode, where
 	// 0xff**32 is allocated to the developer account.
@@ -182,33 +186,33 @@ func (t *BinaryTrie) UpdateAccount(addr common.Address, acc *types.StateAccount,
 		balanceBytes = balanceBytes[16:]
 	}
 	copy(basicData[32-len(balanceBytes):], balanceBytes[:])
-	values[utils.BasicDataLeafKey] = basicData[:]
-	values[utils.CodeHashLeafKey] = acc.CodeHash[:]
+	values[BasicDataLeafKey] = basicData[:]
+	values[CodeHashLeafKey] = acc.CodeHash[:]
 
-	t.root, err = t.root.InsertValuesAtStem(stem, values, t.FlatdbNodeResolver, 0)
+	t.root, err = t.root.InsertValuesAtStem(stem, values, t.nodeResolver, 0)
 	return err
 }
 
 // UpdateStem updates the values for the given stem key.
 func (t *BinaryTrie) UpdateStem(key []byte, values [][]byte) error {
 	var err error
-	t.root, err = t.root.InsertValuesAtStem(key, values, t.FlatdbNodeResolver, 0)
+	t.root, err = t.root.InsertValuesAtStem(key, values, t.nodeResolver, 0)
 	return err
 }
 
-// Update associates key with value in the trie. If value has length zero, any
+// UpdateStorage associates key with value in the trie. If value has length zero, any
 // existing value is deleted from the trie. The value bytes must not be modified
 // by the caller while they are stored in the trie. If a node was not found in the
 // database, a trie.MissingNodeError is returned.
 func (t *BinaryTrie) UpdateStorage(address common.Address, key, value []byte) error {
-	k := utils.GetBinaryTreeKeyStorageSlot(address, key)
+	k := GetBinaryTreeKeyStorageSlot(address, key)
 	var v [32]byte
 	if len(value) >= 32 {
 		copy(v[:], value[:32])
 	} else {
 		copy(v[32-len(value):], value[:])
 	}
-	root, err := t.root.Insert(k, v[:], t.FlatdbNodeResolver)
+	root, err := t.root.Insert(k, v[:], t.nodeResolver, 0)
 	if err != nil {
 		return fmt.Errorf("UpdateStorage (%x) error: %v", address, err)
 	}
@@ -221,12 +225,12 @@ func (t *BinaryTrie) DeleteAccount(addr common.Address) error {
 	return nil
 }
 
-// Delete removes any existing value for key from the trie. If a node was not
+// DeleteStorage removes any existing value for key from the trie. If a node was not
 // found in the database, a trie.MissingNodeError is returned.
 func (t *BinaryTrie) DeleteStorage(addr common.Address, key []byte) error {
-	k := utils.GetBinaryTreeKey(addr, key)
+	k := GetBinaryTreeKey(addr, key)
 	var zero [32]byte
-	root, err := t.root.Insert(k, zero[:], t.FlatdbNodeResolver)
+	root, err := t.root.Insert(k, zero[:], t.nodeResolver, 0)
 	if err != nil {
 		return fmt.Errorf("DeleteStorage (%x) error: %v", addr, err)
 	}
@@ -291,6 +295,8 @@ func (t *BinaryTrie) IsVerkle() bool {
 	return true
 }
 
+// UpdateContractCode updates the contract code into the trie.
+//
 // Note: the basic data leaf needs to have been previously created for this to work
 func (t *BinaryTrie) UpdateContractCode(addr common.Address, codeHash common.Hash, code []byte) error {
 	var (
@@ -305,7 +311,7 @@ func (t *BinaryTrie) UpdateContractCode(addr common.Address, codeHash common.Has
 			values = make([][]byte, NodeWidth)
 			var offset [32]byte
 			binary.LittleEndian.PutUint64(offset[24:], chunknr+128)
-			key = utils.GetBinaryTreeKey(addr, offset[:])
+			key = GetBinaryTreeKey(addr, offset[:])
 		}
 		values[groupOffset] = chunks[i : i+32]
 

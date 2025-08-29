@@ -43,8 +43,7 @@ const (
 // BinaryNode is an interface for a binary trie node.
 type BinaryNode interface {
 	Get([]byte, NodeResolverFn) ([]byte, error)
-	Insert([]byte, []byte, NodeResolverFn) (BinaryNode, error)
-	// Commit() common.Hash
+	Insert([]byte, []byte, NodeResolverFn, int) (BinaryNode, error)
 	Copy() BinaryNode
 	Hash() common.Hash
 	GetValuesAtStem([]byte, NodeResolverFn) ([][]byte, error)

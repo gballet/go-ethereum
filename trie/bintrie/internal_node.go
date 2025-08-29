@@ -87,10 +87,10 @@ func (bt *InternalNode) Get(key []byte, resolver NodeResolverFn) ([]byte, error)
 }
 
 // Insert inserts a new key-value pair into the trie.
-func (bt *InternalNode) Insert(key []byte, value []byte, resolver NodeResolverFn) (BinaryNode, error) {
+func (bt *InternalNode) Insert(key []byte, value []byte, resolver NodeResolverFn, depth int) (BinaryNode, error) {
 	var values [256][]byte
 	values[key[31]] = value
-	return bt.InsertValuesAtStem(key[:31], values[:], resolver, 0)
+	return bt.InsertValuesAtStem(key[:31], values[:], resolver, depth)
 }
 
 // Copy creates a deep copy of the node.
