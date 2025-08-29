@@ -43,7 +43,7 @@ func NewBinaryNode() BinaryNode {
 // interface so that Verkle trees can be reused verbatim.
 type BinaryTrie struct {
 	root   BinaryNode
-	reader *trie.TrieReader
+	reader *trie.Reader
 	tracer *trie.PrevalueTracer
 }
 
@@ -55,7 +55,7 @@ func (t *BinaryTrie) ToDot() string {
 
 // NewBinaryTrie creates a new binary trie.
 func NewBinaryTrie(root common.Hash, db database.NodeDatabase) (*BinaryTrie, error) {
-	reader, err := trie.NewTrieReader(root, common.Hash{}, db)
+	reader, err := trie.NewReader(root, common.Hash{}, db)
 	if err != nil {
 		return nil, err
 	}
@@ -74,6 +74,7 @@ func NewBinaryTrie(root common.Hash, db database.NodeDatabase) (*BinaryTrie, err
 	return &BinaryTrie{
 		root:   node,
 		reader: reader,
+		tracer: trie.NewPrevalueTracer(),
 	}, nil
 }
 

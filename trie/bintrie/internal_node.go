@@ -17,11 +17,11 @@
 package bintrie
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
-	"crypto/sha256"
 )
 
 func keyToPath(depth int, key []byte) ([]byte, error) {
