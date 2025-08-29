@@ -73,13 +73,11 @@ func (bt *StemNode) Insert(key []byte, value []byte, _ NodeResolverFn, depth int
 				depth:  depth + 1,
 			}
 		}
-
 		return new, nil
 	}
 	if len(value) != 32 {
 		return bt, errors.New("invalid insertion: value length")
 	}
-
 	bt.Values[key[31]] = value
 	return bt, nil
 }
@@ -181,7 +179,6 @@ func (bt *StemNode) InsertValuesAtStem(key []byte, values [][]byte, _ NodeResolv
 				depth:  new.depth + 1,
 			}
 		}
-
 		return new, nil
 	}
 

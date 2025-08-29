@@ -128,13 +128,12 @@ func (t *BinaryTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 		return nil, fmt.Errorf("GetAccount (%x) error: %v", addr, err)
 	}
 
-	// The following code is required for the MPT->VKT conversion.
-	// An account can be partially migrated, where storage slots were moved to the VKT
+	// The following code is required for the MPT->Binary conversion.
+	// An account can be partially migrated, where storage slots were moved to the binary
 	// but not yet the account. This means some account information as (header) storage slots
-	// are in the VKT but basic account information must be read in the base tree (MPT).
+	// are in the binary trie but basic account information must be read in the base tree (MPT).
 	// TODO: we can simplify this logic depending if the conversion is in progress or finished.
 	emptyAccount := true
-
 	for i := 0; values != nil && i <= CodeHashLeafKey && emptyAccount; i++ {
 		emptyAccount = emptyAccount && values[i] == nil
 	}
@@ -142,7 +141,7 @@ func (t *BinaryTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 		return nil, nil
 	}
 
-	// if the account has been deleted, then values[10] will be 0 and not nil. If it has
+	// If the account has been deleted, then values[10] will be 0 and not nil. If it has
 	// been recreated after that, then its code keccak will NOT be 0. So return `nil` if
 	// the nonce, and values[10], and code keccak is 0.
 	if bytes.Equal(values[BasicDataLeafKey], zero[:]) && len(values) > 10 && len(values[10]) > 0 && bytes.Equal(values[CodeHashLeafKey], zero[:]) {
