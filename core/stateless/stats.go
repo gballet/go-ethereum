@@ -80,10 +80,10 @@ func (s *WitnessStats) ReportMetrics(blockNumber uint64) {
 	// Log account trie depth statistics
 	log.Info("Account trie depth stats",
 		"block", blockNumber,
-		"leavesAtDepth", accountLeavesJson)
+		"leavesAtDepth", string(accountLeavesJson))
 	log.Info("Storage trie depth stats",
 		"block", blockNumber,
-		"leavesAtDepth", storageLeavesJson)
+		"leavesAtDepth", string(storageLeavesJson))
 
 	for i := 0; i < 16; i++ {
 		accountTrieLeavesAtDepth[i].Inc(s.accountTrieLeaves[i])
