@@ -40,9 +40,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/tests"
-	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/bintrie"
-	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/holiman/uint256"
 	"github.com/urfave/cli/v2"
@@ -204,8 +202,7 @@ func Transition(ctx *cli.Context) error {
 		s.DumpToCollector(collector, nil)
 	} else {
 		btleaves = make(map[common.Hash]hexutil.Bytes)
-		// TODO(@CPerezz): Change this
-		if err := s.DumpVKTLeaves(btleaves); err != nil {
+		if err := s.DumpBinTrieLeaves(btleaves); err != nil {
 			return err
 		}
 	}
@@ -382,7 +379,6 @@ func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, a
 	return nil
 }
 
-// TODO(@CPerezz): This needs the new logic to be implemented + a name change.
 // The logic for tree key
 // BinKey computes the tree key given an address and an optional
 // slot number.
@@ -396,21 +392,19 @@ func BinKey(ctx *cli.Context) error {
 		return fmt.Errorf("error decoding address: %w", err)
 	}
 
-	// TODO(@CPerezz): Replace this with fn inside trie/bintrie/key_encoding.go.
-	ap := utils.EvaluateAddressPoint(addr)
 	if ctx.Args().Len() == 2 {
 		slot, err := hexutil.Decode(ctx.Args().Get(1))
 		if err != nil {
 			return fmt.Errorf("error decoding slot: %w", err)
 		}
-		fmt.Printf("%#x\n", utils.GetTreeKeyStorageSlotWithEvaluatedAddress(ap, slot))
+		fmt.Printf("%#x\n", bintrie.GetBinaryTreeKey(common.BytesToAddress(addr), slot))
 	} else {
-		fmt.Printf("%#x\n", utils.GetTreeKeyBasicDataEvaluatedAddress(ap))
+		// TODO(@CPerezz): We have `zero` in bintrie but isn't exported. Should we use it?
+		fmt.Printf("%#x\n", bintrie.GetBinaryTreeKey(common.BytesToAddress(addr), make([]byte, 32)))
 	}
 	return nil
 }
 
-// TODO(@CPerezz): Replace this with fn inside trie/bintrie/key_encoding.go.
 // BinKeys computes a set of tree keys given a genesis alloc.
 func BinKeys(ctx *cli.Context) error {
 	var allocStr = ctx.String(InputAllocFlag.Name)
@@ -428,14 +422,13 @@ func BinKeys(ctx *cli.Context) error {
 		}
 	}
 
-	// TODO(@CPerezz): Replace this with Bintrie::from_genesis (which I need to write)
-	vkt, err := genVktFromAlloc(alloc)
+	bt, err := genBinTrieFromAlloc(alloc)
 	if err != nil {
-		return fmt.Errorf("error generating vkt: %w", err)
+		return fmt.Errorf("error generating bt: %w", err)
 	}
 
 	collector := make(map[common.Hash]hexutil.Bytes)
-	it, err := vkt.NodeIterator(nil)
+	it, err := bt.NodeIterator(nil)
 	if err != nil {
 		panic(err)
 	}
@@ -455,8 +448,7 @@ func BinKeys(ctx *cli.Context) error {
 	return nil
 }
 
-// TODO(@CPerezz): This needs an update + all the downstream fns particular to Verkle.
-// BinTrieRoot computes the root of a VKT from a genesis alloc.
+// BinTrieRoot computes the root of a Binary Trie from a genesis alloc.
 func BinTrieRoot(ctx *cli.Context) error {
 	var allocStr = ctx.String(InputAllocFlag.Name)
 	var alloc core.GenesisAlloc
@@ -472,18 +464,18 @@ func BinTrieRoot(ctx *cli.Context) error {
 		}
 	}
 
-	vkt, err := genVktFromAlloc(alloc)
+	bt, err := genBinTrieFromAlloc(alloc)
 	if err != nil {
-		return fmt.Errorf("error generating vkt: %w", err)
+		return fmt.Errorf("error generating bt: %w", err)
 	}
-	fmt.Println(vkt.Hash().Hex())
+	fmt.Println(bt.Hash().Hex())
 
 	return nil
 }
 
-// TODO(@CPerezz): This needs an update. Should be the 1st fn to change as they all depend on it.
-func genBinTrieFromAlloc(alloc core.GenesisAlloc) (*trie.VerkleTrie, error) {
-	vkt, err := bintrie.NewBinaryTrie(types.EmptyVerkleHash, triedb.NewDatabase(rawdb.NewMemoryDatabase(),
+// TODO(@CPerezz): Should this go to `bintrie` module?
+func genBinTrieFromAlloc(alloc core.GenesisAlloc) (*bintrie.BinaryTrie, error) {
+	bt, err := bintrie.NewBinaryTrie(types.EmptyBinaryHash, triedb.NewDatabase(rawdb.NewMemoryDatabase(),
 		&triedb.Config{
 			IsVerkle: true,
 		}))
@@ -493,7 +485,7 @@ func genBinTrieFromAlloc(alloc core.GenesisAlloc) (*trie.VerkleTrie, error) {
 
 	for addr, acc := range alloc {
 		for slot, value := range acc.Storage {
-			err := vkt.UpdateStorage(addr, slot.Bytes(), value.Big().Bytes())
+			err := bt.UpdateStorage(addr, slot.Bytes(), value.Big().Bytes())
 			if err != nil {
 				return nil, fmt.Errorf("error inserting storage: %w", err)
 			}
@@ -505,37 +497,15 @@ func genBinTrieFromAlloc(alloc core.GenesisAlloc) (*trie.VerkleTrie, error) {
 			CodeHash: crypto.Keccak256Hash(acc.Code).Bytes(),
 			Root:     common.Hash{},
 		}
-		err := vkt.UpdateAccount(addr, account, len(acc.Code))
+		err := bt.UpdateAccount(addr, account, len(acc.Code))
 		if err != nil {
 			return nil, fmt.Errorf("error inserting account: %w", err)
 		}
 
-		err = vkt.UpdateContractCode(addr, common.BytesToHash(account.CodeHash), acc.Code)
+		err = bt.UpdateContractCode(addr, common.BytesToHash(account.CodeHash), acc.Code)
 		if err != nil {
 			return nil, fmt.Errorf("error inserting code: %w", err)
 		}
 	}
-	return vkt, nil
-}
-
-// TODO(@CPerezz): This needs an update. Remove this if EELS doesn't need it.
-func BinaryCodeChunkKey(ctx *cli.Context) error {
-	if ctx.Args().Len() == 0 || ctx.Args().Len() > 2 {
-		return errors.New("invalid number of arguments: expecting an address and an code-chunk number")
-	}
-
-	addr, err := hexutil.Decode(ctx.Args().Get(0))
-	if err != nil {
-		return fmt.Errorf("error decoding address: %w", err)
-	}
-	chunkNumberBytes, err := hexutil.Decode(ctx.Args().Get(1))
-	if err != nil {
-		return fmt.Errorf("error decoding chunk number: %w", err)
-	}
-	var chunkNumber uint256.Int
-	chunkNumber.SetBytes(chunkNumberBytes)
-
-	fmt.Printf("%#x\n", utils.GetTreeKeyCodeChunk(addr, &chunkNumber))
-
-	return nil
+	return bt, nil
 }
