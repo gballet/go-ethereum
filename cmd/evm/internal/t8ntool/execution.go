@@ -39,15 +39,18 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/trie/bintrie"
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/holiman/uint256"
 	"golang.org/x/crypto/sha3"
 )
 
 type Prestate struct {
-	Env stEnv                         `json:"env"`
-	Pre types.GenesisAlloc            `json:"pre"`
-	VKT map[common.Hash]hexutil.Bytes `json:"vkt,omitempty"`
+	Env stEnv              `json:"env"`
+	Pre types.GenesisAlloc `json:"pre"`
+	// TODO(@CPerezz): Unsure if the BT structure will imply a diffent type requirement here
+	// leaving the old one from VKT for now
+	BT map[common.Hash]hexutil.Bytes `json:"bt,omitempty"`
 }
 
 //go:generate go run github.com/fjl/gencodec -type ExecutionResult -field-override executionResultMarshaling -out gen_execresult.go
@@ -428,13 +431,13 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 	return statedb, execRs, body, nil
 }
 
-func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prestate, verkle bool) *state.StateDB {
-	tdb := triedb.NewDatabase(db, &triedb.Config{Preimages: true, IsVerkle: verkle})
+func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prestate, isBintrie bool) *state.StateDB {
+	tdb := triedb.NewDatabase(db, &triedb.Config{Preimages: true, IsVerkle: isBintrie})
 	sdb := state.NewDatabase(tdb, nil)
 
 	root := types.EmptyRootHash
-	if verkle {
-		root = types.EmptyVerkleHash
+	if isBintrie {
+		root = types.EmptyBinaryHash
 	}
 	statedb, _ := state.New(root, sdb)
 	for addr, a := range pre.Pre {
@@ -450,9 +453,9 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 	if err != nil {
 		panic(err)
 	}
-	// If verkle mode started, establish the conversion
-	if verkle {
-		if _, ok := statedb.GetTrie().(*trie.VerkleTrie); ok {
+	// If bintrie mode started, establish the conversion
+	if isBintrie {
+		if _, ok := statedb.GetTrie().(*bintrie.BinaryTrie); ok {
 			return statedb
 		}
 	}

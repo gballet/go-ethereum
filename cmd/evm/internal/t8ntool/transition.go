@@ -82,9 +82,11 @@ var (
 )
 
 type input struct {
-	Alloc types.GenesisAlloc            `json:"alloc,omitempty"`
-	Env   *stEnv                        `json:"env,omitempty"`
-	VKT   map[common.Hash]hexutil.Bytes `json:"vkt,omitempty"`
+	Alloc types.GenesisAlloc `json:"alloc,omitempty"`
+	Env   *stEnv             `json:"env,omitempty"`
+	// TODO(@CPerezz): Unsure if the BT structure will imply a diffent type requirement here
+	// leaving the old one from VKT for now
+	BT    map[common.Hash]hexutil.Bytes `json:"bt,omitempty"`
 	Txs   []*txWithKey                  `json:"txs,omitempty"`
 	TxRlp string                        `json:"txsRlp,omitempty"`
 }
@@ -98,9 +100,10 @@ func Transition(ctx *cli.Context) error {
 	// stdin input or in files.
 	// Check if anything needs to be read from stdin
 	var (
-		prestate  Prestate
-		txIt      txIterator // txs to apply
-		allocStr  = ctx.String(InputAllocFlag.Name)
+		prestate Prestate
+		txIt     txIterator // txs to apply
+		allocStr = ctx.String(InputAllocFlag.Name)
+		// TODO(@CPerezz): rename to InputBTFlag and change flags.go. Also see formating changes.
 		vktStr    = ctx.String(InputVKTFlag.Name)
 		envStr    = ctx.String(InputEnvFlag.Name)
 		txStr     = ctx.String(InputTxsFlag.Name)
@@ -124,6 +127,7 @@ func Transition(ctx *cli.Context) error {
 			return err
 		}
 	}
+	// TODO(@CPerezz): This will remain the same but changing names.
 	prestate.VKT = inputData.VKT
 	// Set the block environment
 	if envStr != stdinSelector {
@@ -196,15 +200,18 @@ func Transition(ctx *cli.Context) error {
 	}
 	// Dump the execution result
 	collector := make(Alloc)
+	// TODO(@CPerezz): This will remain the same but changing names.
 	var vktleaves map[common.Hash]hexutil.Bytes
 	if !chainConfig.IsVerkle(big.NewInt(int64(prestate.Env.Number)), prestate.Env.Timestamp) {
 		s.DumpToCollector(collector, nil)
 	} else {
+		// TODO(@CPerezz): This will remain the same but changing names.
 		vktleaves = make(map[common.Hash]hexutil.Bytes)
 		if err := s.DumpVKTLeaves(vktleaves); err != nil {
 			return err
 		}
 	}
+	// TODO(@CPerezz): This will remain the same but changing names.
 	return dispatchOutput(ctx, baseDir, result, collector, body, vktleaves)
 }
 
@@ -354,6 +361,7 @@ func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, a
 	if err := dispatch(baseDir, ctx.String(OutputBodyFlag.Name), "body", body); err != nil {
 		return err
 	}
+	// TODO(@CPerezz): This will remain the same but changing names.
 	if vkt != nil {
 		if err := dispatch(baseDir, ctx.String(OutputVKTFlag.Name), "vkt", vkt); err != nil {
 			return err
@@ -378,9 +386,11 @@ func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, a
 	return nil
 }
 
-// VerkleKey computes the tree key given an address and an optional
+// TODO(@CPerezz): This needs the new logic to be implemented + a name change.
+// The logic for tree key
+// BinKey computes the tree key given an address and an optional
 // slot number.
-func VerkleKey(ctx *cli.Context) error {
+func BinKey(ctx *cli.Context) error {
 	if ctx.Args().Len() == 0 || ctx.Args().Len() > 2 {
 		return errors.New("invalid number of arguments: expecting an address and an optional slot number")
 	}
@@ -403,8 +413,8 @@ func VerkleKey(ctx *cli.Context) error {
 	return nil
 }
 
-// VerkleKeys computes a set of tree keys given a genesis alloc.
-func VerkleKeys(ctx *cli.Context) error {
+// BinKeys computes a set of tree keys given a genesis alloc.
+func BinKeys(ctx *cli.Context) error {
 	var allocStr = ctx.String(InputAllocFlag.Name)
 	var alloc core.GenesisAlloc
 	// Figure out the prestate alloc
@@ -446,8 +456,9 @@ func VerkleKeys(ctx *cli.Context) error {
 	return nil
 }
 
-// VerkleRoot computes the root of a VKT from a genesis alloc.
-func VerkleRoot(ctx *cli.Context) error {
+// TODO(@CPerezz): This needs an update + all the downstream fns particular to Verkle.
+// BinTrieRoot computes the root of a VKT from a genesis alloc.
+func BinTrieRoot(ctx *cli.Context) error {
 	var allocStr = ctx.String(InputAllocFlag.Name)
 	var alloc core.GenesisAlloc
 	if allocStr == stdinSelector {
@@ -471,7 +482,8 @@ func VerkleRoot(ctx *cli.Context) error {
 	return nil
 }
 
-func genVktFromAlloc(alloc core.GenesisAlloc) (*trie.VerkleTrie, error) {
+// TODO(@CPerezz): This needs an update + all the downstream fns particular to Verkle.
+func genBinTrieFromAlloc(alloc core.GenesisAlloc) (*trie.VerkleTrie, error) {
 	vkt, err := trie.NewVerkleTrie(types.EmptyVerkleHash, triedb.NewDatabase(rawdb.NewMemoryDatabase(),
 		&triedb.Config{
 			IsVerkle: true,
@@ -507,8 +519,10 @@ func genVktFromAlloc(alloc core.GenesisAlloc) (*trie.VerkleTrie, error) {
 	return vkt, nil
 }
 
-// VerkleCodeChunkKey computes the tree key of a code-chunk for a given address.
-func VerkleCodeChunkKey(ctx *cli.Context) error {
+// TODO(@CPerezz): This needs an update + all the downstream fns particular to Verkle.
+// (Maybe worth having within bintrie module together with ChunkifyCode).
+// BinaryCodeChunkKey computes the tree key of a code-chunk for a given address.
+func BinaryCodeChunkKey(ctx *cli.Context) error {
 	if ctx.Args().Len() == 0 || ctx.Args().Len() > 2 {
 		return errors.New("invalid number of arguments: expecting an address and an code-chunk number")
 	}
@@ -525,23 +539,6 @@ func VerkleCodeChunkKey(ctx *cli.Context) error {
 	chunkNumber.SetBytes(chunkNumberBytes)
 
 	fmt.Printf("%#x\n", utils.GetTreeKeyCodeChunk(addr, &chunkNumber))
-
-	return nil
-}
-
-// VerkleChunkifyCode returns the code chunkification for a given code.
-func VerkleChunkifyCode(ctx *cli.Context) error {
-	if ctx.Args().Len() == 0 || ctx.Args().Len() > 1 {
-		return errors.New("invalid number of arguments: expecting a bytecode")
-	}
-
-	bytecode, err := hexutil.Decode(ctx.Args().Get(0))
-	if err != nil {
-		return fmt.Errorf("error decoding address: %w", err)
-	}
-
-	chunkedCode := trie.ChunkifyCode(bytecode)
-	fmt.Printf("%#x\n", chunkedCode)
 
 	return nil
 }
