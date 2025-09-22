@@ -33,6 +33,84 @@ import (
 
 var errInvalidRootType = errors.New("invalid root type")
 
+// ChunkedCode represents a sequence of 32-bytes chunks of code (31 bytes of which
+// are actual code, and 1 byte is the pushdata offset).
+type ChunkedCode []byte
+
+// Copy the values here so as to avoid an import cycle
+const (
+	PUSH1  = byte(0x60)
+	PUSH32 = byte(0x7f)
+)
+
+// ChunkifyCode generates the chunked version of an array representing EVM bytecode
+// according to EIP-7864 specification.
+//
+// The code is divided into 32-byte chunks, where each chunk contains:
+//   - Byte 0: Metadata byte indicating the number of leading bytes that are PUSHDATA (0-31)
+//   - Bytes 1-31: Actual code bytes
+//
+// This format enables stateless clients to validate jump destinations within a chunk
+// without requiring additional context. When a PUSH instruction's data spans multiple
+// chunks, the metadata byte tells us how many bytes at the start of the chunk are
+// part of the previous chunk's PUSH instruction data.
+//
+// For example:
+//   - If a chunk starts with regular code: metadata byte = 0
+//   - If a PUSH32 instruction starts at byte 30 of chunk N:
+//     * Chunk N: normal, contains PUSH32 opcode + 1 byte of data
+//     * Chunk N+1: metadata = 31 (entire chunk is PUSH data)
+//     * Chunk N+2: metadata = 1 (first byte is PUSH data, then normal code resumes)
+//
+// This chunking approach ensures that jump destination validity can be determined
+// by examining only the chunk containing the potential JUMPDEST, making it ideal
+// for stateless execution and verkle/binary tries.
+//
+// Reference: https://eips.ethereum.org/EIPS/eip-7864
+func ChunkifyCode(code []byte) ChunkedCode {
+	var (
+		chunkOffset = 0 // offset in the chunk
+		chunkCount  = len(code) / 31
+		codeOffset  = 0 // offset in the code
+	)
+	if len(code)%31 != 0 {
+		chunkCount++
+	}
+	chunks := make([]byte, chunkCount*32)
+	for i := 0; i < chunkCount; i++ {
+		// number of bytes to copy, 31 unless the end of the code has been reached.
+		end := 31 * (i + 1)
+		if len(code) < end {
+			end = len(code)
+		}
+		copy(chunks[i*32+1:], code[31*i:end]) // copy the code itself
+
+		// chunk offset = taken from the last chunk.
+		if chunkOffset > 31 {
+			// skip offset calculation if push data covers the whole chunk
+			chunks[i*32] = 31
+			chunkOffset = 1
+			continue
+		}
+		chunks[32*i] = byte(chunkOffset)
+		chunkOffset = 0
+
+		// Check each instruction and update the offset it should be 0 unless
+		// a PUSH-N overflows.
+		for ; codeOffset < end; codeOffset++ {
+			if code[codeOffset] >= PUSH1 && code[codeOffset] <= PUSH32 {
+				codeOffset += int(code[codeOffset] - PUSH1 + 1)
+				if codeOffset+1 >= 31*(i+1) {
+					codeOffset++
+					chunkOffset = codeOffset - 31*(i+1)
+					break
+				}
+			}
+		}
+	}
+	return chunks
+}
+
 // NewBinaryNode creates a new empty binary trie
 func NewBinaryNode() BinaryNode {
 	return Empty{}
@@ -299,7 +377,7 @@ func (t *BinaryTrie) IsVerkle() bool {
 // Note: the basic data leaf needs to have been previously created for this to work
 func (t *BinaryTrie) UpdateContractCode(addr common.Address, codeHash common.Hash, code []byte) error {
 	var (
-		chunks = trie.ChunkifyCode(code)
+		chunks = ChunkifyCode(code)
 		values [][]byte
 		key    []byte
 		err    error
