@@ -46,11 +46,9 @@ import (
 )
 
 type Prestate struct {
-	Env stEnv              `json:"env"`
-	Pre types.GenesisAlloc `json:"pre"`
-	// TODO(@CPerezz): Unsure if the BT structure will imply a diffent type requirement here
-	// leaving the old one from VKT for now
-	BT map[common.Hash]hexutil.Bytes `json:"bt,omitempty"`
+	Env stEnv                         `json:"env"`
+	Pre types.GenesisAlloc            `json:"pre"`
+	BT  map[common.Hash]hexutil.Bytes `json:"bt,omitempty"`
 }
 
 //go:generate go run github.com/fjl/gencodec -type ExecutionResult -field-override executionResultMarshaling -out gen_execresult.go

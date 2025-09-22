@@ -41,6 +41,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/tests"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/trie/bintrie"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/holiman/uint256"
@@ -82,10 +83,8 @@ var (
 )
 
 type input struct {
-	Alloc types.GenesisAlloc `json:"alloc,omitempty"`
-	Env   *stEnv             `json:"env,omitempty"`
-	// TODO(@CPerezz): Unsure if the BT structure will imply a diffent type requirement here
-	// leaving the old one from VKT for now
+	Alloc types.GenesisAlloc            `json:"alloc,omitempty"`
+	Env   *stEnv                        `json:"env,omitempty"`
 	BT    map[common.Hash]hexutil.Bytes `json:"bt,omitempty"`
 	Txs   []*txWithKey                  `json:"txs,omitempty"`
 	TxRlp string                        `json:"txsRlp,omitempty"`
@@ -100,17 +99,16 @@ func Transition(ctx *cli.Context) error {
 	// stdin input or in files.
 	// Check if anything needs to be read from stdin
 	var (
-		prestate Prestate
-		txIt     txIterator // txs to apply
-		allocStr = ctx.String(InputAllocFlag.Name)
-		// TODO(@CPerezz): rename to InputBTFlag and change flags.go. Also see formating changes.
-		vktStr    = ctx.String(InputVKTFlag.Name)
+		prestate  Prestate
+		txIt      txIterator // txs to apply
+		allocStr  = ctx.String(InputAllocFlag.Name)
+		btStr     = ctx.String(InputBTFlag.Name)
 		envStr    = ctx.String(InputEnvFlag.Name)
 		txStr     = ctx.String(InputTxsFlag.Name)
 		inputData = &input{}
 	)
 	// Figure out the prestate alloc
-	if allocStr == stdinSelector || vktStr == stdinSelector || envStr == stdinSelector || txStr == stdinSelector {
+	if allocStr == stdinSelector || btStr == stdinSelector || envStr == stdinSelector || txStr == stdinSelector {
 		decoder := json.NewDecoder(os.Stdin)
 		if err := decoder.Decode(inputData); err != nil {
 			return NewError(ErrorJson, fmt.Errorf("failed unmarshalling stdin: %v", err))
@@ -122,13 +120,13 @@ func Transition(ctx *cli.Context) error {
 		}
 	}
 	prestate.Pre = inputData.Alloc
-	if vktStr != stdinSelector && vktStr != "" {
-		if err := readFile(vktStr, "VKT", &inputData.VKT); err != nil {
+	if btStr != stdinSelector && btStr != "" {
+		if err := readFile(btStr, "BT", &inputData.BT); err != nil {
 			return err
 		}
 	}
-	// TODO(@CPerezz): This will remain the same but changing names.
-	prestate.VKT = inputData.VKT
+
+	prestate.BT = inputData.BT
 	// Set the block environment
 	if envStr != stdinSelector {
 		var env stEnv
@@ -200,19 +198,19 @@ func Transition(ctx *cli.Context) error {
 	}
 	// Dump the execution result
 	collector := make(Alloc)
-	// TODO(@CPerezz): This will remain the same but changing names.
-	var vktleaves map[common.Hash]hexutil.Bytes
+	var btleaves map[common.Hash]hexutil.Bytes
+	// TODO(@CPerezz): Changing this requires changes in further files. Leaving as is now.
 	if !chainConfig.IsVerkle(big.NewInt(int64(prestate.Env.Number)), prestate.Env.Timestamp) {
 		s.DumpToCollector(collector, nil)
 	} else {
-		// TODO(@CPerezz): This will remain the same but changing names.
-		vktleaves = make(map[common.Hash]hexutil.Bytes)
-		if err := s.DumpVKTLeaves(vktleaves); err != nil {
+		btleaves = make(map[common.Hash]hexutil.Bytes)
+		// TODO(@CPerezz): Change this
+		if err := s.DumpVKTLeaves(btleaves); err != nil {
 			return err
 		}
 	}
-	// TODO(@CPerezz): This will remain the same but changing names.
-	return dispatchOutput(ctx, baseDir, result, collector, body, vktleaves)
+
+	return dispatchOutput(ctx, baseDir, result, collector, body, btleaves)
 }
 
 func applyLondonChecks(env *stEnv, chainConfig *params.ChainConfig) error {
@@ -334,7 +332,7 @@ func saveFile(baseDir, filename string, data interface{}) error {
 
 // dispatchOutput writes the output data to either stderr or stdout, or to the specified
 // files
-func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, alloc Alloc, body hexutil.Bytes, vkt map[common.Hash]hexutil.Bytes) error {
+func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, alloc Alloc, body hexutil.Bytes, bt map[common.Hash]hexutil.Bytes) error {
 	stdOutObject := make(map[string]interface{})
 	stdErrObject := make(map[string]interface{})
 	dispatch := func(baseDir, fName, name string, obj interface{}) error {
@@ -361,12 +359,10 @@ func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, a
 	if err := dispatch(baseDir, ctx.String(OutputBodyFlag.Name), "body", body); err != nil {
 		return err
 	}
-	// TODO(@CPerezz): This will remain the same but changing names.
-	if vkt != nil {
-		if err := dispatch(baseDir, ctx.String(OutputVKTFlag.Name), "vkt", vkt); err != nil {
-			return err
-		}
+	if err := dispatch(baseDir, ctx.String(OutputBTFlag.Name), "bt", bt); err != nil {
+		return err
 	}
+
 	if len(stdOutObject) > 0 {
 		b, err := json.MarshalIndent(stdOutObject, "", "  ")
 		if err != nil {
@@ -400,6 +396,7 @@ func BinKey(ctx *cli.Context) error {
 		return fmt.Errorf("error decoding address: %w", err)
 	}
 
+	// TODO(@CPerezz): Replace this with fn inside trie/bintrie/key_encoding.go.
 	ap := utils.EvaluateAddressPoint(addr)
 	if ctx.Args().Len() == 2 {
 		slot, err := hexutil.Decode(ctx.Args().Get(1))
@@ -413,6 +410,7 @@ func BinKey(ctx *cli.Context) error {
 	return nil
 }
 
+// TODO(@CPerezz): Replace this with fn inside trie/bintrie/key_encoding.go.
 // BinKeys computes a set of tree keys given a genesis alloc.
 func BinKeys(ctx *cli.Context) error {
 	var allocStr = ctx.String(InputAllocFlag.Name)
@@ -430,6 +428,7 @@ func BinKeys(ctx *cli.Context) error {
 		}
 	}
 
+	// TODO(@CPerezz): Replace this with Bintrie::from_genesis (which I need to write)
 	vkt, err := genVktFromAlloc(alloc)
 	if err != nil {
 		return fmt.Errorf("error generating vkt: %w", err)
@@ -482,12 +481,12 @@ func BinTrieRoot(ctx *cli.Context) error {
 	return nil
 }
 
-// TODO(@CPerezz): This needs an update + all the downstream fns particular to Verkle.
+// TODO(@CPerezz): This needs an update. Should be the 1st fn to change as they all depend on it.
 func genBinTrieFromAlloc(alloc core.GenesisAlloc) (*trie.VerkleTrie, error) {
-	vkt, err := trie.NewVerkleTrie(types.EmptyVerkleHash, triedb.NewDatabase(rawdb.NewMemoryDatabase(),
+	vkt, err := bintrie.NewBinaryTrie(types.EmptyVerkleHash, triedb.NewDatabase(rawdb.NewMemoryDatabase(),
 		&triedb.Config{
 			IsVerkle: true,
-		}), utils.NewPointCache(1024))
+		}))
 	if err != nil {
 		return nil, err
 	}
@@ -519,9 +518,7 @@ func genBinTrieFromAlloc(alloc core.GenesisAlloc) (*trie.VerkleTrie, error) {
 	return vkt, nil
 }
 
-// TODO(@CPerezz): This needs an update + all the downstream fns particular to Verkle.
-// (Maybe worth having within bintrie module together with ChunkifyCode).
-// BinaryCodeChunkKey computes the tree key of a code-chunk for a given address.
+// TODO(@CPerezz): This needs an update. Remove this if EELS doesn't need it.
 func BinaryCodeChunkKey(ctx *cli.Context) error {
 	if ctx.Args().Len() == 0 || ctx.Args().Len() > 2 {
 		return errors.New("invalid number of arguments: expecting an address and an code-chunk number")
