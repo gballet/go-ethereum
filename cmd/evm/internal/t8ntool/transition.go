@@ -509,3 +509,42 @@ func genBinTrieFromAlloc(alloc core.GenesisAlloc) (*bintrie.BinaryTrie, error) {
 	}
 	return bt, nil
 }
+
+// BinaryCodeChunkKey computes the tree key of a code-chunk for a given address.
+func BinaryCodeChunkKey(ctx *cli.Context) error {
+	if ctx.Args().Len() == 0 || ctx.Args().Len() > 2 {
+		return errors.New("invalid number of arguments: expecting an address and an code-chunk number")
+	}
+
+	addr, err := hexutil.Decode(ctx.Args().Get(0))
+	if err != nil {
+		return fmt.Errorf("error decoding address: %w", err)
+	}
+	chunkNumberBytes, err := hexutil.Decode(ctx.Args().Get(1))
+	if err != nil {
+		return fmt.Errorf("error decoding chunk number: %w", err)
+	}
+	var chunkNumber uint256.Int
+	chunkNumber.SetBytes(chunkNumberBytes)
+
+	fmt.Printf("%#x\n", bintrie.GetBinaryTreeKeyCodeChunk(common.BytesToAddress(addr), &chunkNumber))
+
+	return nil
+}
+
+// BinaryCodeChunkCode returns the code chunkification for a given code.
+func BinaryCodeChunkCode(ctx *cli.Context) error {
+	if ctx.Args().Len() == 0 || ctx.Args().Len() > 1 {
+		return errors.New("invalid number of arguments: expecting a bytecode")
+	}
+
+	bytecode, err := hexutil.Decode(ctx.Args().Get(0))
+	if err != nil {
+		return fmt.Errorf("error decoding address: %w", err)
+	}
+
+	chunkedCode := bintrie.ChunkifyCode(bytecode)
+	fmt.Printf("%#x\n", chunkedCode)
+
+	return nil
+}
