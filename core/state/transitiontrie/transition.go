@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-package trie
+package transitiontrie
 
 import (
 	"fmt"
@@ -22,8 +22,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/trienode"
-	"github.com/ethereum/go-verkle"
 )
 
 // TransitionTrie is a trie that implements a façade design pattern, presenting
@@ -31,13 +31,13 @@ import (
 // first from the overlay trie, and falls back to the base trie if the key isn't
 // found. All writes go to the overlay trie.
 type TransitionTrie struct {
-	overlay *VerkleTrie
-	base    *SecureTrie
+	overlay *trie.VerkleTrie
+	base    *trie.SecureTrie
 	storage bool
 }
 
 // NewTransitionTrie creates a new TransitionTrie.
-func NewTransitionTrie(base *SecureTrie, overlay *VerkleTrie, st bool) *TransitionTrie {
+func NewTransitionTrie(base *trie.SecureTrie, overlay *trie.VerkleTrie, st bool) *TransitionTrie {
 	return &TransitionTrie{
 		overlay: overlay,
 		base:    base,
@@ -46,12 +46,12 @@ func NewTransitionTrie(base *SecureTrie, overlay *VerkleTrie, st bool) *Transiti
 }
 
 // Base returns the base trie.
-func (t *TransitionTrie) Base() *SecureTrie {
+func (t *TransitionTrie) Base() *trie.SecureTrie {
 	return t.base
 }
 
 // Overlay returns the overlay trie.
-func (t *TransitionTrie) Overlay() *VerkleTrie {
+func (t *TransitionTrie) Overlay() *trie.VerkleTrie {
 	return t.overlay
 }
 
@@ -174,7 +174,7 @@ func (t *TransitionTrie) Commit(collectLeaf bool) (common.Hash, *trienode.NodeSe
 
 // NodeIterator returns an iterator that returns nodes of the trie. Iteration
 // starts at the key after the given start key.
-func (t *TransitionTrie) NodeIterator(startKey []byte) (NodeIterator, error) {
+func (t *TransitionTrie) NodeIterator(startKey []byte) (trie.NodeIterator, error) {
 	panic("not implemented") // TODO: Implement
 }
 
@@ -197,14 +197,10 @@ func (t *TransitionTrie) IsVerkle() bool {
 
 // UpdateStem updates a group of values, given the stem they are using. If
 // a value already exists, it is overwritten.
+// TODO: This is Verkle-specific and requires access to private fields.
+// Not currently used in the codebase.
 func (t *TransitionTrie) UpdateStem(key []byte, values [][]byte) error {
-	trie := t.overlay
-	switch root := trie.root.(type) {
-	case *verkle.InternalNode:
-		return root.InsertValuesAtStem(key, values, t.overlay.nodeResolver)
-	default:
-		panic("invalid root type")
-	}
+	panic("UpdateStem is not implemented for TransitionTrie")
 }
 
 // Copy creates a deep copy of the transition trie.
