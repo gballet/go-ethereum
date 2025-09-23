@@ -23,6 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/trie/bintrie"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 )
 
@@ -31,13 +32,16 @@ import (
 // first from the overlay trie, and falls back to the base trie if the key isn't
 // found. All writes go to the overlay trie.
 type TransitionTrie struct {
-	overlay *trie.VerkleTrie
+	overlay *bintrie.BinaryTrie
 	base    *trie.SecureTrie
 	storage bool
 }
 
 // NewTransitionTrie creates a new TransitionTrie.
-func NewTransitionTrie(base *trie.SecureTrie, overlay *trie.VerkleTrie, st bool) *TransitionTrie {
+// Note: base can be nil when using TransitionTrie as a wrapper for BinaryTrie
+// to work around import cycles. This is a temporary hack that should be
+// refactored in future PRs (see core/state/reader.go for details).
+func NewTransitionTrie(base *trie.SecureTrie, overlay *bintrie.BinaryTrie, st bool) *TransitionTrie {
 	return &TransitionTrie{
 		overlay: overlay,
 		base:    base,
@@ -51,7 +55,7 @@ func (t *TransitionTrie) Base() *trie.SecureTrie {
 }
 
 // Overlay returns the overlay trie.
-func (t *TransitionTrie) Overlay() *trie.VerkleTrie {
+func (t *TransitionTrie) Overlay() *bintrie.BinaryTrie {
 	return t.overlay
 }
 
@@ -61,7 +65,10 @@ func (t *TransitionTrie) GetKey(key []byte) []byte {
 	if key := t.overlay.GetKey(key); key != nil {
 		return key
 	}
-	return t.base.GetKey(key)
+	if t.base != nil {
+		return t.base.GetKey(key)
+	}
+	return nil
 }
 
 // GetStorage returns the value for key stored in the trie. The value bytes must
@@ -74,8 +81,11 @@ func (t *TransitionTrie) GetStorage(addr common.Address, key []byte) ([]byte, er
 	if len(val) != 0 {
 		return val, nil
 	}
-	// TODO also insert value into overlay
-	return t.base.GetStorage(addr, key)
+	if t.base != nil {
+		// TODO also insert value into overlay
+		return t.base.GetStorage(addr, key)
+	}
+	return nil, nil
 }
 
 // PrefetchStorage attempts to resolve specific storage slots from the database
@@ -102,7 +112,10 @@ func (t *TransitionTrie) GetAccount(address common.Address) (*types.StateAccount
 	if data != nil {
 		return data, nil
 	}
-	return t.base.GetAccount(address)
+	if t.base != nil {
+		return t.base.GetAccount(address)
+	}
+	return nil, nil
 }
 
 // PrefetchAccount attempts to resolve specific accounts from the database
@@ -205,9 +218,13 @@ func (t *TransitionTrie) UpdateStem(key []byte, values [][]byte) error {
 
 // Copy creates a deep copy of the transition trie.
 func (t *TransitionTrie) Copy() *TransitionTrie {
+	var baseCopy *trie.SecureTrie
+	if t.base != nil {
+		baseCopy = t.base.Copy()
+	}
 	return &TransitionTrie{
 		overlay: t.overlay.Copy(),
-		base:    t.base.Copy(),
+		base:    baseCopy,
 		storage: t.storage,
 	}
 }

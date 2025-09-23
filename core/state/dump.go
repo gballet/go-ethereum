@@ -23,11 +23,11 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/state/transitiontrie"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
-	"github.com/ethereum/go-ethereum/trie/bintrie"
 )
 
 // DumpConfig is a set of options to control what portions of the state will be
@@ -232,7 +232,7 @@ func (s *StateDB) DumpBinTrieLeaves(collector map[common.Hash]hexutil.Bytes) err
 		s.trie = trie
 	}
 
-	it, err := s.trie.(*bintrie.BinaryTrie).NodeIterator(nil)
+	it, err := s.trie.(*transitiontrie.TransitionTrie).NodeIterator(nil)
 	if err != nil {
 		panic(err)
 	}
