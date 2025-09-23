@@ -76,7 +76,8 @@ func SerializeNode(node BinaryNode) []byte {
 				offset += 32
 			}
 		}
-		return serialized[:]
+		// Only return the actual data, not the entire array
+		return serialized[:offset]
 	default:
 		panic("invalid node type")
 	}
