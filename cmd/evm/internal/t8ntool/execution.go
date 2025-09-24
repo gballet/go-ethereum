@@ -30,7 +30,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/state/transitiontrie"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -40,6 +39,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/trie/bintrie"
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/holiman/uint256"
 	"golang.org/x/crypto/sha3"
@@ -453,11 +453,14 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 	}
 	// If bintrie mode started, establish the conversion
 	if isBintrie {
-		if _, ok := statedb.GetTrie().(*transitiontrie.TransitionTrie); ok {
+		if _, ok := statedb.GetTrie().(*bintrie.BinaryTrie); ok {
 			return statedb
 		}
 	}
-	statedb, _ = state.New(mptRoot, sdb)
+	statedb, err = state.New(mptRoot, sdb)
+	if err != nil {
+		panic(err)
+	}
 	return statedb
 }
 
