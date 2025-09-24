@@ -63,7 +63,6 @@ func SerializeNode(node BinaryNode) []byte {
 		serialized[0] = nodeTypeInternal
 		copy(serialized[1:33], n.left.Hash().Bytes())
 		copy(serialized[33:65], n.right.Hash().Bytes())
-		panic(fmt.Sprintf("serialization: %v", serialized))
 		return serialized[:]
 	case *StemNode:
 		var serialized [1 + 31 + 32 + 256*32]byte

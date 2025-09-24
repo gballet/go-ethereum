@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/trie/bintrie"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/ethereum/go-ethereum/trie/utils"
 	"github.com/ethereum/go-ethereum/triedb"
@@ -241,9 +242,11 @@ func (db *CachingDB) OpenTrie(root common.Hash) (Trie, error) {
 		if ts.InTransition() {
 			panic("transition isn't supported yet")
 		}
-		if ts.Transitioned() {
-			return trie.NewVerkleTrie(root, db.triedb, db.pointCache)
+		bt, err := bintrie.NewBinaryTrie(root, db.triedb)
+		if err != nil {
+			panic(fmt.Sprintf("Failed to create BinaryTrie with root %x: %v", root, err))
 		}
+		return bt, nil
 	}
 	tr, err := trie.NewStateTrie(trie.StateTrieID(root), db.triedb)
 	if err != nil {
