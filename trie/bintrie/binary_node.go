@@ -64,12 +64,12 @@ func SerializeNode(node BinaryNode) []byte {
 		copy(serialized[33:65], n.right.Hash().Bytes())
 		return serialized[:]
 	case *StemNode:
-		var serialized [32 + 32 + 256*32]byte
+		var serialized [1 + 31 + 32 + 256*32]byte
 		serialized[0] = nodeTypeStem
-		copy(serialized[1:32], node.(*StemNode).Stem)
+		copy(serialized[1:32], n.Stem)
 		bitmap := serialized[32:64]
 		offset := 64
-		for i, v := range node.(*StemNode).Values {
+		for i, v := range n.Values {
 			if v != nil {
 				bitmap[i/8] |= 1 << (7 - (i % 8))
 				copy(serialized[offset:offset+32], v)
