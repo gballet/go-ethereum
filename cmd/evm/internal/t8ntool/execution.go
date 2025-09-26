@@ -437,7 +437,10 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 	if isBintrie {
 		root = types.EmptyBinaryHash
 	}
-	statedb, _ := state.New(root, sdb)
+	statedb, err := state.New(root, sdb)
+	if err != nil {
+		panic(fmt.Errorf("failed to create initial statedb: %v", err))
+	}
 	for addr, a := range pre.Pre {
 		statedb.SetCode(addr, a.Code, tracing.CodeChangeUnspecified)
 		statedb.SetNonce(addr, a.Nonce, tracing.NonceChangeGenesis)
@@ -459,7 +462,7 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 	}
 	statedb, err = state.New(mptRoot, sdb)
 	if err != nil {
-		panic(err)
+		panic(fmt.Errorf("failed to re-open statedb after commit with root %x: %v", mptRoot, err))
 	}
 	return statedb
 }
