@@ -419,11 +419,20 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 		execRs.Requests = requests
 	}
 
-	// Re-create statedb instance with new root upon the updated database
-	// for accessing latest states.
-	statedb, err = state.New(root, statedb.Database())
-	if err != nil {
-		return nil, nil, nil, NewError(ErrorEVM, fmt.Errorf("could not reopen state: %v", err))
+	// For Binary Trie mode, keep the existing statedb since the trie is already correct after commit
+	// For MPT mode, re-create statedb instance with new root upon the updated database
+	if isEIP4762 {
+		// Binary Trie doesn't need reopening - the trie is already correct after commit
+		// Verify it's still a BinaryTrie
+		if _, ok := statedb.GetTrie().(*bintrie.BinaryTrie); !ok {
+			return nil, nil, nil, NewError(ErrorEVM, fmt.Errorf("binary trie mode but trie is %T after commit", statedb.GetTrie()))
+		}
+	} else {
+		// Re-create statedb instance with new root for MPT mode
+		statedb, err = state.New(root, statedb.Database())
+		if err != nil {
+			return nil, nil, nil, NewError(ErrorEVM, fmt.Errorf("could not reopen state: %v", err))
+		}
 	}
 	body, _ := rlp.EncodeToBytes(includedTxs)
 	return statedb, execRs, body, nil
@@ -454,12 +463,15 @@ func MakePreState(db ethdb.Database, chainConfig *params.ChainConfig, pre *Prest
 	if err != nil {
 		panic(err)
 	}
-	// If bintrie mode started, establish the conversion
+	// If bintrie mode started, check if conversion happened
 	if isBintrie {
 		if _, ok := statedb.GetTrie().(*bintrie.BinaryTrie); ok {
 			return statedb
 		}
+		// If we're in bintrie mode but don't have a BinaryTrie, something went wrong
+		panic(fmt.Errorf("binary trie mode enabled but trie is %T, not *bintrie.BinaryTrie", statedb.GetTrie()))
 	}
+	// For MPT mode, reopen the state with the committed root
 	statedb, err = state.New(mptRoot, sdb)
 	if err != nil {
 		panic(fmt.Errorf("failed to re-open statedb after commit with root %x: %v", mptRoot, err))
