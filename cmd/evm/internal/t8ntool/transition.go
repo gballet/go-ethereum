@@ -198,7 +198,8 @@ func Transition(ctx *cli.Context) error {
 	collector := make(Alloc)
 	var btleaves map[common.Hash]hexutil.Bytes
 	// TODO(@CPerezz): Changing this requires changes in further files. Leaving as is now.
-	if !chainConfig.IsVerkle(big.NewInt(int64(prestate.Env.Number)), prestate.Env.Timestamp) {
+	isVerkle := chainConfig.IsVerkle(big.NewInt(int64(prestate.Env.Number)), prestate.Env.Timestamp)
+	if !isVerkle {
 		s.DumpToCollector(collector, nil)
 	} else {
 		btleaves = make(map[common.Hash]hexutil.Bytes)
@@ -356,8 +357,11 @@ func dispatchOutput(ctx *cli.Context, baseDir string, result *ExecutionResult, a
 	if err := dispatch(baseDir, ctx.String(OutputBodyFlag.Name), "body", body); err != nil {
 		return err
 	}
-	if err := dispatch(baseDir, ctx.String(OutputBTFlag.Name), "bt", bt); err != nil {
-		return err
+	// Only write bt output if we actually have binary trie leaves
+	if bt != nil {
+		if err := dispatch(baseDir, ctx.String(OutputBTFlag.Name), "vkt", bt); err != nil {
+			return err
+		}
 	}
 
 	if len(stdOutObject) > 0 {
