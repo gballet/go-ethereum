@@ -48,7 +48,7 @@ import (
 type Prestate struct {
 	Env stEnv                         `json:"env"`
 	Pre types.GenesisAlloc            `json:"pre"`
-	BT  map[common.Hash]hexutil.Bytes `json:"bt,omitempty"`
+	BT  map[common.Hash]hexutil.Bytes `json:"vkt,omitempty"`
 }
 
 //go:generate go run github.com/fjl/gencodec -type ExecutionResult -field-override executionResultMarshaling -out gen_execresult.go
