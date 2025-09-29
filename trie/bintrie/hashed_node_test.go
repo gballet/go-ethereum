@@ -92,7 +92,7 @@ func TestHashedNodeInsertValuesAtStem(t *testing.T) {
 	node := HashedNode(common.HexToHash("0x1234"))
 
 	stem := make([]byte, StemSize)
-	values := make([][]byte, NodeWidth)
+	values := make([][]byte, StemNodeWidth)
 
 	_, err := node.InsertValuesAtStem(stem, values, nil, 0)
 	if err == nil {

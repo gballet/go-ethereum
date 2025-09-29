@@ -246,7 +246,7 @@ func (it *binaryNodeIterator) LeafProof() [][]byte {
 		panic("LeafProof() called on an binary node iterator not at a leaf location")
 	}
 
-	proof := make([][]byte, 0, len(it.stack)+NodeWidth)
+	proof := make([][]byte, 0, len(it.stack)+StemNodeWidth)
 
 	// Build proof by walking up the stack and collecting sibling hashes
 	for i := range it.stack[:len(it.stack)-2] {

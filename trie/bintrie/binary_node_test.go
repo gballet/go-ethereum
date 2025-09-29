@@ -82,7 +82,7 @@ func TestSerializeDeserializeStemNode(t *testing.T) {
 		stem[i] = byte(i)
 	}
 
-	var values [NodeWidth][]byte
+	var values [StemNodeWidth][]byte
 	// Add some values at different indices
 	values[0] = common.HexToHash("0x0101010101010101010101010101010101010101010101010101010101010101").Bytes()
 	values[10] = common.HexToHash("0x0202020202020202020202020202020202020202020202020202020202020202").Bytes()
@@ -136,7 +136,7 @@ func TestSerializeDeserializeStemNode(t *testing.T) {
 	}
 
 	// Check that other values are nil
-	for i := range NodeWidth {
+	for i := range StemNodeWidth {
 		if i == 0 || i == 10 || i == 255 {
 			continue
 		}

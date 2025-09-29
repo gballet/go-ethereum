@@ -28,7 +28,7 @@ import (
 
 // StemNode represents a group of `NodeWith` values sharing the same stem.
 type StemNode struct {
-	Stem   []byte   // Stem path to get to NodeWidth values
+	Stem   []byte   // Stem path to get to StemNodeWidth values
 	Values [][]byte // All values, indexed by the last byte of the key.
 	depth  int      // Depth of the node
 }
@@ -65,7 +65,7 @@ func (bt *StemNode) Insert(key []byte, value []byte, _ NodeResolverFn, depth int
 			}
 			*other = Empty{}
 		} else {
-			var values [NodeWidth][]byte
+			var values [StemNodeWidth][]byte
 			values[key[StemSize]] = value
 			*other = &StemNode{
 				Stem:   slices.Clone(key[:StemSize]),
@@ -84,7 +84,7 @@ func (bt *StemNode) Insert(key []byte, value []byte, _ NodeResolverFn, depth int
 
 // Copy creates a deep copy of the node.
 func (bt *StemNode) Copy() BinaryNode {
-	var values [NodeWidth][]byte
+	var values [StemNodeWidth][]byte
 	for i, v := range bt.Values {
 		values[i] = slices.Clone(v)
 	}
@@ -102,7 +102,7 @@ func (bt *StemNode) GetHeight() int {
 
 // Hash returns the hash of the node.
 func (bt *StemNode) Hash() common.Hash {
-	var data [NodeWidth]common.Hash
+	var data [StemNodeWidth]common.Hash
 	for i, v := range bt.Values {
 		if v != nil {
 			h := sha256.Sum256(v)
@@ -112,7 +112,7 @@ func (bt *StemNode) Hash() common.Hash {
 
 	h := sha256.New()
 	for level := 1; level <= 8; level++ {
-		for i := range NodeWidth / (1 << level) {
+		for i := range StemNodeWidth / (1 << level) {
 			h.Reset()
 
 			if data[i*2] == (common.Hash{}) && data[i*2+1] == (common.Hash{}) {

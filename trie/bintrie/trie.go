@@ -247,7 +247,7 @@ func (t *BinaryTrie) UpdateAccount(addr common.Address, acc *types.StateAccount,
 	var (
 		err       error
 		basicData [HashSize]byte
-		values    = make([][]byte, NodeWidth)
+		values    = make([][]byte, StemNodeWidth)
 		stem      = GetBinaryTreeKey(addr, zero[:])
 	)
 	binary.BigEndian.PutUint32(basicData[BasicDataCodeSizeOffset-1:], uint32(codeLen))
@@ -383,16 +383,16 @@ func (t *BinaryTrie) UpdateContractCode(addr common.Address, codeHash common.Has
 		err    error
 	)
 	for i, chunknr := 0, uint64(0); i < len(chunks); i, chunknr = i+HashSize, chunknr+1 {
-		groupOffset := (chunknr + 128) % NodeWidth
+		groupOffset := (chunknr + 128) % StemNodeWidth
 		if groupOffset == 0 /* start of new group */ || chunknr == 0 /* first chunk in header group */ {
-			values = make([][]byte, NodeWidth)
+			values = make([][]byte, StemNodeWidth)
 			var offset [HashSize]byte
 			binary.LittleEndian.PutUint64(offset[24:], chunknr+128)
 			key = GetBinaryTreeKey(addr, offset[:])
 		}
 		values[groupOffset] = chunks[i : i+HashSize]
 
-		if groupOffset == NodeWidth-1 || len(chunks)-i <= HashSize {
+		if groupOffset == StemNodeWidth-1 || len(chunks)-i <= HashSize {
 			err = t.UpdateStem(key[:StemSize], values)
 
 			if err != nil {

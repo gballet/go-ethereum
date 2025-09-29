@@ -158,7 +158,7 @@ func TestInsertDuplicateKey(t *testing.T) {
 func TestLargeNumberOfEntries(t *testing.T) {
 	var err error
 	tree := NewBinaryNode()
-	for i := range NodeWidth {
+	for i := range StemNodeWidth {
 		var key [HashSize]byte
 		key[0] = byte(i)
 		tree, err = tree.Insert(key[:], ffKey[:], nil, 0)

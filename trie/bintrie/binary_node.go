@@ -69,7 +69,7 @@ func SerializeNode(node BinaryNode) []byte {
 		return serialized[:]
 	case *StemNode:
 		// StemNode: 1 byte type + 31 bytes stem + 32 bytes bitmap + 256*32 bytes values
-		var serialized [NodeTypeBytes + StemSize + BitmapSize + NodeWidth*HashSize]byte
+		var serialized [NodeTypeBytes + StemSize + BitmapSize + StemNodeWidth*HashSize]byte
 		serialized[0] = nodeTypeStem
 		copy(serialized[NodeTypeBytes:NodeTypeBytes+StemSize], n.Stem)
 		bitmap := serialized[NodeTypeBytes+StemSize : NodeTypeBytes+StemSize+BitmapSize]
@@ -110,11 +110,11 @@ func DeserializeNode(serialized []byte, depth int) (BinaryNode, error) {
 		if len(serialized) < 64 {
 			return nil, invalidSerializedLength
 		}
-		var values [NodeWidth][]byte
+		var values [StemNodeWidth][]byte
 		bitmap := serialized[NodeTypeBytes+StemSize : NodeTypeBytes+StemSize+BitmapSize]
 		offset := NodeTypeBytes + StemSize + BitmapSize
 
-		for i := range NodeWidth {
+		for i := range StemNodeWidth {
 			if bitmap[i/8]>>(7-(i%8))&1 == 1 {
 				if len(serialized) < offset+HashSize {
 					return nil, invalidSerializedLength
