@@ -17,6 +17,8 @@
 package state
 
 import (
+	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"time"
@@ -24,10 +26,12 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/bintrie"
+	"github.com/holiman/uint256"
 )
 
 // DumpConfig is a set of options to control what portions of the state will be
@@ -134,6 +138,12 @@ func (s *StateDB) DumpToCollector(c DumpCollector, conf *DumpConfig) (nextKey []
 	if err != nil {
 		return nil
 	}
+
+	// Check if this is a Binary Trie and handle it specially
+	if btrie, ok := tr.(*bintrie.BinaryTrie); ok {
+		return s.dumpBinaryTrieToCollector(btrie, c, conf)
+	}
+
 	trieIt, err := tr.NodeIterator(conf.Start)
 	if err != nil {
 		log.Error("Trie dumping error", "err", err)
@@ -218,6 +228,166 @@ func (s *StateDB) DumpToCollector(c DumpCollector, conf *DumpConfig) (nextKey []
 	}
 	log.Info("Trie dumping complete", "accounts", accounts,
 		"elapsed", common.PrettyDuration(time.Since(start)))
+
+	return nextKey
+}
+
+// dumpBinaryTrieToCollector handles dumping Binary Trie state to the collector.
+// This is necessary because Binary Trie stores account data in a completely different format
+// than MPT. While MPT uses RLP-encoded StateAccount structures, Binary Trie stores raw bytes
+// with specific offsets as defined in EIP-7864.
+//
+// Binary Trie storage layout for account data:
+// - BasicDataLeafKey (suffix byte 0): Contains nonce and balance
+//   - Bytes 0-7: Code size (4 bytes) + padding
+//   - Bytes 8-15: Nonce (8 bytes, big-endian)
+//   - Bytes 16-31: Balance (16 bytes, big-endian)
+//
+// - CodeHashLeafKey (suffix byte 1): Contains the code hash (32 bytes)
+// - Storage slots (suffix bytes 64+): Contains storage values
+//
+// This function needs to:
+// 1. Iterate through Binary Trie nodes to find account data
+// 2. Extract and decode account information from raw bytes
+// 3. Map Binary Trie keys back to Ethereum addresses
+// 4. Reconstruct the full account state for the collector
+func (s *StateDB) dumpBinaryTrieToCollector(btrie *bintrie.BinaryTrie, c DumpCollector, conf *DumpConfig) (nextKey []byte) {
+	var (
+		accounts uint64
+		// Map to track processed stems to avoid duplicate accounts
+		// This prevents dumping the same account when iterating through
+		// since nultiple leaves can belong to the same account (basic data, code hash, storage).
+		processedStems = make(map[string]bool)
+	)
+
+	// Step 1: Create an iterator to traverse the Binary Trie
+	// The iterator will visit all nodes in the trie, allowing us to find leaf nodes
+	// that contain actual account data
+	it, err := btrie.NodeIterator(nil)
+	if err != nil {
+		log.Error("Failed to create Binary Trie iterator", "err", err)
+		return nil
+	}
+
+	// Step 2: Iterate through all nodes in the Binary Trie
+	for it.Next(true) {
+		// Skip non-leaf nodes as they don't contain account data
+		if !it.Leaf() {
+			continue
+		}
+
+		// Step 3: Extract the leaf's key and value
+		// The key is 32 bytes: 31-byte stem + 1-byte suffix
+		// The stem encodes the account address, the suffix indicates the data type
+		leafKey := it.LeafKey()
+		leafValue := it.LeafBlob()
+
+		// Step 4: Parse the key structure
+		// First 31 bytes: stem (encodes the account address)
+		// Last byte: suffix (indicates the type of data)
+		stem := string(leafKey[:31])
+		suffixByte := leafKey[31]
+
+		// Step 5: Check if this leaf contains BasicData (nonce + balance)
+		// BasicDataLeafKey = 0 is the suffix for account basic data
+		if suffixByte == bintrie.BasicDataLeafKey {
+			// Step 6: Ensure we only process each account once
+			// Multiple leaves can belong to the same account (basic data, code hash, storage)
+			// We only want to dump each account once
+			if processedStems[stem] {
+				continue
+			}
+			processedStems[stem] = true
+
+			// Step 7: Extract nonce from the Binary Trie format
+			// Nonce is stored at offset 8 as an 8-byte big-endian integer
+			var nonce uint64
+			if len(leafValue) > bintrie.BasicDataNonceOffset+8 {
+				nonce = binary.BigEndian.Uint64(leafValue[bintrie.BasicDataNonceOffset:])
+			}
+
+			// Step 8: Extract balance from the Binary Trie format
+			// Balance is stored at offset 16 as a 16-byte big-endian integer
+			var balance = new(uint256.Int)
+			if len(leafValue) > bintrie.BasicDataBalanceOffset+16 {
+				balanceBytes := make([]byte, 16)
+				copy(balanceBytes, leafValue[bintrie.BasicDataBalanceOffset:bintrie.BasicDataBalanceOffset+16])
+				balance.SetBytes(balanceBytes)
+			}
+
+			// Step 9: Map the Binary Trie key back to an Ethereum address
+			// This is the challenging part: Binary Trie keys are hashed versions of addresses
+			// We need to find which address maps to this particular key
+			//
+			// Current approach: (Made up by Claude) ->
+			// Iterate through known addresses in stateObjects
+			// and check if their Binary Trie key matches our leaf key
+			var foundAddr *common.Address
+			for addr := range s.stateObjects {
+				// Generate the Binary Trie key for this address
+				testKey := bintrie.GetBinaryTreeKeyBasicData(addr)
+				if bytes.Equal(testKey, leafKey) {
+					a := addr // Create a copy to avoid reference issues
+					foundAddr = &a
+					break
+				}
+			}
+
+			// Step 10: Error if we couldn't find the corresponding address
+			// This might happen for accounts not in the current state cache
+			if foundAddr == nil {
+				// TODO(@CPerezz): Figure out how to proceed.
+				panic("Binary Trie dump error: Cannot recover address from hash.")
+			}
+
+			// Step 11: Create the dump account structure with basic data
+			addr := *foundAddr
+			dumpAccount := DumpAccount{
+				Balance:     balance.ToBig().String(),
+				Nonce:       nonce,
+				Address:     &addr,
+				AddressHash: crypto.Keccak256(addr[:]),
+			}
+
+			// Step 12: Fetch the code hash from a separate Binary Trie leaf
+			// Code hash is stored at suffix byte 1 (CodeHashLeafKey)
+			codeHashKey := bintrie.GetBinaryTreeKeyCodeHash(addr)
+			if codeHashData, err := btrie.GetWithHashedKey(codeHashKey); err == nil && codeHashData != nil {
+				dumpAccount.CodeHash = codeHashData
+				// Step 13: Fetch the actual code if needed and not empty
+				if !conf.SkipCode && !bytes.Equal(codeHashData, types.EmptyCodeHash.Bytes()) {
+					dumpAccount.Code = s.GetCode(addr)
+				}
+			}
+
+			// Step 14: Fetch storage values if needed
+			if !conf.SkipStorage {
+				dumpAccount.Storage = make(map[common.Hash]string)
+				// TODO(CPerezz): Properly iterate through Binary Trie storage slots
+				// Storage slots are at suffix bytes 64+ in the Binary Trie
+				// Idea from Claude:
+				// Use the cached dirty storage from state objects
+				if obj := s.getStateObject(addr); obj != nil {
+					for key, value := range obj.dirtyStorage {
+						dumpAccount.Storage[key] = common.Bytes2Hex(value[:])
+					}
+				}
+			}
+
+			// Step 15: Send the account to the collector
+			c.OnAccount(&addr, dumpAccount)
+			accounts++
+
+			// Step 17: Check if we've reached the maximum number of accounts
+			if conf.Max > 0 && accounts >= conf.Max {
+				// Save the next key for resumption if there are more accounts
+				if it.Next(true) {
+					nextKey = it.LeafKey()
+				}
+				break
+			}
+		}
+	}
 
 	return nextKey
 }

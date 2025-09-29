@@ -197,10 +197,14 @@ func Transition(ctx *cli.Context) error {
 	// Dump the execution result
 	collector := make(Alloc)
 	var btleaves map[common.Hash]hexutil.Bytes
+	s.DumpToCollector(collector, nil)
 	isBinary := chainConfig.IsVerkle(big.NewInt(int64(prestate.Env.Number)), prestate.Env.Timestamp)
-	if !isBinary {
-		s.DumpToCollector(collector, nil)
-	} else {
+	if isBinary {
+		// For Binary Trie mode, we need to dump both:
+		// 1. The state to collector (alloc) for multi-block tests to maintain state between blocks
+		// 2. The Binary Trie leaves for witness data
+		// Without the collector dump, the test framework cannot track state changes (like nonce updates)
+		// between blocks, causing tests with multiple blocks (e.g., withdrawal tests) to fail.
 		btleaves = make(map[common.Hash]hexutil.Bytes)
 		if err := s.DumpBinTrieLeaves(btleaves); err != nil {
 			return err
