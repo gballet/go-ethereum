@@ -18,7 +18,6 @@ package bintrie
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -100,7 +99,7 @@ func DeserializeNode(serialized []byte, depth int) (BinaryNode, error) {
 	switch serialized[0] {
 	case nodeTypeInternal:
 		if len(serialized) != 65 {
-			return nil, fmt.Errorf("invalid length < 65: %d, %w", len(serialized), invalidSerializedLength)
+			return nil, invalidSerializedLength
 		}
 		return &InternalNode{
 			depth: depth,
@@ -109,7 +108,7 @@ func DeserializeNode(serialized []byte, depth int) (BinaryNode, error) {
 		}, nil
 	case nodeTypeStem:
 		if len(serialized) < 64 {
-			return nil, fmt.Errorf("invalid length < 64: %d, %w", len(serialized), invalidSerializedLength)
+			return nil, invalidSerializedLength
 		}
 		var values [NodeWidth][]byte
 		bitmap := serialized[NodeTypeBytes+StemSize:NodeTypeBytes+StemSize+BitmapSize]
@@ -118,7 +117,7 @@ func DeserializeNode(serialized []byte, depth int) (BinaryNode, error) {
 		for i := range NodeWidth {
 			if bitmap[i/8]>>(7-(i%8))&1 == 1 {
 				if len(serialized) < offset+HashSize {
-					return nil, fmt.Errorf("! invalid serialized length: %v %d %d depth=%d %v %v %w", serialized, len(serialized), offset+HashSize, depth, bitmap, serialized[NodeTypeBytes:NodeTypeBytes+StemSize], invalidSerializedLength)
+					return nil, invalidSerializedLength
 				}
 				values[i] = serialized[offset : offset+HashSize]
 				offset += HashSize

@@ -33,8 +33,8 @@ import (
 
 var errInvalidRootType = errors.New("invalid root type")
 
-// ChunkedCode represents a sequence of 32-bytes chunks of code (31 bytes of which
-// are actual code, and 1 byte is the pushdata offset).
+// ChunkedCode represents a sequence of HashSize-byte chunks of code (StemSize bytes of which
+// are actual code, and NodeTypeBytes byte is the pushdata offset).
 type ChunkedCode []byte
 
 // Copy the values here so as to avoid an import cycle
@@ -46,9 +46,9 @@ const (
 // ChunkifyCode generates the chunked version of an array representing EVM bytecode
 // according to EIP-7864 specification.
 //
-// The code is divided into 32-byte chunks, where each chunk contains:
-//   - Byte 0: Metadata byte indicating the number of leading bytes that are PUSHDATA (0-31)
-//   - Bytes 1-31: Actual code bytes
+// The code is divided into HashSize-byte chunks, where each chunk contains:
+//   - Byte 0: Metadata byte indicating the number of leading bytes that are PUSHDATA (0-StemSize)
+//   - Bytes 1-StemSize: Actual code bytes
 //
 // This format enables stateless clients to validate jump destinations within a chunk
 // without requiring additional context. When a PUSH instruction's data spans multiple
@@ -59,7 +59,7 @@ const (
 //   - If a chunk starts with regular code: metadata byte = 0
 //   - If a PUSH32 instruction starts at byte 30 of chunk N:
 //     * Chunk N: normal, contains PUSH32 opcode + 1 byte of data
-//     * Chunk N+1: metadata = 31 (entire chunk is PUSH data)
+//     * Chunk N+1: metadata = StemSize (entire chunk is PUSH data)
 //     * Chunk N+2: metadata = 1 (first byte is PUSH data, then normal code resumes)
 //
 // This chunking approach ensures that jump destination validity can be determined
@@ -70,29 +70,29 @@ const (
 func ChunkifyCode(code []byte) ChunkedCode {
 	var (
 		chunkOffset = 0 // offset in the chunk
-		chunkCount  = len(code) / 31
+		chunkCount  = len(code) / StemSize
 		codeOffset  = 0 // offset in the code
 	)
-	if len(code)%31 != 0 {
+	if len(code)%StemSize != 0 {
 		chunkCount++
 	}
-	chunks := make([]byte, chunkCount*32)
+	chunks := make([]byte, chunkCount*HashSize)
 	for i := 0; i < chunkCount; i++ {
-		// number of bytes to copy, 31 unless the end of the code has been reached.
-		end := 31 * (i + 1)
+		// number of bytes to copy, StemSize unless the end of the code has been reached.
+		end := StemSize * (i + 1)
 		if len(code) < end {
 			end = len(code)
 		}
-		copy(chunks[i*32+1:], code[31*i:end]) // copy the code itself
+		copy(chunks[i*HashSize+1:], code[StemSize*i:end]) // copy the code itself
 
 		// chunk offset = taken from the last chunk.
-		if chunkOffset > 31 {
+		if chunkOffset > StemSize {
 			// skip offset calculation if push data covers the whole chunk
-			chunks[i*32] = 31
+			chunks[i*HashSize] = StemSize
 			chunkOffset = 1
 			continue
 		}
-		chunks[32*i] = byte(chunkOffset)
+		chunks[HashSize*i] = byte(chunkOffset)
 		chunkOffset = 0
 
 		// Check each instruction and update the offset it should be 0 unless
@@ -100,9 +100,9 @@ func ChunkifyCode(code []byte) ChunkedCode {
 		for ; codeOffset < end; codeOffset++ {
 			if code[codeOffset] >= PUSH1 && code[codeOffset] <= PUSH32 {
 				codeOffset += int(code[codeOffset] - PUSH1 + 1)
-				if codeOffset+1 >= 31*(i+1) {
+				if codeOffset+1 >= StemSize*(i+1) {
 					codeOffset++
-					chunkOffset = codeOffset - 31*(i+1)
+					chunkOffset = codeOffset - StemSize*(i+1)
 					break
 				}
 			}
@@ -192,7 +192,7 @@ func (t *BinaryTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 	)
 	switch r := t.root.(type) {
 	case *InternalNode:
-		values, err = r.GetValuesAtStem(key[:31], t.nodeResolver)
+		values, err = r.GetValuesAtStem(key[:StemSize], t.nodeResolver)
 	case *StemNode:
 		values = r.Values
 	case Empty:
@@ -246,7 +246,7 @@ func (t *BinaryTrie) GetStorage(addr common.Address, key []byte) ([]byte, error)
 func (t *BinaryTrie) UpdateAccount(addr common.Address, acc *types.StateAccount, codeLen int) error {
 	var (
 		err       error
-		basicData [32]byte
+		basicData [HashSize]byte
 		values    = make([][]byte, NodeWidth)
 		stem      = GetBinaryTreeKey(addr, zero[:])
 	)
@@ -255,14 +255,14 @@ func (t *BinaryTrie) UpdateAccount(addr common.Address, acc *types.StateAccount,
 
 	// Because the balance is a max of 16 bytes, truncate
 	// the extra values. This happens in devmode, where
-	// 0xff**32 is allocated to the developer account.
+	// 0xff**HashSize is allocated to the developer account.
 	balanceBytes := acc.Balance.Bytes()
 	// TODO: reduce the size of the allocation in devmode, then panic instead
 	// of truncating.
 	if len(balanceBytes) > 16 {
 		balanceBytes = balanceBytes[16:]
 	}
-	copy(basicData[32-len(balanceBytes):], balanceBytes[:])
+	copy(basicData[HashSize-len(balanceBytes):], balanceBytes[:])
 	values[BasicDataLeafKey] = basicData[:]
 	values[CodeHashLeafKey] = acc.CodeHash[:]
 
@@ -283,11 +283,11 @@ func (t *BinaryTrie) UpdateStem(key []byte, values [][]byte) error {
 // database, a trie.MissingNodeError is returned.
 func (t *BinaryTrie) UpdateStorage(address common.Address, key, value []byte) error {
 	k := GetBinaryTreeKeyStorageSlot(address, key)
-	var v [32]byte
-	if len(value) >= 32 {
-		copy(v[:], value[:32])
+	var v [HashSize]byte
+	if len(value) >= HashSize {
+		copy(v[:], value[:HashSize])
 	} else {
-		copy(v[32-len(value):], value[:])
+		copy(v[HashSize-len(value):], value[:])
 	}
 	root, err := t.root.Insert(k, v[:], t.nodeResolver, 0)
 	if err != nil {
@@ -306,7 +306,7 @@ func (t *BinaryTrie) DeleteAccount(addr common.Address) error {
 // found in the database, a trie.MissingNodeError is returned.
 func (t *BinaryTrie) DeleteStorage(addr common.Address, key []byte) error {
 	k := GetBinaryTreeKey(addr, key)
-	var zero [32]byte
+	var zero [HashSize]byte
 	root, err := t.root.Insert(k, zero[:], t.nodeResolver, 0)
 	if err != nil {
 		return fmt.Errorf("DeleteStorage (%x) error: %v", addr, err)
@@ -382,18 +382,18 @@ func (t *BinaryTrie) UpdateContractCode(addr common.Address, codeHash common.Has
 		key    []byte
 		err    error
 	)
-	for i, chunknr := 0, uint64(0); i < len(chunks); i, chunknr = i+32, chunknr+1 {
-		groupOffset := (chunknr + 128) % 256
+	for i, chunknr := 0, uint64(0); i < len(chunks); i, chunknr = i+HashSize, chunknr+1 {
+		groupOffset := (chunknr + 128) % NodeWidth
 		if groupOffset == 0 /* start of new group */ || chunknr == 0 /* first chunk in header group */ {
 			values = make([][]byte, NodeWidth)
-			var offset [32]byte
+			var offset [HashSize]byte
 			binary.LittleEndian.PutUint64(offset[24:], chunknr+128)
 			key = GetBinaryTreeKey(addr, offset[:])
 		}
-		values[groupOffset] = chunks[i : i+32]
+		values[groupOffset] = chunks[i : i+HashSize]
 
-		if groupOffset == 255 || len(chunks)-i <= 32 {
-			err = t.UpdateStem(key[:31], values)
+		if groupOffset == NodeWidth-1 || len(chunks)-i <= HashSize {
+			err = t.UpdateStem(key[:StemSize], values)
 
 			if err != nil {
 				return fmt.Errorf("UpdateContractCode (addr=%x) error: %w", addr[:], err)
