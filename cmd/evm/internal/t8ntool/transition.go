@@ -402,8 +402,7 @@ func BinKey(ctx *cli.Context) error {
 		}
 		fmt.Printf("%#x\n", bintrie.GetBinaryTreeKeyStorageSlot(common.BytesToAddress(addr), slot))
 	} else {
-		var zeroSlot [bintrie.HashSize]byte
-		fmt.Printf("%#x\n", bintrie.GetBinaryTreeKeyStorageSlot(common.BytesToAddress(addr), zeroSlot[:]))
+		fmt.Printf("%#x\n", bintrie.GetBinaryTreeKeyBasicData(common.BytesToAddress(addr)))
 	}
 	return nil
 }

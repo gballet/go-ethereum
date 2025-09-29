@@ -31,7 +31,7 @@ type (
 var zero [32]byte
 
 const (
-	NodeWidth     = 256 // Number of child per leaf node
+	StemNodeWidth = 256 // Number of child per leaf node
 	StemSize      = 31  // Number of bytes to travel before reaching a group of leaves
 	NodeTypeBytes = 1   // Size of node type prefix in serialization
 	HashSize      = 32  // Size of a hash in bytes
@@ -72,7 +72,7 @@ func SerializeNode(node BinaryNode) []byte {
 		var serialized [NodeTypeBytes + StemSize + BitmapSize + NodeWidth*HashSize]byte
 		serialized[0] = nodeTypeStem
 		copy(serialized[NodeTypeBytes:NodeTypeBytes+StemSize], n.Stem)
-		bitmap := serialized[NodeTypeBytes+StemSize:NodeTypeBytes+StemSize+BitmapSize]
+		bitmap := serialized[NodeTypeBytes+StemSize : NodeTypeBytes+StemSize+BitmapSize]
 		offset := NodeTypeBytes + StemSize + BitmapSize
 		for i, v := range n.Values {
 			if v != nil {
@@ -111,7 +111,7 @@ func DeserializeNode(serialized []byte, depth int) (BinaryNode, error) {
 			return nil, invalidSerializedLength
 		}
 		var values [NodeWidth][]byte
-		bitmap := serialized[NodeTypeBytes+StemSize:NodeTypeBytes+StemSize+BitmapSize]
+		bitmap := serialized[NodeTypeBytes+StemSize : NodeTypeBytes+StemSize+BitmapSize]
 		offset := NodeTypeBytes + StemSize + BitmapSize
 
 		for i := range NodeWidth {
@@ -124,7 +124,7 @@ func DeserializeNode(serialized []byte, depth int) (BinaryNode, error) {
 			}
 		}
 		return &StemNode{
-			Stem:   serialized[NodeTypeBytes:NodeTypeBytes+StemSize],
+			Stem:   serialized[NodeTypeBytes : NodeTypeBytes+StemSize],
 			Values: values[:],
 			depth:  depth,
 		}, nil
