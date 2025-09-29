@@ -32,8 +32,11 @@ type (
 var zero [32]byte
 
 const (
-	NodeWidth = 256 // Number of child per leaf node
-	StemSize  = 31  // Number of bytes to travel before reaching a group of leaves
+	NodeWidth     = 256 // Number of child per leaf node
+	StemSize      = 31  // Number of bytes to travel before reaching a group of leaves
+	NodeTypeBytes = 1   // Size of node type prefix in serialization
+	HashSize      = 32  // Size of a hash in bytes
+	BitmapSize    = 32  // Size of the bitmap in a stem node
 )
 
 const (
@@ -60,23 +63,23 @@ func SerializeNode(node BinaryNode) []byte {
 	switch n := (node).(type) {
 	case *InternalNode:
 		// InternalNode: 1 byte type + 32 bytes left hash + 32 bytes right hash
-		var serialized [1 + 32 + 32]byte
+		var serialized [NodeTypeBytes + HashSize + HashSize]byte
 		serialized[0] = nodeTypeInternal
 		copy(serialized[1:33], n.left.Hash().Bytes())
 		copy(serialized[33:65], n.right.Hash().Bytes())
 		return serialized[:]
 	case *StemNode:
 		// StemNode: 1 byte type + 31 bytes stem + 32 bytes bitmap + 256*32 bytes values
-		var serialized [1 + StemSize + 32 + NodeWidth*32]byte
+		var serialized [NodeTypeBytes + StemSize + BitmapSize + NodeWidth*HashSize]byte
 		serialized[0] = nodeTypeStem
-		copy(serialized[1:32], n.Stem)
-		bitmap := serialized[32:64]
-		offset := 64
+		copy(serialized[NodeTypeBytes:NodeTypeBytes+StemSize], n.Stem)
+		bitmap := serialized[NodeTypeBytes+StemSize:NodeTypeBytes+StemSize+BitmapSize]
+		offset := NodeTypeBytes + StemSize + BitmapSize
 		for i, v := range n.Values {
 			if v != nil {
 				bitmap[i/8] |= 1 << (7 - (i % 8))
-				copy(serialized[offset:offset+32], v)
-				offset += 32
+				copy(serialized[offset:offset+HashSize], v)
+				offset += HashSize
 			}
 		}
 		// Only return the actual data, not the entire array
@@ -108,21 +111,21 @@ func DeserializeNode(serialized []byte, depth int) (BinaryNode, error) {
 		if len(serialized) < 64 {
 			return nil, fmt.Errorf("invalid length < 64: %d, %w", len(serialized), invalidSerializedLength)
 		}
-		var values [256][]byte
-		bitmap := serialized[32:64]
-		offset := 64
+		var values [NodeWidth][]byte
+		bitmap := serialized[NodeTypeBytes+StemSize:NodeTypeBytes+StemSize+BitmapSize]
+		offset := NodeTypeBytes + StemSize + BitmapSize
 
-		for i := range 256 {
+		for i := range NodeWidth {
 			if bitmap[i/8]>>(7-(i%8))&1 == 1 {
-				if len(serialized) < offset+32 {
-					return nil, fmt.Errorf("! invalid serialized length: %v %d %d depth=%d %v %v %w", serialized, len(serialized), offset+32, depth, bitmap, serialized[1:32], invalidSerializedLength)
+				if len(serialized) < offset+HashSize {
+					return nil, fmt.Errorf("! invalid serialized length: %v %d %d depth=%d %v %v %w", serialized, len(serialized), offset+HashSize, depth, bitmap, serialized[NodeTypeBytes:NodeTypeBytes+StemSize], invalidSerializedLength)
 				}
-				values[i] = serialized[offset : offset+32]
-				offset += 32
+				values[i] = serialized[offset : offset+HashSize]
+				offset += HashSize
 			}
 		}
 		return &StemNode{
-			Stem:   serialized[1:32],
+			Stem:   serialized[NodeTypeBytes:NodeTypeBytes+StemSize],
 			Values: values[:],
 			depth:  depth,
 		}, nil
