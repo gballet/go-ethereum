@@ -83,7 +83,7 @@ var (
 type input struct {
 	Alloc types.GenesisAlloc            `json:"alloc,omitempty"`
 	Env   *stEnv                        `json:"env,omitempty"`
-	BT    map[common.Hash]hexutil.Bytes `json:"bt,omitempty"`
+	BT    map[common.Hash]hexutil.Bytes `json:"vkt,omitempty"`
 	Txs   []*txWithKey                  `json:"txs,omitempty"`
 	TxRlp string                        `json:"txsRlp,omitempty"`
 }
@@ -197,9 +197,8 @@ func Transition(ctx *cli.Context) error {
 	// Dump the execution result
 	collector := make(Alloc)
 	var btleaves map[common.Hash]hexutil.Bytes
-	// TODO(@CPerezz): Changing this requires changes in further files. Leaving as is now.
-	isVerkle := chainConfig.IsVerkle(big.NewInt(int64(prestate.Env.Number)), prestate.Env.Timestamp)
-	if !isVerkle {
+	isBinary := chainConfig.IsVerkle(big.NewInt(int64(prestate.Env.Number)), prestate.Env.Timestamp)
+	if !isBinary {
 		s.DumpToCollector(collector, nil)
 	} else {
 		btleaves = make(map[common.Hash]hexutil.Bytes)
@@ -401,10 +400,10 @@ func BinKey(ctx *cli.Context) error {
 		if err != nil {
 			return fmt.Errorf("error decoding slot: %w", err)
 		}
-		fmt.Printf("%#x\n", bintrie.GetBinaryTreeKey(common.BytesToAddress(addr), slot))
+		fmt.Printf("%#x\n", bintrie.GetBinaryTreeKeyStorageSlot(common.BytesToAddress(addr), slot))
 	} else {
-		// TODO(@CPerezz): We have `zero` in bintrie but isn't exported. Should we use it?
-		fmt.Printf("%#x\n", bintrie.GetBinaryTreeKey(common.BytesToAddress(addr), make([]byte, 32)))
+		var zeroSlot [32]byte
+		fmt.Printf("%#x\n", bintrie.GetBinaryTreeKeyStorageSlot(common.BytesToAddress(addr), zeroSlot[:]))
 	}
 	return nil
 }

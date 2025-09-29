@@ -59,13 +59,15 @@ type BinaryNode interface {
 func SerializeNode(node BinaryNode) []byte {
 	switch n := (node).(type) {
 	case *InternalNode:
-		var serialized [65]byte
+		// InternalNode: 1 byte type + 32 bytes left hash + 32 bytes right hash
+		var serialized [1 + 32 + 32]byte
 		serialized[0] = nodeTypeInternal
 		copy(serialized[1:33], n.left.Hash().Bytes())
 		copy(serialized[33:65], n.right.Hash().Bytes())
 		return serialized[:]
 	case *StemNode:
-		var serialized [1 + 31 + 32 + 256*32]byte
+		// StemNode: 1 byte type + 31 bytes stem + 32 bytes bitmap + 256*32 bytes values
+		var serialized [1 + StemSize + 32 + NodeWidth*32]byte
 		serialized[0] = nodeTypeStem
 		copy(serialized[1:32], n.Stem)
 		bitmap := serialized[32:64]
