@@ -199,8 +199,11 @@ func Transition(ctx *cli.Context) error {
 	var btleaves map[common.Hash]hexutil.Bytes
 	isBinary := chainConfig.IsVerkle(big.NewInt(int64(prestate.Env.Number)), prestate.Env.Timestamp)
 	if !isBinary {
+		// For MPT, use the standard collector
 		s.DumpToCollector(collector, nil)
 	} else {
+		// For Binary Trie, skip DumpToCollector (which assumes MPT format)
+		// and only collect raw leaves
 		btleaves = make(map[common.Hash]hexutil.Bytes)
 		if err := s.DumpBinTrieLeaves(btleaves); err != nil {
 			return err
