@@ -161,6 +161,19 @@ The export-preimages command exports hash preimages to a flat file, in exactly
 the expected order for the overlay tree migration.
 `,
 			},
+			{
+				Action:    benchmarkStorage,
+				Name:      "benchmark-storage",
+				Usage:     "Benchmark raw database iteration of contract storage",
+				ArgsUsage: "<csvfile> [<root>]",
+				Flags:     slices.Concat(utils.NetworkFlags, utils.DatabaseFlags),
+				Description: `
+The benchmark-storage command iterates over all accounts in the snapshot and for
+accounts with storage, uses a raw database iterator to count storage slots and
+measure iteration time. Results are written to a CSV file with columns:
+account_hash, leaf_count, time_ms.
+`,
+			},
 		},
 	}
 )
@@ -688,5 +701,148 @@ func checkAccount(ctx *cli.Context) error {
 		return err
 	}
 	log.Info("Checked the snapshot journalled storage", "time", common.PrettyDuration(time.Since(start)))
+	return nil
+}
+
+// benchmarkStorage iterates over all accounts and benchmarks raw storage iteration
+func benchmarkStorage(ctx *cli.Context) error {
+	if ctx.NArg() < 1 {
+		utils.Fatalf("This command requires a CSV output file argument")
+	}
+
+	csvFile := ctx.Args().First()
+
+	stack, _ := makeConfigNode(ctx)
+	defer stack.Close()
+
+	chaindb := utils.MakeChainDatabase(ctx, stack, true)
+	defer chaindb.Close()
+
+	// Get the state root to use
+	headBlock := rawdb.ReadHeadBlock(chaindb)
+	if headBlock == nil {
+		log.Error("Failed to load head block")
+		return errors.New("no head block")
+	}
+
+	var root common.Hash
+	if ctx.NArg() > 1 {
+		var err error
+		root, err = parseRoot(ctx.Args().Get(1))
+		if err != nil {
+			log.Error("Failed to resolve state root", "err", err)
+			return err
+		}
+	} else {
+		root = headBlock.Root()
+	}
+
+	// Open the snapshot
+	triedb := utils.MakeTrieDatabase(ctx, stack, chaindb, false, true, false)
+	defer triedb.Close()
+
+	stateIt, err := utils.NewStateIterator(triedb, chaindb, root)
+	if err != nil {
+		return err
+	}
+
+	// Open CSV file for writing
+	file, err := os.Create(csvFile)
+	if err != nil {
+		return fmt.Errorf("failed to create CSV file: %w", err)
+	}
+	defer file.Close()
+
+	// Write CSV header
+	if _, err := file.WriteString("account_hash,leaf_count,time_ms\n"); err != nil {
+		return fmt.Errorf("failed to write CSV header: %w", err)
+	}
+
+	// Create account iterator
+	accIt, err := stateIt.AccountIterator(root, common.Hash{})
+	if err != nil {
+		return fmt.Errorf("failed to create account iterator: %w", err)
+	}
+	defer accIt.Release()
+
+	log.Info("Starting storage benchmarking", "root", root)
+
+	var (
+		start           = time.Now()
+		lastReport      = time.Now()
+		accountsChecked = 0
+		accountsWithStorage = 0
+	)
+
+	// Iterate over all accounts
+	for accIt.Next() {
+		accountsChecked++
+
+		// Parse the account data
+		account, err := types.FullAccount(accIt.Account())
+		if err != nil {
+			log.Error("Failed to parse account", "err", err)
+			continue
+		}
+
+		// Skip accounts without storage
+		if account.Root == types.EmptyRootHash {
+			continue
+		}
+
+		accountsWithStorage++
+		accountHash := accIt.Hash()
+
+		// Create raw database iterator for this account's storage
+		prefix := append(rawdb.SnapshotStoragePrefix, accountHash.Bytes()...)
+		it := rawdb.NewKeyLengthIterator(
+			chaindb.NewIterator(prefix, nil),
+			1+2*common.HashLength, // prefix + account hash + storage hash
+		)
+
+		// Time the iteration
+		iterStart := time.Now()
+		leafCount := 0
+
+		for it.Next() {
+			leafCount++
+		}
+
+		iterDuration := time.Since(iterStart)
+		it.Release()
+
+		// Write to CSV (using account hash since we don't have the actual address)
+		csvLine := fmt.Sprintf("%s,%d,%d\n",
+			accountHash.Hex(),
+			leafCount,
+			iterDuration.Milliseconds(),
+		)
+
+		if _, err := file.WriteString(csvLine); err != nil {
+			log.Error("Failed to write to CSV", "err", err)
+			return err
+		}
+
+		// Progress reporting
+		if time.Since(lastReport) > 8*time.Second {
+			log.Info("Benchmarking progress",
+				"accounts_checked", accountsChecked,
+				"accounts_with_storage", accountsWithStorage,
+				"current", accountHash.Hex(),
+				"leaves", leafCount,
+				"iter_time", iterDuration,
+				"elapsed", common.PrettyDuration(time.Since(start)),
+			)
+			lastReport = time.Now()
+		}
+	}
+
+	log.Info("Storage benchmarking complete",
+		"accounts_checked", accountsChecked,
+		"accounts_with_storage", accountsWithStorage,
+		"elapsed", common.PrettyDuration(time.Since(start)),
+		"csv_file", csvFile,
+	)
+
 	return nil
 }
