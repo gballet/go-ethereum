@@ -167,6 +167,11 @@ const (
 
 	P256VerifyGas uint64 = 6900 // secp256r1 elliptic curve signature verifier gas price
 
+	// EXECUTE precompile gas costs
+	ExecuteBaseGas    uint64 = 10000 // Base gas cost for EXECUTE precompile
+	ExecutePerHashGas uint64 = 100   // Per hash gas cost for array in EXECUTE precompile
+	ExecuteMaxHashes  uint64 = 1000  // Maximum number of hashes allowed in EXECUTE precompile
+
 	// The Refund Quotient is the cap on how much of the used gas can be refunded. Before EIP-3529,
 	// up to half the consumed gas could be refunded. Redefined as 1/5th in EIP-3529
 	RefundQuotient        uint64 = 2

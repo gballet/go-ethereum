@@ -171,6 +171,32 @@ var PrecompiledContractsOsaka = PrecompiledContracts{
 	common.BytesToAddress([]byte{0x1, 0x00}): &p256Verify{},
 }
 
+// PrecompiledContractsNativeRollup contains the set of pre-compiled Ethereum
+// contracts used in the Native Rollup release.
+var PrecompiledContractsNativeRollup = PrecompiledContracts{
+	common.BytesToAddress([]byte{0x01}): &ecrecover{},
+	common.BytesToAddress([]byte{0x02}): &sha256hash{},
+	common.BytesToAddress([]byte{0x03}): &ripemd160hash{},
+	common.BytesToAddress([]byte{0x04}): &dataCopy{},
+	common.BytesToAddress([]byte{0x05}): &bigModExp{eip2565: true, eip7823: true, eip7883: true},
+	common.BytesToAddress([]byte{0x06}): &bn256AddIstanbul{},
+	common.BytesToAddress([]byte{0x07}): &bn256ScalarMulIstanbul{},
+	common.BytesToAddress([]byte{0x08}): &bn256PairingIstanbul{},
+	common.BytesToAddress([]byte{0x09}): &blake2F{},
+	common.BytesToAddress([]byte{0x0a}): &kzgPointEvaluation{},
+	common.BytesToAddress([]byte{0x0b}): &bls12381G1Add{},
+	common.BytesToAddress([]byte{0x0c}): &bls12381G1MultiExp{},
+	common.BytesToAddress([]byte{0x0d}): &bls12381G2Add{},
+	common.BytesToAddress([]byte{0x0e}): &bls12381G2MultiExp{},
+	common.BytesToAddress([]byte{0x0f}): &bls12381Pairing{},
+	common.BytesToAddress([]byte{0x10}): &bls12381MapG1{},
+	common.BytesToAddress([]byte{0x11}): &bls12381MapG2{},
+
+	common.BytesToAddress([]byte{0x1, 0x00}): &p256Verify{},
+	// EXECUTE precompile at address 0x0101
+	common.BytesToAddress([]byte{0x1, 0x01}): &execute{},
+}
+
 // PrecompiledContractsP256Verify contains the precompiled Ethereum
 // contract specified in EIP-7212. This is exported for testing purposes.
 var PrecompiledContractsP256Verify = PrecompiledContracts{
@@ -178,13 +204,14 @@ var PrecompiledContractsP256Verify = PrecompiledContracts{
 }
 
 var (
-	PrecompiledAddressesOsaka     []common.Address
-	PrecompiledAddressesPrague    []common.Address
-	PrecompiledAddressesCancun    []common.Address
-	PrecompiledAddressesBerlin    []common.Address
-	PrecompiledAddressesIstanbul  []common.Address
-	PrecompiledAddressesByzantium []common.Address
-	PrecompiledAddressesHomestead []common.Address
+	PrecompiledAddressesNativeRollup []common.Address
+	PrecompiledAddressesOsaka        []common.Address
+	PrecompiledAddressesPrague       []common.Address
+	PrecompiledAddressesCancun       []common.Address
+	PrecompiledAddressesBerlin       []common.Address
+	PrecompiledAddressesIstanbul     []common.Address
+	PrecompiledAddressesByzantium    []common.Address
+	PrecompiledAddressesHomestead    []common.Address
 )
 
 func init() {
@@ -209,12 +236,17 @@ func init() {
 	for k := range PrecompiledContractsOsaka {
 		PrecompiledAddressesOsaka = append(PrecompiledAddressesOsaka, k)
 	}
+	for k := range PrecompiledContractsNativeRollup {
+		PrecompiledAddressesNativeRollup = append(PrecompiledAddressesNativeRollup, k)
+	}
 }
 
 func activePrecompiledContracts(rules params.Rules) PrecompiledContracts {
 	switch {
 	case rules.IsVerkle:
 		return PrecompiledContractsVerkle
+	case rules.IsNativeRollup:
+		return PrecompiledContractsNativeRollup
 	case rules.IsOsaka:
 		return PrecompiledContractsOsaka
 	case rules.IsPrague:
@@ -1451,4 +1483,88 @@ func (c *p256Verify) Run(input []byte) ([]byte, error) {
 
 func (c *p256Verify) Name() string {
 	return "P256VERIFY"
+}
+
+// execute implements the EXECUTE precompile for Native Rollup support at address 0x0101.
+// Input layout (all values are 32-byte aligned):
+// [0:32]    - chain ID
+// [32:64]   - L2 pre-state hash
+// [64:96]   - block gas limit
+// [96:128]  - array length (number of hashes)
+// [128:160] - coinbase address (right-padded)
+// [160:192] - block number
+// [192:224] - block fee per gas
+// [224:256] - timestamp
+// [256:...]  - array of hashes (32 bytes each)
+type execute struct{}
+
+// RequiredGas returns the gas required to execute the precompiled contract
+func (c *execute) RequiredGas(input []byte) uint64 {
+	if len(input) < 256 {
+		return params.ExecuteBaseGas
+	}
+
+	// Extract array length from input[96:128]
+	arrayLen := new(big.Int).SetBytes(getData(input, 96, 32)).Uint64()
+	if arrayLen > params.ExecuteMaxHashes {
+		arrayLen = params.ExecuteMaxHashes
+	}
+
+	return params.ExecuteBaseGas + (arrayLen * params.ExecutePerHashGas)
+}
+
+// Run executes the precompiled contract with the given input, returning the output and the used gas
+func (c *execute) Run(input []byte) ([]byte, error) {
+	// Minimum input size validation
+	if len(input) < 256 {
+		return nil, errors.New("execute: insufficient input length")
+	}
+
+	// Parse fixed parameters
+	chainID := new(big.Int).SetBytes(getData(input, 0, 32))
+	preStateHash := getData(input, 32, 32)
+	blockGasLimit := new(big.Int).SetBytes(getData(input, 64, 32))
+	arrayLen := new(big.Int).SetBytes(getData(input, 96, 32)).Uint64()
+	coinbase := common.BytesToAddress(getData(input, 128, 32))
+	blockNumber := new(big.Int).SetBytes(getData(input, 160, 32))
+	blockFeePerGas := new(big.Int).SetBytes(getData(input, 192, 32))
+	timestamp := new(big.Int).SetBytes(getData(input, 224, 32))
+
+	// Validate array length
+	if arrayLen > params.ExecuteMaxHashes {
+		return nil, fmt.Errorf("execute: array length %d exceeds maximum %d", arrayLen, params.ExecuteMaxHashes)
+	}
+
+	expectedLen := 256 + (arrayLen * 32)
+	if uint64(len(input)) < expectedLen {
+		return nil, errors.New("execute: input too short for specified array length")
+	}
+
+	// Parse hash array
+	hashes := make([]common.Hash, arrayLen)
+	for i := uint64(0); i < arrayLen; i++ {
+		offset := 256 + (i * 32)
+		hashes[i] = common.BytesToHash(getData(input, offset, 32))
+	}
+
+	// Log parameters (placeholder implementation)
+	fmt.Printf("EXECUTE precompile called:\n")
+	fmt.Printf("  Chain ID: %s\n", chainID)
+	fmt.Printf("  Pre-state hash: %x\n", preStateHash)
+	fmt.Printf("  Block gas limit: %s\n", blockGasLimit)
+	fmt.Printf("  Hash array length: %d\n", arrayLen)
+	fmt.Printf("  Coinbase: %s\n", coinbase.Hex())
+	fmt.Printf("  Block number: %s\n", blockNumber)
+	fmt.Printf("  Block fee per gas: %s\n", blockFeePerGas)
+	fmt.Printf("  Timestamp: %s\n", timestamp)
+	for i, h := range hashes {
+		fmt.Printf("  Hash[%d]: %x\n", i, h)
+	}
+
+	// Return success (empty result for now)
+	return []byte{}, nil
+}
+
+func (c *execute) Name() string {
+	return "EXECUTE"
 }

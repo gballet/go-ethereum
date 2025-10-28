@@ -226,10 +226,12 @@ var (
 		TerminalTotalDifficulty: big.NewInt(0),
 		PragueTime:              newUint64(0),
 		OsakaTime:               newUint64(0),
+		NativeRollupTime:        newUint64(0),
 		BlobScheduleConfig: &BlobScheduleConfig{
-			Cancun: DefaultCancunBlobConfig,
-			Prague: DefaultPragueBlobConfig,
-			Osaka:  DefaultOsakaBlobConfig,
+			Cancun:       DefaultCancunBlobConfig,
+			Prague:       DefaultPragueBlobConfig,
+			Osaka:        DefaultOsakaBlobConfig,
+			NativeRollup: DefaultNativeRollupBlobConfig,
 		},
 	}
 
@@ -317,14 +319,16 @@ var (
 		CancunTime:              newUint64(0),
 		PragueTime:              newUint64(0),
 		OsakaTime:               newUint64(0),
+		NativeRollupTime:        newUint64(0),
 		VerkleTime:              nil,
 		TerminalTotalDifficulty: big.NewInt(0),
 		Ethash:                  new(EthashConfig),
 		Clique:                  nil,
 		BlobScheduleConfig: &BlobScheduleConfig{
-			Cancun: DefaultCancunBlobConfig,
-			Prague: DefaultPragueBlobConfig,
-			Osaka:  DefaultOsakaBlobConfig,
+			Cancun:       DefaultCancunBlobConfig,
+			Prague:       DefaultPragueBlobConfig,
+			Osaka:        DefaultOsakaBlobConfig,
+			NativeRollup: DefaultNativeRollupBlobConfig,
 		},
 	}
 
@@ -403,6 +407,18 @@ var (
 		Max:            21,
 		UpdateFraction: 13739630,
 	}
+	// DefaultAmsterdamBlobConfig is the default blob configuration for the Amsterdam fork.
+	DefaultAmsterdamBlobConfig = &BlobConfig{
+		Target:         6,
+		Max:            9,
+		UpdateFraction: 5007716,
+	}
+	// DefaultNativeRollupBlobConfig is the default blob configuration for the Native Rollup fork.
+	DefaultNativeRollupBlobConfig = &BlobConfig{
+		Target:         6,
+		Max:            9,
+		UpdateFraction: 5007716,
+	}
 	// DefaultBlobSchedule is the latest configured blob schedule for Ethereum mainnet.
 	DefaultBlobSchedule = &BlobScheduleConfig{
 		Cancun: DefaultCancunBlobConfig,
@@ -458,9 +474,10 @@ type ChainConfig struct {
 	BPO2Time      *uint64 `json:"bpo2Time,omitempty"`      // BPO2 switch time (nil = no fork, 0 = already on bpo2)
 	BPO3Time      *uint64 `json:"bpo3Time,omitempty"`      // BPO3 switch time (nil = no fork, 0 = already on bpo3)
 	BPO4Time      *uint64 `json:"bpo4Time,omitempty"`      // BPO4 switch time (nil = no fork, 0 = already on bpo4)
-	BPO5Time      *uint64 `json:"bpo5Time,omitempty"`      // BPO5 switch time (nil = no fork, 0 = already on bpo5)
-	AmsterdamTime *uint64 `json:"amsterdamTime,omitempty"` // Amsterdam switch time (nil = no fork, 0 = already on amsterdam)
-	VerkleTime    *uint64 `json:"verkleTime,omitempty"`    // Verkle switch time (nil = no fork, 0 = already on verkle)
+	BPO5Time       *uint64 `json:"bpo5Time,omitempty"`       // BPO5 switch time (nil = no fork, 0 = already on bpo5)
+	AmsterdamTime  *uint64 `json:"amsterdamTime,omitempty"`  // Amsterdam switch time (nil = no fork, 0 = already on amsterdam)
+	NativeRollupTime *uint64 `json:"nativeRollupTime,omitempty"` // NativeRollup switch time (nil = no fork, 0 = already on native rollup)
+	VerkleTime     *uint64 `json:"verkleTime,omitempty"`     // Verkle switch time (nil = no fork, 0 = already on verkle)
 
 	// TerminalTotalDifficulty is the amount of total difficulty reached by
 	// the network that triggers the consensus upgrade.
@@ -589,6 +606,9 @@ func (c *ChainConfig) String() string {
 	if c.AmsterdamTime != nil {
 		result += fmt.Sprintf(", AmsterdamTime: %v", *c.AmsterdamTime)
 	}
+	if c.NativeRollupTime != nil {
+		result += fmt.Sprintf(", NativeRollupTime: %v", *c.NativeRollupTime)
+	}
 	if c.VerkleTime != nil {
 		result += fmt.Sprintf(", VerkleTime: %v", *c.VerkleTime)
 	}
@@ -684,6 +704,9 @@ func (c *ChainConfig) Description() string {
 	if c.AmsterdamTime != nil {
 		banner += fmt.Sprintf(" - Amsterdam:									 @%-10v blob: (%s)\n", *c.AmsterdamTime, c.BlobScheduleConfig.Amsterdam)
 	}
+	if c.NativeRollupTime != nil {
+		banner += fmt.Sprintf(" - Native Rollup:               @%-10v blob: (%s)\n", *c.NativeRollupTime, c.BlobScheduleConfig.NativeRollup)
+	}
 	if c.VerkleTime != nil {
 		banner += fmt.Sprintf(" - Verkle:                      @%-10v blob: (%s)\n", *c.VerkleTime, c.BlobScheduleConfig.Verkle)
 	}
@@ -716,8 +739,9 @@ type BlobScheduleConfig struct {
 	BPO2      *BlobConfig `json:"bpo2,omitempty"`
 	BPO3      *BlobConfig `json:"bpo3,omitempty"`
 	BPO4      *BlobConfig `json:"bpo4,omitempty"`
-	BPO5      *BlobConfig `json:"bpo5,omitempty"`
-	Amsterdam *BlobConfig `json:"amsterdam,omitempty"`
+	BPO5         *BlobConfig `json:"bpo5,omitempty"`
+	Amsterdam    *BlobConfig `json:"amsterdam,omitempty"`
+	NativeRollup *BlobConfig `json:"nativeRollup,omitempty"`
 }
 
 // IsHomestead returns whether num is either equal to the homestead block or greater.
@@ -860,6 +884,11 @@ func (c *ChainConfig) IsAmsterdam(num *big.Int, time uint64) bool {
 	return c.IsLondon(num) && isTimestampForked(c.AmsterdamTime, time)
 }
 
+// IsNativeRollup returns whether time is either equal to the Native Rollup fork time or greater.
+func (c *ChainConfig) IsNativeRollup(num *big.Int, time uint64) bool {
+	return c.IsLondon(num) && isTimestampForked(c.NativeRollupTime, time)
+}
+
 // IsVerkle returns whether time is either equal to the Verkle fork time or greater.
 func (c *ChainConfig) IsVerkle(num *big.Int, time uint64) bool {
 	return c.IsLondon(num) && isTimestampForked(c.VerkleTime, time)
@@ -946,6 +975,7 @@ func (c *ChainConfig) CheckConfigForkOrder() error {
 		{name: "bpo4", timestamp: c.BPO4Time, optional: true},
 		{name: "bpo5", timestamp: c.BPO5Time, optional: true},
 		{name: "amsterdam", timestamp: c.AmsterdamTime, optional: true},
+		{name: "nativeRollup", timestamp: c.NativeRollupTime, optional: true},
 	} {
 		if lastFork.name != "" {
 			switch {
@@ -1138,6 +1168,8 @@ func (c *ChainConfig) LatestFork(time uint64) forks.Fork {
 	london := c.LondonBlock
 
 	switch {
+	case c.IsNativeRollup(london, time):
+		return forks.NativeRollup
 	case c.IsAmsterdam(london, time):
 		return forks.Amsterdam
 	case c.IsBPO5(london, time):
@@ -1182,6 +1214,10 @@ func (c *ChainConfig) BlobConfig(fork forks.Fork) *BlobConfig {
 		return c.BlobScheduleConfig.Prague
 	case forks.Cancun:
 		return c.BlobScheduleConfig.Cancun
+	case forks.Amsterdam:
+		return c.BlobScheduleConfig.Amsterdam
+	case forks.NativeRollup:
+		return c.BlobScheduleConfig.NativeRollup
 	default:
 		return nil
 	}
@@ -1229,6 +1265,10 @@ func (c *ChainConfig) Timestamp(fork forks.Fork) *uint64 {
 		return c.CancunTime
 	case fork == forks.Shanghai:
 		return c.ShanghaiTime
+	case fork == forks.Amsterdam:
+		return c.AmsterdamTime
+	case fork == forks.NativeRollup:
+		return c.NativeRollupTime
 	default:
 		return nil
 	}
@@ -1375,7 +1415,7 @@ type Rules struct {
 	IsByzantium, IsConstantinople, IsPetersburg, IsIstanbul bool
 	IsBerlin, IsLondon                                      bool
 	IsMerge, IsShanghai, IsCancun, IsPrague, IsOsaka        bool
-	IsAmsterdam, IsVerkle                                   bool
+	IsAmsterdam, IsNativeRollup, IsVerkle                   bool
 }
 
 // Rules ensures c's ChainID is not nil.
@@ -1406,6 +1446,7 @@ func (c *ChainConfig) Rules(num *big.Int, isMerge bool, timestamp uint64) Rules 
 		IsPrague:         isMerge && c.IsPrague(num, timestamp),
 		IsOsaka:          isMerge && c.IsOsaka(num, timestamp),
 		IsAmsterdam:      isMerge && c.IsAmsterdam(num, timestamp),
+		IsNativeRollup:   isMerge && c.IsNativeRollup(num, timestamp),
 		IsVerkle:         isVerkle,
 		IsEIP4762:        isVerkle,
 	}
