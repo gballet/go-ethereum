@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-//go:build !keeper
+//go:build keeper
 
 package rawdb
 
@@ -25,7 +25,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb/eradb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -45,11 +44,10 @@ const (
 // chainFreezer is a wrapper of chain ancient store with additional chain freezing
 // feature. The background thread will keep moving ancient chain segments from
 // key-value database to flat files for saving space on live database.
+//
+// This is the stub version without ERA database support.
 type chainFreezer struct {
 	ancients ethdb.AncientStore // Ancient store for storing cold chain segment
-
-	// Optional Era database used as a backup for the pruned chain.
-	eradb *eradb.Store
 
 	quit    chan struct{}
 	wg      sync.WaitGroup
@@ -74,13 +72,9 @@ func newChainFreezer(datadir string, eraDir string, namespace string, readonly b
 	if err != nil {
 		return nil, err
 	}
-	edb, err := eradb.New(resolveChainEraDir(datadir, eraDir))
-	if err != nil {
-		return nil, err
-	}
+	// ERA database not supported in this build
 	return &chainFreezer{
 		ancients: freezer,
-		eradb:    edb,
 		quit:     make(chan struct{}),
 		trigger:  make(chan chan struct{}),
 	}, nil
@@ -94,10 +88,6 @@ func (f *chainFreezer) Close() error {
 		close(f.quit)
 	}
 	f.wg.Wait()
-
-	if f.eradb != nil {
-		f.eradb.Close()
-	}
 	return f.ancients.Close()
 }
 
@@ -351,30 +341,8 @@ func (f *chainFreezer) freezeRange(nfdb *nofreezedb, number, limit uint64) (hash
 
 // Ancient retrieves an ancient binary blob from the append-only immutable files.
 func (f *chainFreezer) Ancient(kind string, number uint64) ([]byte, error) {
-	// Lookup the entry in the underlying ancient store, assuming that
-	// headers and hashes are always available.
-	if kind == ChainFreezerHeaderTable || kind == ChainFreezerHashTable {
-		return f.ancients.Ancient(kind, number)
-	}
-	tail, err := f.ancients.Tail()
-	if err != nil {
-		return nil, err
-	}
-	// Lookup the entry in the underlying ancient store if it's not pruned
-	if number >= tail {
-		return f.ancients.Ancient(kind, number)
-	}
-	// Lookup the entry in the optional era backend
-	if f.eradb == nil {
-		return nil, errOutOfBounds
-	}
-	switch kind {
-	case ChainFreezerBodiesTable:
-		return f.eradb.GetRawBody(number)
-	case ChainFreezerReceiptTable:
-		return f.eradb.GetRawReceipts(number)
-	}
-	return nil, errUnknownTable
+	// Without ERA support, all ancient lookups go to the underlying store
+	return f.ancients.Ancient(kind, number)
 }
 
 // ReadAncients executes an operation while preventing mutations to the freezer,
