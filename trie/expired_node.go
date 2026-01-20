@@ -61,3 +61,37 @@ func (n *expiredNode) Offset() uint64 {
 func (n *expiredNode) SetArchiveResolver(resolver archive.ResolverFn) {
 	n.archiveResolver = resolver
 }
+
+func archiveRecordsToNode(records []*archive.Record) (node, error) {
+	if len(records) == 0 {
+		return nil, archive.EmptyArchiveRecord
+	}
+	if len(records) == 1 {
+		return decodeNodeUnsafe(nil, records[0].Value)
+	}
+
+	var (
+		newnode fullNode
+		curnode *fullNode
+	)
+	for _, record := range records {
+		curnode = &newnode
+		resolved, err := decodeNodeUnsafe(nil, record.Value)
+		if err != nil {
+			return nil, err
+		}
+		// It's not needed to resurrect all nodes, nodes
+		// not along the path of what has been asked can
+		// be updated as expired. This is for v2.
+		for i, b := range record.Path {
+			if curnode.Children[b] == nil {
+				if i < len(record.Path)-1 {
+					curnode.Children[b] = &fullNode{}
+				} else {
+					curnode.Children[b] = resolved
+				}
+			}
+		}
+	}
+	return &newnode, nil
+}

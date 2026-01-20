@@ -183,40 +183,6 @@ func (t *Trie) MustGet(key []byte) []byte {
 	return res
 }
 
-func archiveRecordsToNode(records []*archive.Record) (node, error) {
-	if len(records) == 0 {
-		return nil, archive.EmptyArchiveRecord
-	}
-	if len(records) == 1 {
-		return decodeNodeUnsafe(nil, records[0].Value)
-	}
-
-	var (
-		newnode fullNode
-		curnode *fullNode
-	)
-	for _, record := range records {
-		curnode = &newnode
-		resolved, err := decodeNodeUnsafe(nil, record.Value)
-		if err != nil {
-			return nil, err
-		}
-		// It's not needed to resurrect all nodes, nodes
-		// not along the path of what has been asked can
-		// be updated as expired. This is for v2.
-		for i, b := range record.Path {
-			if curnode.Children[b] == nil {
-				if i < len(record.Path)-1 {
-					curnode.Children[b] = &fullNode{}
-				} else {
-					curnode.Children[b] = resolved
-				}
-			}
-		}
-	}
-	return &newnode, nil
-}
-
 // Get returns the value for key stored in the trie.
 // The value bytes must not be modified by the caller.
 //
@@ -272,8 +238,22 @@ func (t *Trie) get(origNode node, key []byte, pos int) (value []byte, newnode no
 			return nil, n, false, fmt.Errorf("failed to resolve expired node: %w", err)
 		}
 		newnode, err := archiveRecordsToNode(records)
-		value, newnode, _, err = t.get(newnode, key, pos)
-		return value, newnode, true, err
+		for _, record := range records {
+			// make sure that the path up to the node matches
+			if bytes.HasPrefix(key[pos:], record.Path) {
+				resolved, err := decodeNodeUnsafe(nil, record.Value)
+				if err != nil {
+					return nil, n, false, fmt.Errorf("failed to deserialize RLP node: %w", err)
+				}
+				if leaf, ok := resolved.(*shortNode); ok {
+					// make sure that the key to the leaf also matches
+					if bytes.Equal(key[pos+len(record.Path):], leaf.Key) {
+						return leaf.Val.(valueNode), newnode, true, nil
+					}
+				}
+			}
+		}
+		return value, newnode, false, err
 	default:
 		panic(fmt.Sprintf("%T: invalid node: %v", origNode, origNode))
 	}

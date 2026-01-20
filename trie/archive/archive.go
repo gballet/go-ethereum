@@ -30,13 +30,13 @@ import (
 // Given an offset and size, it returns the serialized node data from the archive.
 type ResolverFn func(offset, size uint64) ([]*Record, error)
 
-// ErrNoResolver is returned when an expired node is accessed without a resolver.
-var ErrNoResolver = errors.New("no archive resolver set for expired node")
-
 // OffsetSize is the size of the file offset in bytes.
 const OffsetSize = 8
 
-var EmptyArchiveRecord = errors.New("empty record")
+var (
+	EmptyArchiveRecord = errors.New("empty record")                             // The archive contained a size-zero record.
+	ErrNoResolver      = errors.New("no archive resolver set for expired node") // An expired node is accessed without a resolver.
+)
 
 // Record contains an archive file record. It is not the most optimal
 // structure, since any modification to it will need to be overwritten.
@@ -45,6 +45,11 @@ type Record struct {
 	Value []byte
 }
 
+// ArchivedNodeResolver takes a buffer containing the archive data
+// held by an expiring node (an offset and a size) and returns a
+// list of records, which is a list of serialized leaf nodes. The
+// caller knows the context (MPT, binary trie) and is responsible
+// for decoding the nodes.
 func ArchivedNodeResolver(offset, size uint64) ([]*Record, error) {
 	file, err := os.Open("nodearchive")
 	if err != nil {
