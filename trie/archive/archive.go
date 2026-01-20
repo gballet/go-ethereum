@@ -79,7 +79,7 @@ func ArchivedNodeResolver(offset, size uint64) ([]*Record, error) {
 		}
 		var record Record
 		err = rlp.DecodeBytes(data[:size], &record)
-		if err == nil {
+		if err != nil {
 			return nil, fmt.Errorf("error decoding rlp record from archive data: %w", err)
 		}
 		data = data[size:]

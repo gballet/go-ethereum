@@ -187,3 +187,305 @@ func TestExpiredNodeCopy(t *testing.T) {
 		t.Error("archive resolver was not copied")
 	}
 }
+
+func TestArchiveRecordsToNodeEmpty(t *testing.T) {
+	_, err := archiveRecordsToNode([]*archive.Record{})
+	if !errors.Is(err, archive.EmptyArchiveRecord) {
+		t.Errorf("expected EmptyArchiveRecord error, got %v", err)
+	}
+
+	_, err = archiveRecordsToNode(nil)
+	if !errors.Is(err, archive.EmptyArchiveRecord) {
+		t.Errorf("expected EmptyArchiveRecord error for nil slice, got %v", err)
+	}
+}
+
+func TestArchiveRecordsToNodeMultiple(t *testing.T) {
+	leaf1 := &shortNode{
+		Key: hexToCompact(keybytesToHex([]byte{0x10})),
+		Val: valueNode([]byte("value1")),
+	}
+	leaf2 := &shortNode{
+		Key: hexToCompact(keybytesToHex([]byte{0x20})),
+		Val: valueNode([]byte("value2")),
+	}
+
+	records := []*archive.Record{
+		{Path: []byte{0x01}, Value: nodeToBytes(leaf1)},
+		{Path: []byte{0x02}, Value: nodeToBytes(leaf2)},
+	}
+
+	node, err := archiveRecordsToNode(records)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	fn, ok := node.(*fullNode)
+	if !ok {
+		t.Fatalf("expected fullNode, got %T", node)
+	}
+
+	if fn.Children[0x01] == nil {
+		t.Error("expected child at index 0x01")
+	}
+	if fn.Children[0x02] == nil {
+		t.Error("expected child at index 0x02")
+	}
+}
+
+func TestExpiredNodeGetMultipleRecords(t *testing.T) {
+	leaf1 := &shortNode{
+		Key: hexToCompact([]byte{0x02, 0x03, 0x04, 16}),
+		Val: valueNode([]byte("value1")),
+	}
+	leaf2 := &shortNode{
+		Key: hexToCompact([]byte{0x05, 0x06, 0x07, 16}),
+		Val: valueNode([]byte("value2")),
+	}
+
+	resolver := func(offset, size uint64) ([]*archive.Record, error) {
+		return []*archive.Record{
+			{Path: []byte{0x01}, Value: nodeToBytes(leaf1)},
+			{Path: []byte{0x04}, Value: nodeToBytes(leaf2)},
+		}, nil
+	}
+
+	tr := NewEmpty(nil)
+	tr.SetArchiveResolver(resolver)
+	tr.root = &expiredNode{offset: 100, size: 200, archiveResolver: resolver}
+
+	val, err := tr.Get([]byte{0x12, 0x34})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(val) != "value1" {
+		t.Errorf("value mismatch: got %q, want %q", val, "value1")
+	}
+
+	tr2 := NewEmpty(nil)
+	tr2.SetArchiveResolver(resolver)
+	tr2.root = &expiredNode{offset: 100, size: 200, archiveResolver: resolver}
+
+	val2, err := tr2.Get([]byte{0x45, 0x67})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if string(val2) != "value2" {
+		t.Errorf("value mismatch: got %q, want %q", val2, "value2")
+	}
+}
+
+func TestExpiredNodeGetKeyNotFound(t *testing.T) {
+	leaf := &shortNode{
+		Key: hexToCompact(keybytesToHex([]byte{0x12})),
+		Val: valueNode([]byte("value1")),
+	}
+
+	resolver := func(offset, size uint64) ([]*archive.Record, error) {
+		return []*archive.Record{
+			{Path: []byte{0x01}, Value: nodeToBytes(leaf)},
+		}, nil
+	}
+
+	tr := NewEmpty(nil)
+	tr.SetArchiveResolver(resolver)
+	tr.root = &expiredNode{offset: 100, size: 200, archiveResolver: resolver}
+
+	val, err := tr.Get([]byte{0xff, 0xff})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if val != nil {
+		t.Errorf("expected nil value for non-existent key, got %q", val)
+	}
+}
+
+func TestExpiredNodeGetPathMismatch(t *testing.T) {
+	leaf := &shortNode{
+		Key: hexToCompact(keybytesToHex([]byte{0x12})),
+		Val: valueNode([]byte("testvalue")),
+	}
+
+	resolver := func(offset, size uint64) ([]*archive.Record, error) {
+		return []*archive.Record{
+			{Path: []byte{0x01}, Value: nodeToBytes(leaf)},
+		}, nil
+	}
+
+	tr := NewEmpty(nil)
+	tr.SetArchiveResolver(resolver)
+	tr.root = &expiredNode{offset: 100, size: 200, archiveResolver: resolver}
+
+	val, err := tr.Get([]byte{0x19})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if val != nil {
+		t.Errorf("expected nil value when leaf key doesn't match, got %q", val)
+	}
+}
+
+func TestExpiredNodeInsert(t *testing.T) {
+	leaf := &shortNode{
+		Key: hexToCompact(keybytesToHex([]byte{0x12})),
+		Val: valueNode([]byte("existing")),
+	}
+
+	resolver := func(offset, size uint64) ([]*archive.Record, error) {
+		return []*archive.Record{
+			{Path: []byte{}, Value: nodeToBytes(leaf)},
+		}, nil
+	}
+
+	tr := NewEmpty(nil)
+	tr.SetArchiveResolver(resolver)
+	tr.root = &expiredNode{offset: 100, size: 200, archiveResolver: resolver}
+
+	err := tr.Update([]byte{0x45}, []byte("newvalue"))
+	if err != nil {
+		t.Fatalf("unexpected error on insert: %v", err)
+	}
+
+	val, err := tr.Get([]byte{0x45})
+	if err != nil {
+		t.Fatalf("unexpected error on get: %v", err)
+	}
+	if string(val) != "newvalue" {
+		t.Errorf("value mismatch: got %q, want %q", val, "newvalue")
+	}
+}
+
+func TestExpiredNodeUpdate(t *testing.T) {
+	leaf := &shortNode{
+		Key: hexToCompact(keybytesToHex([]byte{0x12})),
+		Val: valueNode([]byte("oldvalue")),
+	}
+
+	resolver := func(offset, size uint64) ([]*archive.Record, error) {
+		return []*archive.Record{
+			{Path: []byte{}, Value: nodeToBytes(leaf)},
+		}, nil
+	}
+
+	tr := NewEmpty(nil)
+	tr.SetArchiveResolver(resolver)
+	tr.root = &expiredNode{offset: 100, size: 200, archiveResolver: resolver}
+
+	err := tr.Update([]byte{0x12}, []byte("newvalue"))
+	if err != nil {
+		t.Fatalf("unexpected error on update: %v", err)
+	}
+
+	val, err := tr.Get([]byte{0x12})
+	if err != nil {
+		t.Fatalf("unexpected error on get: %v", err)
+	}
+	if string(val) != "newvalue" {
+		t.Errorf("value mismatch: got %q, want %q", val, "newvalue")
+	}
+}
+
+func TestExpiredNodeDelete(t *testing.T) {
+	leaf1 := &shortNode{
+		Key: hexToCompact([]byte{0x02, 16}),
+		Val: valueNode([]byte("value1")),
+	}
+	leaf2 := &shortNode{
+		Key: hexToCompact([]byte{0x05, 16}),
+		Val: valueNode([]byte("value2")),
+	}
+
+	branch := &fullNode{}
+	branch.Children[0x01] = leaf1
+	branch.Children[0x04] = leaf2
+
+	resolver := func(offset, size uint64) ([]*archive.Record, error) {
+		return []*archive.Record{
+			{Path: []byte{}, Value: nodeToBytes(branch)},
+		}, nil
+	}
+
+	tr := NewEmpty(nil)
+	tr.SetArchiveResolver(resolver)
+	tr.root = &expiredNode{offset: 100, size: 200, archiveResolver: resolver}
+
+	err := tr.Delete([]byte{0x12})
+	if err != nil {
+		t.Fatalf("unexpected error on delete: %v", err)
+	}
+
+	val, err := tr.Get([]byte{0x12})
+	if err != nil {
+		t.Fatalf("unexpected error on get after delete: %v", err)
+	}
+	if val != nil {
+		t.Errorf("expected nil after delete, got %q", val)
+	}
+
+	val2, err := tr.Get([]byte{0x45})
+	if err != nil {
+		t.Fatalf("unexpected error getting other key: %v", err)
+	}
+	if string(val2) != "value2" {
+		t.Errorf("other value should still exist: got %q, want %q", val2, "value2")
+	}
+}
+
+func TestTrieCopyPreservesArchiveResolver(t *testing.T) {
+	leaf := &shortNode{
+		Key: hexToCompact(keybytesToHex([]byte{0x12})),
+		Val: valueNode([]byte("testvalue")),
+	}
+
+	resolverCalled := false
+	resolver := func(offset, size uint64) ([]*archive.Record, error) {
+		resolverCalled = true
+		return []*archive.Record{
+			{Path: []byte{}, Value: nodeToBytes(leaf)},
+		}, nil
+	}
+
+	tr := NewEmpty(nil)
+	tr.SetArchiveResolver(resolver)
+	tr.root = &expiredNode{offset: 100, size: 200, archiveResolver: resolver}
+
+	trCopy := tr.Copy()
+
+	val, err := trCopy.Get([]byte{0x12})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !resolverCalled {
+		t.Error("resolver was not called on copied trie")
+	}
+	if string(val) != "testvalue" {
+		t.Errorf("value mismatch: got %q, want %q", val, "testvalue")
+	}
+}
+
+func TestExpiredNodeGetNode(t *testing.T) {
+	leaf := &shortNode{
+		Key: hexToCompact(keybytesToHex([]byte{0x12})),
+		Val: valueNode([]byte("testvalue")),
+	}
+
+	resolverCalled := false
+	resolver := func(offset, size uint64) ([]*archive.Record, error) {
+		resolverCalled = true
+		return []*archive.Record{
+			{Path: []byte{}, Value: nodeToBytes(leaf)},
+		}, nil
+	}
+
+	tr := NewEmpty(nil)
+	tr.SetArchiveResolver(resolver)
+	tr.root = &expiredNode{offset: 100, size: 200, archiveResolver: resolver}
+
+	_, _, err := tr.GetNode(hexToCompact([]byte{0x01, 0x02}))
+	if !resolverCalled {
+		t.Error("resolver was not called during GetNode")
+	}
+	if err != nil && err.Error() != "non-consensus node" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
