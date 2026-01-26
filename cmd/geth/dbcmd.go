@@ -18,6 +18,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"os"
 	"os/signal"
@@ -82,6 +83,7 @@ Remove blockchain and state databases`,
 			dbMetadataCmd,
 			dbCheckStateContentCmd,
 			dbInspectHistoryCmd,
+			dbTrieVersionCmd,
 		},
 	}
 	dbInspectCmd = &cli.Command{
@@ -205,6 +207,13 @@ WARNING: This is a low-level operation which may cause database corruption!`,
 			},
 		}, utils.NetworkFlags, utils.DatabaseFlags),
 		Description: "This command queries the history of the account or storage slot within the specified block range",
+	}
+	dbTrieVersionCmd = &cli.Command{
+		Action:      dbTrieVersion,
+		Name:        "trie-version",
+		Usage:       "Check storage format version of path-based trie nodes",
+		Flags:       slices.Concat(utils.NetworkFlags, utils.DatabaseFlags),
+		Description: "This command iterates through all path-based trie nodes and reports their storage format version (old RLP format vs new versioned format with period).",
 	}
 )
 
@@ -905,4 +914,113 @@ func inspectHistory(ctx *cli.Context) error {
 		return inspectAccount(triedb, start, end, address, ctx.Bool("raw"))
 	}
 	return inspectStorage(triedb, start, end, address, slot, ctx.Bool("raw"))
+}
+
+// dbTrieVersion iterates through all path-based trie nodes and reports storage
+// format statistics including period distribution.
+func dbTrieVersion(ctx *cli.Context) error {
+	stack, _ := makeConfigNode(ctx)
+	defer stack.Close()
+
+	db := utils.MakeChainDatabase(ctx, stack, true)
+	defer db.Close()
+
+	const periodSize = 8
+
+	var (
+		periodCounts = make(map[uint64]int64) // Count per period
+		totalNodes   int64
+		startTime    = time.Now()
+		lastLog      = time.Now()
+	)
+
+	// decodePeriod extracts the period from a trie node value.
+	// Nodes without period suffix are treated as period 0.
+	decodePeriod := func(data []byte) uint64 {
+		if len(data) == 0 {
+			return 0
+		}
+		// Use rlp.Split to find where the RLP value ends
+		_, _, rest, err := rlp.Split(data)
+		if err != nil {
+			return 0
+		}
+		// If there are exactly 8 trailing bytes, that's the period
+		if len(rest) == periodSize {
+			return binary.BigEndian.Uint64(rest)
+		}
+		return 0
+	}
+
+	// Iterate account trie nodes
+	log.Info("Checking account trie nodes...")
+	accountIter := db.NewIterator(rawdb.TrieNodeAccountPrefix, nil)
+	for accountIter.Next() {
+		key := accountIter.Key()
+		if !rawdb.IsAccountTrieNode(key) {
+			continue
+		}
+		period := decodePeriod(accountIter.Value())
+		periodCounts[period]++
+		totalNodes++
+
+		if time.Since(lastLog) > 8*time.Second {
+			log.Info("Checking account trie nodes", "total", totalNodes, "elapsed", common.PrettyDuration(time.Since(startTime)))
+			lastLog = time.Now()
+		}
+	}
+	accountIter.Release()
+	if err := accountIter.Error(); err != nil {
+		return fmt.Errorf("account trie iteration failed: %w", err)
+	}
+
+	accountNodes := totalNodes
+	log.Info("Finished checking account trie nodes", "count", accountNodes)
+
+	// Iterate storage trie nodes
+	log.Info("Checking storage trie nodes...")
+	storageIter := db.NewIterator(rawdb.TrieNodeStoragePrefix, nil)
+	for storageIter.Next() {
+		key := storageIter.Key()
+		if !rawdb.IsStorageTrieNode(key) {
+			continue
+		}
+		period := decodePeriod(storageIter.Value())
+		periodCounts[period]++
+		totalNodes++
+
+		if time.Since(lastLog) > 8*time.Second {
+			log.Info("Checking storage trie nodes", "total", totalNodes-accountNodes, "elapsed", common.PrettyDuration(time.Since(startTime)))
+			lastLog = time.Now()
+		}
+	}
+	storageIter.Release()
+	if err := storageIter.Error(); err != nil {
+		return fmt.Errorf("storage trie iteration failed: %w", err)
+	}
+
+	storageNodes := totalNodes - accountNodes
+
+	// Print results
+	fmt.Println("\nTrie Node Storage Format (Path-based)")
+	fmt.Println("======================================")
+	fmt.Printf("Account trie nodes:  %d\n", accountNodes)
+	fmt.Printf("Storage trie nodes:  %d\n", storageNodes)
+	fmt.Println("--------------------------------------")
+	fmt.Printf("Total nodes:         %d\n", totalNodes)
+	fmt.Printf("Time elapsed:        %s\n", common.PrettyDuration(time.Since(startTime)))
+
+	// Print period distribution
+	fmt.Println("\nPeriod Distribution")
+	fmt.Println("-------------------")
+	periods := make([]uint64, 0, len(periodCounts))
+	for p := range periodCounts {
+		periods = append(periods, p)
+	}
+	slices.Sort(periods)
+	for _, p := range periods {
+		fmt.Printf("Period %d: %d nodes\n", p, periodCounts[p])
+	}
+
+	return nil
 }

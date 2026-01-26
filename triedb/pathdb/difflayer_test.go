@@ -68,7 +68,7 @@ func benchmarkSearch(b *testing.B, depth int, total int) {
 			var (
 				path = testrand.Bytes(32)
 				blob = testrand.Bytes(100)
-				node = trienode.New(crypto.Keccak256Hash(blob), blob)
+				node = trienode.New(crypto.Keccak256Hash(blob), blob, 0)
 			)
 			nodes[common.Hash{}][string(path)] = node
 			if npath == nil && depth == index {
@@ -76,7 +76,7 @@ func benchmarkSearch(b *testing.B, depth int, total int) {
 				nblob = common.CopyBytes(blob)
 			}
 		}
-		return newDiffLayer(parent, common.Hash{}, 0, 0, NewNodeSetWithOrigin(nodes, nil), NewStateSetWithOrigin(nil, nil, nil, nil, false))
+		return newDiffLayer(parent, common.Hash{}, 0, 0, 0, NewNodeSetWithOrigin(nodes, nil, 0), NewStateSetWithOrigin(nil, nil, nil, nil, false))
 	}
 	var layer layer
 	layer = emptyLayer()
@@ -114,11 +114,11 @@ func BenchmarkPersist(b *testing.B) {
 			var (
 				path = testrand.Bytes(32)
 				blob = testrand.Bytes(100)
-				node = trienode.New(crypto.Keccak256Hash(blob), blob)
+				node = trienode.New(crypto.Keccak256Hash(blob), blob, 0)
 			)
 			nodes[common.Hash{}][string(path)] = node
 		}
-		return newDiffLayer(parent, common.Hash{}, 0, 0, NewNodeSetWithOrigin(nodes, nil), NewStateSetWithOrigin(nil, nil, nil, nil, false))
+		return newDiffLayer(parent, common.Hash{}, 0, 0, 0, NewNodeSetWithOrigin(nodes, nil, 0), NewStateSetWithOrigin(nil, nil, nil, nil, false))
 	}
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
@@ -152,11 +152,11 @@ func BenchmarkJournal(b *testing.B) {
 			var (
 				path = testrand.Bytes(32)
 				blob = testrand.Bytes(100)
-				node = trienode.New(crypto.Keccak256Hash(blob), blob)
+				node = trienode.New(crypto.Keccak256Hash(blob), blob, 0)
 			)
 			nodes[common.Hash{}][string(path)] = node
 		}
-		return newDiffLayer(parent, common.Hash{}, 0, 0, NewNodeSetWithOrigin(nodes, nil), NewStateSetWithOrigin(nil, nil, nil, nil, false))
+		return newDiffLayer(parent, common.Hash{}, 0, 0, 0, NewNodeSetWithOrigin(nodes, nil, 0), NewStateSetWithOrigin(nil, nil, nil, nil, false))
 	}
 	var layer layer
 	layer = emptyLayer()

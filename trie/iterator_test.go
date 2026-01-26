@@ -169,10 +169,12 @@ func testNodeIteratorCoverage(t *testing.T, scheme string) {
 			continue
 		}
 		count += 1
-		if elem, ok := elements[crypto.Keccak256Hash(it.Value())]; !ok {
+		// Decode the blob from storage format (strips period prefix if present)
+		blob := rawdb.DecodeTrieNodeToBlob(it.Value())
+		if elem, ok := elements[crypto.Keccak256Hash(blob)]; !ok {
 			t.Error("state entry not reported")
-		} else if !bytes.Equal(it.Value(), elem.blob) {
-			t.Errorf("node blob is different, want %v got %v", elem.blob, it.Value())
+		} else if !bytes.Equal(blob, elem.blob) {
+			t.Errorf("node blob is different, want %v got %v", elem.blob, blob)
 		}
 	}
 	it.Release()
@@ -586,12 +588,14 @@ func testIteratorNodeBlob(t *testing.T, scheme string) {
 		if !ok {
 			continue
 		}
-		got, present := found[crypto.Keccak256Hash(dbIter.Value())]
+		// Decode the blob from storage format (strips period prefix if present)
+		blob := rawdb.DecodeTrieNodeToBlob(dbIter.Value())
+		got, present := found[crypto.Keccak256Hash(blob)]
 		if !present {
 			t.Fatal("Miss trie node")
 		}
-		if !bytes.Equal(got, dbIter.Value()) {
-			t.Fatalf("Unexpected trie node want %v got %v", dbIter.Value(), got)
+		if !bytes.Equal(got, blob) {
+			t.Fatalf("Unexpected trie node want %v got %v", blob, got)
 		}
 		count += 1
 	}
@@ -621,7 +625,9 @@ func isTrieNode(scheme string, key, val []byte) (bool, []byte, common.Hash) {
 			return false, nil, common.Hash{}
 		}
 		path = common.CopyBytes(remain)
-		hash = crypto.Keccak256Hash(val)
+		// Decode the blob from storage format (strips period prefix if present)
+		blob := rawdb.DecodeTrieNodeToBlob(val)
+		hash = crypto.Keccak256Hash(blob)
 	}
 	return true, path, hash
 }

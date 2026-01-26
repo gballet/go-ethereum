@@ -45,6 +45,10 @@ import (
 // TriesInMemory represents the number of layers that are kept in RAM.
 const TriesInMemory = 128
 
+// NumBlocksPerPeriod defines how many blocks constitute one period for archive expiry.
+// Default is 1,314,000 blocks (~6 months). Can be configured via --state.blocks-per-period.
+var NumBlocksPerPeriod uint64 = 1_314_000
+
 type mutationType int
 
 const (
@@ -1180,9 +1184,10 @@ func (s *StateDB) commit(deleteEmptyObjects bool, noStorageWiping bool, blockNum
 		storageTrieNodesUpdated int
 		storageTrieNodesDeleted int
 
-		lock    sync.Mutex                                               // protect two maps below
-		nodes   = trienode.NewMergedNodeSet()                            // aggregated trie nodes
-		updates = make(map[common.Hash]*accountUpdate, len(s.mutations)) // aggregated account updates
+		lock      sync.Mutex                                               // protect two maps below
+		nodes     = trienode.NewMergedNodeSet()                            // aggregated trie nodes
+		updates   = make(map[common.Hash]*accountUpdate, len(s.mutations)) // aggregated account updates
+		curPeriod = getCurPeriod(blockNumber)
 
 		// merge aggregates the dirty trie nodes into the global set.
 		//
@@ -1313,7 +1318,7 @@ func (s *StateDB) commit(deleteEmptyObjects bool, noStorageWiping bool, blockNum
 	origin := s.originalRoot
 	s.originalRoot = root
 
-	return newStateUpdate(noStorageWiping, origin, root, blockNumber, deletes, updates, nodes), nil
+	return newStateUpdate(noStorageWiping, origin, root, blockNumber, curPeriod, deletes, updates, nodes), nil
 }
 
 // commitAndFlush is a wrapper of commit which also commits the state mutations
@@ -1357,7 +1362,7 @@ func (s *StateDB) commitAndFlush(block uint64, deleteEmptyObjects bool, noStorag
 		// If trie database is enabled, commit the state update as a new layer
 		if db := s.db.TrieDB(); db != nil {
 			start := time.Now()
-			if err := db.Update(ret.root, ret.originRoot, block, ret.nodes, ret.stateSet()); err != nil {
+			if err := db.Update(ret.root, ret.originRoot, block, ret.period, ret.nodes, ret.stateSet()); err != nil {
 				return nil, err
 			}
 			s.TrieDBCommits += time.Since(start)
@@ -1501,4 +1506,8 @@ func (s *StateDB) Witness() *stateless.Witness {
 
 func (s *StateDB) AccessEvents() *AccessEvents {
 	return s.accessEvents
+}
+
+func getCurPeriod(block uint64) uint64 {
+	return block / NumBlocksPerPeriod
 }

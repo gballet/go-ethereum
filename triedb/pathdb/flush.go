@@ -37,7 +37,8 @@ func nodeCacheKey(owner common.Hash, path []byte) []byte {
 
 // writeNodes writes the trie nodes into the provided database batch.
 // Note this function will also inject all the newly written nodes
-// into clean cache.
+// into clean cache. The clean cache stores blob only (without period)
+// to ensure hash verification works correctly on cache hits.
 func writeNodes(batch ethdb.Batch, nodes map[common.Hash]map[string]*trienode.Node, clean *fastcache.Cache) (total int) {
 	for owner, subset := range nodes {
 		for path, n := range subset {
@@ -52,11 +53,12 @@ func writeNodes(batch ethdb.Batch, nodes map[common.Hash]map[string]*trienode.No
 				}
 			} else {
 				if owner == (common.Hash{}) {
-					rawdb.WriteAccountTrieNode(batch, []byte(path), n.Blob)
+					rawdb.WriteAccountTrieNodeWithPeriod(batch, []byte(path), n.Blob, n.Period)
 				} else {
-					rawdb.WriteStorageTrieNode(batch, owner, []byte(path), n.Blob)
+					rawdb.WriteStorageTrieNodeWithPeriod(batch, owner, []byte(path), n.Blob, n.Period)
 				}
 				if clean != nil {
+					// Store blob only (without period) for hash verification
 					clean.Set(nodeCacheKey(owner, []byte(path)), n.Blob)
 				}
 			}

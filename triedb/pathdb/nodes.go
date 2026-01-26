@@ -45,8 +45,9 @@ type nodeSet struct {
 	storageNodes map[common.Hash]map[string]*trienode.Node // storage trie nodes, mapped by owner and path
 }
 
-// newNodeSet constructs the set with the provided dirty trie nodes.
-func newNodeSet(nodes map[common.Hash]map[string]*trienode.Node) *nodeSet {
+// newNodeSet constructs the set with the provided dirty trie nodes and period.
+// The period is set on all nodes in the set.
+func newNodeSet(nodes map[common.Hash]map[string]*trienode.Node, period uint64) *nodeSet {
 	// Don't panic for the lazy callers, initialize the nil map instead
 	if nodes == nil {
 		nodes = make(map[common.Hash]map[string]*trienode.Node)
@@ -63,6 +64,9 @@ func newNodeSet(nodes map[common.Hash]map[string]*trienode.Node) *nodeSet {
 		}
 	}
 	s.computeSize()
+	if period != 0 {
+		s.setPeriod(period)
+	}
 	return s
 }
 
@@ -70,14 +74,25 @@ func newNodeSet(nodes map[common.Hash]map[string]*trienode.Node) *nodeSet {
 func (s *nodeSet) computeSize() {
 	var size uint64
 	for path, n := range s.accountNodes {
-		size += uint64(len(n.Blob) + len(path))
+		size += uint64(len(n.Blob) + len(path) + 8)
 	}
 	for _, subset := range s.storageNodes {
 		for path, n := range subset {
-			size += uint64(common.HashLength + len(n.Blob) + len(path))
+			size += uint64(common.HashLength + len(n.Blob) + len(path) + 8)
 		}
 	}
 	s.size = size
+}
+
+func (s *nodeSet) setPeriod(period uint64) {
+	for _, n := range s.accountNodes {
+		n.Period = period
+	}
+	for _, subset := range s.storageNodes {
+		for _, n := range subset {
+			n.Period = period
+		}
+	}
 }
 
 // updateSize updates the total cache size by the given delta.
@@ -212,28 +227,46 @@ type journalNodes struct {
 	Nodes []journalNode
 }
 
+// journalNodeWithPeriod represents a trie node with period in the journal.
+// Used for disk layer buffer which aggregates nodes from multiple diff layers,
+// each potentially having different periods.
+type journalNodeWithPeriod struct {
+	Path   []byte // Path of the node in the trie
+	Blob   []byte // RLP-encoded trie node blob, nil means the node is deleted
+	Period uint64 // Period when this node was written
+}
+
+// journalNodesWithPeriod represents a list of trie nodes with per-node period.
+type journalNodesWithPeriod struct {
+	Owner common.Hash
+	Nodes []journalNodeWithPeriod
+}
+
 // encode serializes the content of trie nodes into the provided writer.
+// For disk layer buffer, period is stored per-node since nodes come from different diff layers.
 func (s *nodeSet) encode(w io.Writer) error {
-	nodes := make([]journalNodes, 0, len(s.storageNodes)+1)
+	nodes := make([]journalNodesWithPeriod, 0, len(s.storageNodes)+1)
 
 	// Encode account nodes
 	if len(s.accountNodes) > 0 {
-		entry := journalNodes{Owner: common.Hash{}}
+		entry := journalNodesWithPeriod{Owner: common.Hash{}}
 		for path, node := range s.accountNodes {
-			entry.Nodes = append(entry.Nodes, journalNode{
-				Path: []byte(path),
-				Blob: node.Blob,
+			entry.Nodes = append(entry.Nodes, journalNodeWithPeriod{
+				Path:   []byte(path),
+				Blob:   node.Blob,
+				Period: node.Period,
 			})
 		}
 		nodes = append(nodes, entry)
 	}
 	// Encode storage nodes
 	for owner, subset := range s.storageNodes {
-		entry := journalNodes{Owner: owner}
+		entry := journalNodesWithPeriod{Owner: owner}
 		for path, node := range subset {
-			entry.Nodes = append(entry.Nodes, journalNode{
-				Path: []byte(path),
-				Blob: node.Blob,
+			entry.Nodes = append(entry.Nodes, journalNodeWithPeriod{
+				Path:   []byte(path),
+				Blob:   node.Blob,
+				Period: node.Period,
 			})
 		}
 		nodes = append(nodes, entry)
@@ -242,35 +275,64 @@ func (s *nodeSet) encode(w io.Writer) error {
 }
 
 // decode deserializes the content from the rlp stream into the nodeset.
-func (s *nodeSet) decode(r *rlp.Stream) error {
-	var encoded []journalNodes
-	if err := r.Decode(&encoded); err != nil {
-		return fmt.Errorf("load nodes: %v", err)
-	}
+// For disk layer buffer, period is read per-node since nodes come from different diff layers.
+func (s *nodeSet) decode(r *rlp.Stream, version uint64) error {
 	s.accountNodes = make(map[string]*trienode.Node)
 	s.storageNodes = make(map[common.Hash]map[string]*trienode.Node)
 
-	for _, entry := range encoded {
-		if entry.Owner == (common.Hash{}) {
-			// Account nodes
-			for _, n := range entry.Nodes {
-				if len(n.Blob) > 0 {
-					s.accountNodes[string(n.Path)] = trienode.New(crypto.Keccak256Hash(n.Blob), n.Blob)
-				} else {
-					s.accountNodes[string(n.Path)] = trienode.NewDeleted()
+	// Version 3: nodes without per-node period
+	// Version 4+: nodes with per-node period
+	if version < 4 {
+		var encoded []journalNodes
+		if err := r.Decode(&encoded); err != nil {
+			return fmt.Errorf("load nodes: %v", err)
+		}
+		for _, entry := range encoded {
+			if entry.Owner == (common.Hash{}) {
+				for _, n := range entry.Nodes {
+					if len(n.Blob) > 0 {
+						s.accountNodes[string(n.Path)] = trienode.New(crypto.Keccak256Hash(n.Blob), n.Blob, 0)
+					} else {
+						s.accountNodes[string(n.Path)] = trienode.NewDeleted()
+					}
 				}
-			}
-		} else {
-			// Storage nodes
-			subset := make(map[string]*trienode.Node)
-			for _, n := range entry.Nodes {
-				if len(n.Blob) > 0 {
-					subset[string(n.Path)] = trienode.New(crypto.Keccak256Hash(n.Blob), n.Blob)
-				} else {
-					subset[string(n.Path)] = trienode.NewDeleted()
+			} else {
+				subset := make(map[string]*trienode.Node)
+				for _, n := range entry.Nodes {
+					if len(n.Blob) > 0 {
+						subset[string(n.Path)] = trienode.New(crypto.Keccak256Hash(n.Blob), n.Blob, 0)
+					} else {
+						subset[string(n.Path)] = trienode.NewDeleted()
+					}
 				}
+				s.storageNodes[entry.Owner] = subset
 			}
-			s.storageNodes[entry.Owner] = subset
+		}
+	} else {
+		var encoded []journalNodesWithPeriod
+		if err := r.Decode(&encoded); err != nil {
+			return fmt.Errorf("load nodes: %v", err)
+		}
+		for _, entry := range encoded {
+			if entry.Owner == (common.Hash{}) {
+				for _, n := range entry.Nodes {
+					if len(n.Blob) > 0 {
+						s.accountNodes[string(n.Path)] = trienode.New(crypto.Keccak256Hash(n.Blob), n.Blob, n.Period)
+					} else {
+						s.accountNodes[string(n.Path)] = trienode.NewDeleted()
+					}
+				}
+			} else {
+				subset := make(map[string]*trienode.Node)
+				for _, n := range entry.Nodes {
+					if len(n.Blob) > 0 {
+						subset[string(n.Path)] = trienode.New(crypto.Keccak256Hash(n.Blob), n.Blob, n.Period)
+					} else {
+						subset[string(n.Path)] = trienode.NewDeleted()
+					}
+				}
+				s.storageNodes[entry.Owner] = subset
+			}
 		}
 	}
 	s.computeSize()
@@ -321,13 +383,14 @@ type nodeSetWithOrigin struct {
 }
 
 // NewNodeSetWithOrigin constructs the state set with the provided data.
-func NewNodeSetWithOrigin(nodes map[common.Hash]map[string]*trienode.Node, origins map[common.Hash]map[string][]byte) *nodeSetWithOrigin {
+// The period is set on all nodes in the set.
+func NewNodeSetWithOrigin(nodes map[common.Hash]map[string]*trienode.Node, origins map[common.Hash]map[string][]byte, period uint64) *nodeSetWithOrigin {
 	// Don't panic for the lazy callers, initialize the nil maps instead.
 	if origins == nil {
 		origins = make(map[common.Hash]map[string][]byte)
 	}
 	set := &nodeSetWithOrigin{
-		nodeSet:    newNodeSet(nodes),
+		nodeSet:    newNodeSet(nodes, period),
 		nodeOrigin: origins,
 	}
 	set.computeSize()
@@ -350,9 +413,32 @@ func (s *nodeSetWithOrigin) computeSize() {
 }
 
 // encode serializes the content of node set into the provided writer.
+// For diff layers, the period is stored once at the beginning since all nodes
+// share the same period (unlike disk layer buffer which stores period per-node).
 func (s *nodeSetWithOrigin) encode(w io.Writer) error {
-	// Encode node set
-	if err := s.nodeSet.encode(w); err != nil {
+	// Encode nodes without per-node period (all share the same period)
+	nodes := make([]journalNodes, 0, len(s.nodeSet.storageNodes)+1)
+	if len(s.nodeSet.accountNodes) > 0 {
+		entry := journalNodes{Owner: common.Hash{}}
+		for path, node := range s.nodeSet.accountNodes {
+			entry.Nodes = append(entry.Nodes, journalNode{
+				Path: []byte(path),
+				Blob: node.Blob,
+			})
+		}
+		nodes = append(nodes, entry)
+	}
+	for owner, subset := range s.nodeSet.storageNodes {
+		entry := journalNodes{Owner: owner}
+		for path, node := range subset {
+			entry.Nodes = append(entry.Nodes, journalNode{
+				Path: []byte(path),
+				Blob: node.Blob,
+			})
+		}
+		nodes = append(nodes, entry)
+	}
+	if err := rlp.Encode(w, nodes); err != nil {
 		return err
 	}
 	// Short circuit if the origins are not tracked
@@ -361,21 +447,21 @@ func (s *nodeSetWithOrigin) encode(w io.Writer) error {
 	}
 
 	// Encode node origins
-	nodes := make([]journalNodes, 0, len(s.nodeOrigin))
+	origins := make([]journalNodes, 0, len(s.nodeOrigin))
 	for owner, subset := range s.nodeOrigin {
 		entry := journalNodes{
 			Owner: owner,
 			Nodes: make([]journalNode, 0, len(subset)),
 		}
-		for path, node := range subset {
+		for path, blob := range subset {
 			entry.Nodes = append(entry.Nodes, journalNode{
 				Path: []byte(path),
-				Blob: node,
+				Blob: blob,
 			})
 		}
-		nodes = append(nodes, entry)
+		origins = append(origins, entry)
 	}
-	return rlp.Encode(w, nodes)
+	return rlp.Encode(w, origins)
 }
 
 // hasOrigin returns whether the origin data set exists in the rlp stream.
@@ -395,24 +481,54 @@ func (s *nodeSetWithOrigin) hasOrigin(r *rlp.Stream) (bool, error) {
 }
 
 // decode deserializes the content from the rlp stream into the node set.
-func (s *nodeSetWithOrigin) decode(r *rlp.Stream) error {
+// The version parameter is used for backward compatibility:
+// - version 3: no period stored
+// - version 4: period is stored once at the beginning for all nodes
+func (s *nodeSetWithOrigin) decode(r *rlp.Stream, period uint64) error {
 	if s.nodeSet == nil {
 		s.nodeSet = &nodeSet{}
 	}
-	if err := s.nodeSet.decode(r); err != nil {
-		return err
+	// Decode nodes (without per-node period)
+	var encoded []journalNodes
+	if err := r.Decode(&encoded); err != nil {
+		return fmt.Errorf("load nodes: %v", err)
 	}
+	s.nodeSet.accountNodes = make(map[string]*trienode.Node)
+	s.nodeSet.storageNodes = make(map[common.Hash]map[string]*trienode.Node)
+
+	for _, entry := range encoded {
+		if entry.Owner == (common.Hash{}) {
+			for _, n := range entry.Nodes {
+				if len(n.Blob) > 0 {
+					s.nodeSet.accountNodes[string(n.Path)] = trienode.New(crypto.Keccak256Hash(n.Blob), n.Blob, period)
+				} else {
+					s.nodeSet.accountNodes[string(n.Path)] = trienode.NewDeleted()
+				}
+			}
+		} else {
+			subset := make(map[string]*trienode.Node)
+			for _, n := range entry.Nodes {
+				if len(n.Blob) > 0 {
+					subset[string(n.Path)] = trienode.New(crypto.Keccak256Hash(n.Blob), n.Blob, period)
+				} else {
+					subset[string(n.Path)] = trienode.NewDeleted()
+				}
+			}
+			s.nodeSet.storageNodes[entry.Owner] = subset
+		}
+	}
+	s.nodeSet.computeSize()
 
 	// Decode node origins
 	s.nodeOrigin = make(map[common.Hash]map[string][]byte)
 	if hasOrigin, err := s.hasOrigin(r); err != nil {
 		return err
 	} else if hasOrigin {
-		var encoded []journalNodes
-		if err := r.Decode(&encoded); err != nil {
-			return fmt.Errorf("load nodes: %v", err)
+		var origins []journalNodes
+		if err := r.Decode(&origins); err != nil {
+			return fmt.Errorf("load node origins: %v", err)
 		}
-		for _, entry := range encoded {
+		for _, entry := range origins {
 			subset := make(map[string][]byte, len(entry.Nodes))
 			for _, n := range entry.Nodes {
 				if len(n.Blob) > 0 {

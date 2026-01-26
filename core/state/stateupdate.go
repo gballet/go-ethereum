@@ -77,6 +77,7 @@ type stateUpdate struct {
 	originRoot  common.Hash // hash of the state before applying mutation
 	root        common.Hash // hash of the state after applying mutation
 	blockNumber uint64      // Associated block number
+	period      uint64      // Associated period
 
 	accounts       map[common.Hash][]byte    // accounts stores mutated accounts in 'slim RLP' encoding
 	accountsOrigin map[common.Address][]byte // accountsOrigin stores the original values of mutated accounts in 'slim RLP' encoding
@@ -107,7 +108,7 @@ func (sc *stateUpdate) empty() bool {
 //
 // rawStorageKey is a flag indicating whether to use the raw storage slot key or
 // the hash of the slot key for constructing state update object.
-func newStateUpdate(rawStorageKey bool, originRoot common.Hash, root common.Hash, blockNumber uint64, deletes map[common.Hash]*accountDelete, updates map[common.Hash]*accountUpdate, nodes *trienode.MergedNodeSet) *stateUpdate {
+func newStateUpdate(rawStorageKey bool, originRoot common.Hash, root common.Hash, blockNumber uint64, period uint64, deletes map[common.Hash]*accountDelete, updates map[common.Hash]*accountUpdate, nodes *trienode.MergedNodeSet) *stateUpdate {
 	var (
 		accounts       = make(map[common.Hash][]byte)
 		accountsOrigin = make(map[common.Address][]byte)
@@ -177,6 +178,7 @@ func newStateUpdate(rawStorageKey bool, originRoot common.Hash, root common.Hash
 		originRoot:     originRoot,
 		root:           root,
 		blockNumber:    blockNumber,
+		period:         period,
 		accounts:       accounts,
 		accountsOrigin: accountsOrigin,
 		storages:       storages,

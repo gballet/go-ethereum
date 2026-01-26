@@ -319,8 +319,8 @@ func (dl *diskLayer) storage(accountHash, storageHash common.Hash, depth int) ([
 
 // update implements the layer interface, returning a new diff layer on top
 // with the given state set.
-func (dl *diskLayer) update(root common.Hash, id uint64, block uint64, nodes *nodeSetWithOrigin, states *StateSetWithOrigin) *diffLayer {
-	return newDiffLayer(dl, root, id, block, nodes, states)
+func (dl *diskLayer) update(root common.Hash, id uint64, block uint64, period uint64, nodes *nodeSetWithOrigin, states *StateSetWithOrigin) *diffLayer {
+	return newDiffLayer(dl, root, id, block, period, nodes, states)
 }
 
 // writeStateHistory stores the state history and indexes if indexing is
@@ -494,6 +494,14 @@ func (dl *diskLayer) revert(h *stateHistory) (*diskLayer, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Populate the period for the nodes
+	for _, subset := range nodes {
+		for _, n := range subset {
+			n.Period = h.meta.period
+		}
+	}
+
 	// Derive the state modification set from the history, keyed by the hash
 	// of the account address and the storage key.
 	accounts, storages := h.stateSet()

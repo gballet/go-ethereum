@@ -123,7 +123,7 @@ func (t *genTester) Commit() common.Hash {
 	if nodes != nil {
 		t.nodes.Merge(nodes)
 	}
-	t.db.Update(root, types.EmptyRootHash, 0, t.nodes, t.states)
+	t.db.Update(root, types.EmptyRootHash, 0, 0, t.nodes, t.states)
 	t.db.Commit(root, false)
 	return root
 }

@@ -120,7 +120,7 @@ type Trie interface {
 	// collectLeaf is true) will be encapsulated into a nodeset for return.
 	// The returned nodeset can be nil if the trie is clean(nothing to commit).
 	// Once the trie is committed, it's not usable anymore. A new trie must
-	// be created with new root and updated trie database for following usage
+	// be created with new root and updated trie database for following usage.
 	Commit(collectLeaf bool) (common.Hash, *trienode.NodeSet)
 
 	// Witness returns a set containing all trie nodes that have been accessed.

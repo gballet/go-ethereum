@@ -78,7 +78,7 @@ type layer interface {
 	// the provided dirty trie nodes along with the state change set.
 	//
 	// Note, the maps are retained by the method to avoid copying everything.
-	update(root common.Hash, id uint64, block uint64, nodes *nodeSetWithOrigin, states *StateSetWithOrigin) *diffLayer
+	update(root common.Hash, id uint64, block uint64, period uint64, nodes *nodeSetWithOrigin, states *StateSetWithOrigin) *diffLayer
 
 	// journal commits an entire diff hierarchy to disk into a single journal entry.
 	// This is meant to be used during shutdown to persist the layer without
@@ -324,7 +324,7 @@ func (db *Database) setStateGenerator() error {
 // Therefore, these maps must not be changed afterwards.
 //
 // The supplied parentRoot and root must be a valid trie hash value.
-func (db *Database) Update(root common.Hash, parentRoot common.Hash, block uint64, nodes *trienode.MergedNodeSet, states *StateSetWithOrigin) error {
+func (db *Database) Update(root common.Hash, parentRoot common.Hash, block uint64, period uint64, nodes *trienode.MergedNodeSet, states *StateSetWithOrigin) error {
 	// Hold the lock to prevent concurrent mutations.
 	db.lock.Lock()
 	defer db.lock.Unlock()
@@ -334,7 +334,7 @@ func (db *Database) Update(root common.Hash, parentRoot common.Hash, block uint6
 		return err
 	}
 	// TODO(rjl493456442) tracking the origins in the following PRs.
-	if err := db.tree.add(root, parentRoot, block, NewNodeSetWithOrigin(nodes.Nodes(), nil), states); err != nil {
+	if err := db.tree.add(root, parentRoot, block, period, NewNodeSetWithOrigin(nodes.Nodes(), nil, period), states); err != nil {
 		return err
 	}
 	// Keep 128 diff layers in the memory, persistent layer is 129th.
@@ -460,7 +460,7 @@ func (db *Database) Enable(root common.Hash) error {
 // canonical state and the corresponding trie histories are existent.
 //
 // The supplied root must be a valid trie hash value.
-func (db *Database) Recover(root common.Hash) error {
+func (db *Database) Recover(root common.Hash, period uint64) error {
 	db.lock.Lock()
 	defer db.lock.Unlock()
 
@@ -485,6 +485,7 @@ func (db *Database) Recover(root common.Hash) error {
 		if err != nil {
 			return err
 		}
+		h.meta.period = period
 		dl, err = dl.revert(h)
 		if err != nil {
 			return err

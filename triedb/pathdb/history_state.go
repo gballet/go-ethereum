@@ -203,6 +203,7 @@ type meta struct {
 	parent  common.Hash // prev-state root before the state transition
 	root    common.Hash // post-state root after the state transition
 	block   uint64      // associated block number
+	period  uint64      // associated period, not persisted to disk
 }
 
 // encode packs the meta object into byte stream.

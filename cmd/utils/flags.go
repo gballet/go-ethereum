@@ -41,6 +41,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/txpool/blobpool"
 	"github.com/ethereum/go-ethereum/core/txpool/legacypool"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -287,6 +288,12 @@ var (
 		Name:     "state.size-tracking",
 		Usage:    "Enable state size tracking, retrieve state size with debug_stateSize.",
 		Value:    ethconfig.Defaults.EnableStateSizeTracking,
+		Category: flags.StateCategory,
+	}
+	StateBlocksPerPeriodFlag = &cli.Uint64Flag{
+		Name:     "state.blocks-per-period",
+		Usage:    "Number of blocks per period for archive expiry (default = 1,314,000, ~6 months)",
+		Value:    1_314_000,
 		Category: flags.StateCategory,
 	}
 	StateHistoryFlag = &cli.Uint64Flag{
@@ -1701,6 +1708,11 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	}
 	if ctx.IsSet(StateSchemeFlag.Name) {
 		cfg.StateScheme = ctx.String(StateSchemeFlag.Name)
+	}
+	if ctx.IsSet(StateBlocksPerPeriodFlag.Name) {
+		// TODO(weiihann): this is just a hacky way of setting the param without too many code changes for now.
+		// Ideally we want to propagate the param through the config.
+		state.NumBlocksPerPeriod = ctx.Uint64(StateBlocksPerPeriodFlag.Name)
 	}
 	// Parse transaction history flag, if user is still using legacy config
 	// file with 'TxLookupLimit' configured, copy the value to 'TransactionHistory'.

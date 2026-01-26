@@ -51,7 +51,7 @@ type buffer struct {
 func newBuffer(limit int, nodes *nodeSet, states *stateSet, layers uint64) *buffer {
 	// Don't panic for lazy users if any provided set is nil
 	if nodes == nil {
-		nodes = newNodeSet(nil)
+		nodes = newNodeSet(nil, 0)
 	}
 	if states == nil {
 		states = newStates(nil, nil, false)

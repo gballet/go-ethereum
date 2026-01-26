@@ -283,7 +283,7 @@ func (t *StateTrie) Witness() map[string][]byte {
 // The returned nodeset can be nil if the trie is clean (nothing to commit).
 // All cached preimages will be also flushed if preimages recording is enabled.
 // Once the trie is committed, it's not usable anymore. A new trie must
-// be created with new root and updated trie database for following usage
+// be created with new root and updated trie database for following usage.
 func (t *StateTrie) Commit(collectLeaf bool) (common.Hash, *trienode.NodeSet) {
 	// Write all the pre-images to the actual disk database
 	if len(t.secKeyCache) > 0 {

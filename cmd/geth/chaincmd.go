@@ -112,6 +112,7 @@ if one is set.  Otherwise it prints the genesis from the datadir.`,
 			utils.MetricsInfluxDBBucketFlag,
 			utils.MetricsInfluxDBOrganizationFlag,
 			utils.StateSizeTrackingFlag,
+			utils.StateBlocksPerPeriodFlag,
 			utils.TxLookupLimitFlag,
 			utils.VMTraceFlag,
 			utils.VMTraceJsonConfigFlag,
@@ -721,7 +722,7 @@ func downloadEra(ctx *cli.Context) error {
 	flags.CheckExclusive(ctx, eraBlockFlag, eraEpochFlag, eraAllFlag)
 
 	// Resolve the network.
-	var network = "mainnet"
+	network := "mainnet"
 	if utils.IsNetworkPreset(ctx) {
 		switch {
 		case ctx.IsSet(utils.MainnetFlag.Name):

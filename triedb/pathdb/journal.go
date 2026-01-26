@@ -50,7 +50,8 @@ var (
 // - Version 1: storage.Incomplete field is removed
 // - Version 2: add post-modification state values
 // - Version 3: a flag has been added to indicate whether the storage slot key is the raw key or a hash
-const journalVersion uint64 = 3
+// - Version 4: period is stored per nodeSet for archive expiry support
+const journalVersion uint64 = 4
 
 // loadJournal tries to parse the layer journal from the disk.
 func (db *Database) loadJournal(diskRoot common.Hash) (layer, error) {
@@ -79,7 +80,8 @@ func (db *Database) loadJournal(diskRoot common.Hash) (layer, error) {
 	if err != nil {
 		return nil, errMissVersion
 	}
-	if version != journalVersion {
+	// Accept version 3 (legacy) and version 4 (with period support)
+	if version < 3 || version > journalVersion {
 		return nil, fmt.Errorf("%w want %d got %d", errUnexpectedVersion, journalVersion, version)
 	}
 	// Secondly, resolve the disk layer root, ensure it's continuous
@@ -95,12 +97,12 @@ func (db *Database) loadJournal(diskRoot common.Hash) (layer, error) {
 		return nil, fmt.Errorf("%w want %x got %x", errUnmatchedJournal, root, diskRoot)
 	}
 	// Load the disk layer from the journal
-	base, err := db.loadDiskLayer(r)
+	base, err := db.loadDiskLayer(r, version)
 	if err != nil {
 		return nil, err
 	}
 	// Load all the diff layers from the journal
-	head, err := db.loadDiffLayer(base, r)
+	head, err := db.loadDiffLayer(base, r, version)
 	if err != nil {
 		return nil, err
 	}
@@ -181,8 +183,8 @@ func (db *Database) loadLayers() layer {
 }
 
 // loadDiskLayer reads the binary blob from the layer journal, reconstructing
-// a new disk layer on it.
-func (db *Database) loadDiskLayer(r *rlp.Stream) (layer, error) {
+// a new disk layer on it. The version parameter is used for backward compatibility.
+func (db *Database) loadDiskLayer(r *rlp.Stream, version uint64) (layer, error) {
 	// Resolve disk layer root
 	var root common.Hash
 	if err := r.Decode(&root); err != nil {
@@ -201,7 +203,7 @@ func (db *Database) loadDiskLayer(r *rlp.Stream) (layer, error) {
 	}
 	// Resolve nodes cached in aggregated buffer
 	var nodes nodeSet
-	if err := nodes.decode(r); err != nil {
+	if err := nodes.decode(r, version); err != nil {
 		return nil, err
 	}
 	// Resolve flat state sets in aggregated buffer
@@ -214,7 +216,8 @@ func (db *Database) loadDiskLayer(r *rlp.Stream) (layer, error) {
 
 // loadDiffLayer reads the next sections of a layer journal, reconstructing a new
 // diff and verifying that it can be linked to the requested parent.
-func (db *Database) loadDiffLayer(parent layer, r *rlp.Stream) (layer, error) {
+// The version parameter is used for backward compatibility.
+func (db *Database) loadDiffLayer(parent layer, r *rlp.Stream, version uint64) (layer, error) {
 	// Read the next diff journal entry
 	var root common.Hash
 	if err := r.Decode(&root); err != nil {
@@ -228,9 +231,15 @@ func (db *Database) loadDiffLayer(parent layer, r *rlp.Stream) (layer, error) {
 	if err := r.Decode(&block); err != nil {
 		return nil, fmt.Errorf("load block number: %v", err)
 	}
+	var period uint64
+	if version >= 4 {
+		if err := r.Decode(&period); err != nil {
+			return nil, fmt.Errorf("load period: %v", err)
+		}
+	}
 	// Read in-memory trie nodes from journal
 	var nodes nodeSetWithOrigin
-	if err := nodes.decode(r); err != nil {
+	if err := nodes.decode(r, period); err != nil {
 		return nil, err
 	}
 	// Read flat states set (with original value attached) from journal
@@ -238,7 +247,7 @@ func (db *Database) loadDiffLayer(parent layer, r *rlp.Stream) (layer, error) {
 	if err := stateSet.decode(r); err != nil {
 		return nil, err
 	}
-	return db.loadDiffLayer(newDiffLayer(parent, root, parent.stateID()+1, block, &nodes, &stateSet), r)
+	return db.loadDiffLayer(newDiffLayer(parent, root, parent.stateID()+1, block, period, &nodes, &stateSet), r, version)
 }
 
 // journal implements the layer interface, marshaling the un-flushed trie nodes
@@ -286,6 +295,9 @@ func (dl *diffLayer) journal(w io.Writer) error {
 		return err
 	}
 	if err := rlp.Encode(w, dl.block); err != nil {
+		return err
+	}
+	if err := rlp.Encode(w, dl.period); err != nil {
 		return err
 	}
 	// Write the accumulated trie nodes into buffer

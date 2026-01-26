@@ -29,13 +29,14 @@ import (
 // node hash. It is general enough that can be used to represent trie node
 // corresponding to different trie implementations.
 type Node struct {
-	Hash common.Hash // Node hash, empty for deleted node
-	Blob []byte      // Encoded node blob, nil for the deleted node
+	Hash   common.Hash // Node hash, empty for deleted node
+	Blob   []byte      // Encoded node blob, nil for the deleted node
+	Period uint64      // Period when this node was last written
 }
 
 // Size returns the total memory size used by this node.
 func (n *Node) Size() int {
-	return len(n.Blob) + common.HashLength
+	return len(n.Blob) + common.HashLength + 8 // +8 for Period
 }
 
 // IsDeleted returns the indicator if the node is marked as deleted.
@@ -44,12 +45,12 @@ func (n *Node) IsDeleted() bool {
 }
 
 // New constructs a node with provided node information.
-func New(hash common.Hash, blob []byte) *Node {
-	return &Node{Hash: hash, Blob: blob}
+func New(hash common.Hash, blob []byte, period uint64) *Node {
+	return &Node{Hash: hash, Blob: blob, Period: period}
 }
 
-// NewDeleted constructs a node which is deleted.
-func NewDeleted() *Node { return New(common.Hash{}, nil) }
+// NewDeleted constructs a deleted node.
+func NewDeleted() *Node { return New(common.Hash{}, nil, 0) }
 
 // NodeWithPrev is a wrapper over Node by tracking the original value of node.
 type NodeWithPrev struct {
@@ -58,24 +59,19 @@ type NodeWithPrev struct {
 }
 
 // NewNodeWithPrev constructs a node with the additional original value.
+// Period is not set here; it will be populated when the node is committed to disk.
 func NewNodeWithPrev(hash common.Hash, blob []byte, prev []byte) *NodeWithPrev {
 	return &NodeWithPrev{
-		Node: &Node{
-			Hash: hash,
-			Blob: blob,
-		},
+		Node: &Node{Hash: hash, Blob: blob},
 		Prev: prev,
 	}
 }
 
-// NewDeletedWithPrev constructs a node which is deleted with the additional
-// original value.
+// NewDeletedWithPrev constructs a deleted node with original value.
+// Period is not set here; it will be populated when the node is committed to disk.
 func NewDeletedWithPrev(prev []byte) *NodeWithPrev {
 	return &NodeWithPrev{
-		Node: &Node{
-			Hash: common.Hash{},
-			Blob: nil,
-		},
+		Node: &Node{Hash: common.Hash{}, Blob: nil},
 		Prev: prev,
 	}
 }

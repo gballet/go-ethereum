@@ -201,7 +201,7 @@ func newTester(t *testing.T, config *testerConfig) *tester {
 		}
 		root, nodes, states := obj.generate(parent, i > 6)
 
-		if err := db.Update(root, parent, uint64(i), nodes, states); err != nil {
+		if err := db.Update(root, parent, uint64(i), 0, nodes, states); err != nil {
 			panic(fmt.Errorf("failed to update state changes, err: %w", err))
 		}
 		obj.roots = append(obj.roots, root)
@@ -226,7 +226,7 @@ func (t *tester) extend(layers int) {
 			parent = t.roots[len(t.roots)-1]
 		}
 		root, nodes, states := t.generate(parent, true)
-		if err := t.db.Update(root, parent, uint64(i), nodes, states); err != nil {
+		if err := t.db.Update(root, parent, uint64(i), 0, nodes, states); err != nil {
 			panic(fmt.Errorf("failed to update state changes, err: %w", err))
 		}
 		t.roots = append(t.roots, root)
@@ -597,7 +597,7 @@ func TestDatabaseRollback(t *testing.T) {
 		if i > 0 {
 			parent = tester.roots[i-1]
 		}
-		if err := tester.db.Recover(parent); err != nil {
+		if err := tester.db.Recover(parent, 0); err != nil {
 			t.Fatalf("Failed to revert db, err: %v", err)
 		}
 		if i > 0 {
@@ -703,7 +703,7 @@ func TestExecuteRollback(t *testing.T) {
 			}
 		}
 
-		if err := tester.db.Recover(h.meta.parent); err != nil {
+		if err := tester.db.Recover(h.meta.parent, h.meta.period); err != nil {
 			t.Fatalf("Failed to recover db, err: %v", err)
 		}
 	}
@@ -996,7 +996,7 @@ func TestDatabaseIndexRecovery(t *testing.T) {
 
 	// Apply new states on top, ensuring state indexing can respond correctly
 	for i := dIndex + 1; i < len(roots); i++ {
-		if err := env.db.Update(roots[i], roots[i-1], uint64(i), env.nodes[i], env.states[i]); err != nil {
+		if err := env.db.Update(roots[i], roots[i-1], uint64(i), 0, env.nodes[i], env.states[i]); err != nil {
 			panic(fmt.Errorf("failed to update state changes, err: %w", err))
 		}
 	}

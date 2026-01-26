@@ -944,7 +944,8 @@ func (bc *BlockChain) rewindPathHead(head *types.Header, root common.Hash) (*typ
 	}
 	// Recover if the target state if it's not available yet.
 	if !bc.HasState(head.Root) {
-		if err := bc.triedb.Recover(head.Root); err != nil {
+		curPeriod := head.Number.Uint64() / state.NumBlocksPerPeriod // TODO(weiihann): deal with this later
+		if err := bc.triedb.Recover(head.Root, curPeriod); err != nil {
 			log.Error("Failed to rollback state, resetting to genesis", "err", err)
 			return bc.genesisBlock.Header(), rootNumber
 		}
@@ -2324,7 +2325,8 @@ func (bc *BlockChain) insertSideChain(block *types.Block, it *insertIterator, ma
 	parent := it.previous()
 	for parent != nil && !bc.HasState(parent.Root) {
 		if bc.stateRecoverable(parent.Root) {
-			if err := bc.triedb.Recover(parent.Root); err != nil {
+			curPeriod := parent.Number.Uint64() / state.NumBlocksPerPeriod // TODO(weiihann): deal with this later
+			if err := bc.triedb.Recover(parent.Root, curPeriod); err != nil {
 				return nil, 0, err
 			}
 			break
@@ -2386,7 +2388,8 @@ func (bc *BlockChain) recoverAncestors(block *types.Block, makeWitness bool) (co
 	)
 	for parent != nil && !bc.HasState(parent.Root()) {
 		if bc.stateRecoverable(parent.Root()) {
-			if err := bc.triedb.Recover(parent.Root()); err != nil {
+			curPeriod := parent.NumberU64() / state.NumBlocksPerPeriod // TODO(weiihann): deal with this later
+			if err := bc.triedb.Recover(parent.Root(), curPeriod); err != nil {
 				return common.Hash{}, err
 			}
 			break
