@@ -182,11 +182,12 @@ func TestEmptyCollectNodes(t *testing.T) {
 	node := Empty{}
 
 	var collected []BinaryNode
-	flushFn := func(path []byte, n BinaryNode) {
+	flushFn := func(path *BitArray, n BinaryNode) {
 		collected = append(collected, n)
 	}
 
-	err := node.CollectNodes([]byte{0, 1, 0}, flushFn)
+	path := NewBitArray(3, 0b010)
+	err := node.CollectNodes(&path, flushFn)
 	if err != nil {
 		t.Fatalf("Unexpected error: %v", err)
 	}

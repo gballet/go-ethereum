@@ -369,17 +369,17 @@ func TestInternalNodeCollectNodes(t *testing.T) {
 		right: rightStem,
 	}
 
-	var collectedPaths [][]byte
+	var collectedPaths []BitArray
 	var collectedNodes []BinaryNode
 
-	flushFn := func(path []byte, n BinaryNode) {
-		pathCopy := make([]byte, len(path))
-		copy(pathCopy, path)
-		collectedPaths = append(collectedPaths, pathCopy)
+	flushFn := func(path *BitArray, n BinaryNode) {
+		collectedPaths = append(collectedPaths, path.Copy())
 		collectedNodes = append(collectedNodes, n)
 	}
 
-	err := node.CollectNodes([]byte{1}, flushFn)
+	// Initial path: 1 (single bit)
+	initialPath := NewBitArray(1, 1)
+	err := node.CollectNodes(&initialPath, flushFn)
 	if err != nil {
 		t.Fatalf("Failed to collect nodes: %v", err)
 	}
@@ -389,15 +389,15 @@ func TestInternalNodeCollectNodes(t *testing.T) {
 		t.Errorf("Expected 3 collected nodes, got %d", len(collectedNodes))
 	}
 
-	// Check paths
-	expectedPaths := [][]byte{
-		{1, 0}, // left child
-		{1, 1}, // right child
-		{1},    // internal node itself
+	// Check paths (binary: 10 = left child after 1, 11 = right child after 1, 1 = internal node)
+	expectedPaths := []BitArray{
+		NewBitArray(2, 0b10), // left child (1 followed by 0)
+		NewBitArray(2, 0b11), // right child (1 followed by 1)
+		NewBitArray(1, 0b1),  // internal node itself
 	}
 
 	for i, expectedPath := range expectedPaths {
-		if !bytes.Equal(collectedPaths[i], expectedPath) {
+		if !collectedPaths[i].Equal(&expectedPath) {
 			t.Errorf("Path %d mismatch: expected %v, got %v", i, expectedPath, collectedPaths[i])
 		}
 	}

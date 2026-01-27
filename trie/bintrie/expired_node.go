@@ -148,7 +148,7 @@ func (n *expiredNode) InsertValuesAtStem(stem []byte, values [][]byte, resolver 
 	return resolved.InsertValuesAtStem(stem, values, resolver, depth)
 }
 
-func (n *expiredNode) CollectNodes(path []byte, flushfn NodeFlushFn) error {
+func (n *expiredNode) CollectNodes(path *BitArray, flushfn NodeFlushFn) error {
 	return nil
 }
 

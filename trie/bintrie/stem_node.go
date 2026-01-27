@@ -135,7 +135,7 @@ func (bt *StemNode) Hash() common.Hash {
 
 // CollectNodes collects all child nodes at a given path, and flushes it
 // into the provided node collector.
-func (bt *StemNode) CollectNodes(path []byte, flush NodeFlushFn) error {
+func (bt *StemNode) CollectNodes(path *BitArray, flush NodeFlushFn) error {
 	flush(path, bt)
 	return nil
 }

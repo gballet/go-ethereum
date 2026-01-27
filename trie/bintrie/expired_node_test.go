@@ -128,7 +128,7 @@ func TestExpiredNodeGetHeight(t *testing.T) {
 func TestExpiredNodeCollectNodes(t *testing.T) {
 	node := &expiredNode{Offset: 100, depth: 5}
 	called := false
-	err := node.CollectNodes(nil, func(path []byte, n BinaryNode) {
+	err := node.CollectNodes(new(BitArray), func(path *BitArray, n BinaryNode) {
 		called = true
 	})
 
