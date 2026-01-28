@@ -22,6 +22,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus/misc"
+	"github.com/ethereum/go-ethereum/core/native_syscalls"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -226,6 +227,13 @@ func ProcessBeaconBlockRoot(beaconRoot common.Hash, evm *vm.EVM) {
 			defer tracer.OnSystemCallEnd()
 		}
 	}
+
+	// Use native implementation if enabled
+	if evm.Config.NativeSystemCalls {
+		native_syscalls.ExecuteBeaconBlockRoot(evm.StateDB, beaconRoot, evm.Context.Time)
+		return
+	}
+
 	msg := &Message{
 		From:      params.SystemAddress,
 		GasLimit:  30_000_000,
@@ -250,6 +258,14 @@ func ProcessParentBlockHash(prevHash common.Hash, evm *vm.EVM) {
 			defer tracer.OnSystemCallEnd()
 		}
 	}
+
+	// Use native implementation if enabled
+	if evm.Config.NativeSystemCalls {
+		native_syscalls.ExecuteHistoryStorage(evm.StateDB, prevHash, evm.Context.BlockNumber.Uint64())
+		// Note: For Verkle, access events are handled within the StateDB's SetState
+		return
+	}
+
 	msg := &Message{
 		From:      params.SystemAddress,
 		GasLimit:  30_000_000,
@@ -274,12 +290,46 @@ func ProcessParentBlockHash(prevHash common.Hash, evm *vm.EVM) {
 // ProcessWithdrawalQueue calls the EIP-7002 withdrawal queue contract.
 // It returns the opaque request data returned by the contract.
 func ProcessWithdrawalQueue(requests *[][]byte, evm *vm.EVM) error {
+	// Use native implementation if enabled
+	if evm.Config.NativeSystemCalls {
+		if tracer := evm.Config.Tracer; tracer != nil {
+			onSystemCallStart(tracer, evm.GetVMContext())
+			if tracer.OnSystemCallEnd != nil {
+				defer tracer.OnSystemCallEnd()
+			}
+		}
+		ret := native_syscalls.ExecuteWithdrawalQueue(evm.StateDB)
+		if len(ret) > 0 {
+			requestsData := make([]byte, len(ret)+1)
+			requestsData[0] = 0x01 // withdrawal request type
+			copy(requestsData[1:], ret)
+			*requests = append(*requests, requestsData)
+		}
+		return nil
+	}
 	return processRequestsSystemCall(requests, evm, 0x01, params.WithdrawalQueueAddress)
 }
 
 // ProcessConsolidationQueue calls the EIP-7251 consolidation queue contract.
 // It returns the opaque request data returned by the contract.
 func ProcessConsolidationQueue(requests *[][]byte, evm *vm.EVM) error {
+	// Use native implementation if enabled
+	if evm.Config.NativeSystemCalls {
+		if tracer := evm.Config.Tracer; tracer != nil {
+			onSystemCallStart(tracer, evm.GetVMContext())
+			if tracer.OnSystemCallEnd != nil {
+				defer tracer.OnSystemCallEnd()
+			}
+		}
+		ret := native_syscalls.ExecuteConsolidationQueue(evm.StateDB)
+		if len(ret) > 0 {
+			requestsData := make([]byte, len(ret)+1)
+			requestsData[0] = 0x02 // consolidation request type
+			copy(requestsData[1:], ret)
+			*requests = append(*requests, requestsData)
+		}
+		return nil
+	}
 	return processRequestsSystemCall(requests, evm, 0x02, params.ConsolidationQueueAddress)
 }
 
