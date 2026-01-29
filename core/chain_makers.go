@@ -395,6 +395,7 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 			blockContext.Random = &common.Hash{} // enable post-merge instruction set
 			evm := vm.NewEVM(blockContext, statedb, cm.config, vm.Config{})
 			ProcessParentBlockHash(b.header.ParentHash, evm)
+			evm.StateDB.Finalise(true)
 		}
 
 		// Execute any user modifications to the block

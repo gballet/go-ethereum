@@ -222,6 +222,7 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 		)
 		core.ProcessParentBlockHash(prevHash, evm)
 	}
+	evm.StateDB.Finalise(true)
 	for i := 0; txIt.Next(); i++ {
 		tx, err := txIt.Tx()
 		if err != nil {

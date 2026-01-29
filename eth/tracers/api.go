@@ -390,6 +390,7 @@ func (api *API) traceChain(start, end *types.Block, config *TraceConfig, closed 
 			if api.backend.ChainConfig().IsPrague(next.Number(), next.Time()) {
 				core.ProcessParentBlockHash(next.ParentHash(), evm)
 			}
+			evm.StateDB.Finalise(true)
 			// Clean out any pending release functions of trace state. Note this
 			// step must be done after constructing tracing state, because the
 			// tracing state of block next depends on the parent state and construction
@@ -545,6 +546,7 @@ func (api *API) IntermediateRoots(ctx context.Context, hash common.Hash, config 
 	if chainConfig.IsPrague(block.Number(), block.Time()) {
 		core.ProcessParentBlockHash(block.ParentHash(), evm)
 	}
+	evm.StateDB.Finalise(true)
 	for i, tx := range block.Transactions() {
 		if err := ctx.Err(); err != nil {
 			return nil, err
@@ -609,6 +611,7 @@ func (api *API) traceBlock(ctx context.Context, block *types.Block, config *Trac
 	if api.backend.ChainConfig().IsPrague(block.Number(), block.Time()) {
 		core.ProcessParentBlockHash(block.ParentHash(), evm)
 	}
+	evm.StateDB.Finalise(true)
 
 	// JS tracers have high overhead. In this case run a parallel
 	// process that generates states in one thread and traces txes
@@ -787,6 +790,7 @@ func (api *API) standardTraceBlockToFile(ctx context.Context, block *types.Block
 	if chainConfig.IsPrague(block.Number(), block.Time()) {
 		core.ProcessParentBlockHash(block.ParentHash(), evm)
 	}
+	evm.StateDB.Finalise(true)
 	for i, tx := range block.Transactions() {
 		// Prepare the transaction for un-traced execution
 		msg, _ := core.TransactionToMessage(tx, signer, block.BaseFee())

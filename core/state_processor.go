@@ -87,11 +87,17 @@ func (p *StateProcessor) Process(block *types.Block, statedb *state.StateDB, cfg
 	context = NewEVMBlockContext(header, p.chain, nil)
 	evm := vm.NewEVM(context, tracingStateDB, config, cfg)
 
+	var finalize bool
 	if beaconRoot := block.BeaconRoot(); beaconRoot != nil {
 		ProcessBeaconBlockRoot(*beaconRoot, evm)
+		finalize = true
 	}
 	if config.IsPrague(block.Number(), block.Time()) || config.IsVerkle(block.Number(), block.Time()) {
 		ProcessParentBlockHash(block.ParentHash(), evm)
+		finalize = true
+	}
+	if finalize {
+		evm.StateDB.Finalise(true)
 	}
 
 	// Iterate over and process the individual transactions
@@ -238,7 +244,6 @@ func ProcessBeaconBlockRoot(beaconRoot common.Hash, evm *vm.EVM) {
 	evm.SetTxContext(NewEVMTxContext(msg))
 	evm.StateDB.AddAddressToAccessList(params.BeaconRootsAddress)
 	_, _, _ = evm.Call(msg.From, *msg.To, msg.Data, 30_000_000, common.U2560)
-	evm.StateDB.Finalise(true)
 }
 
 // ProcessParentBlockHash stores the parent block hash in the history storage contract
@@ -268,7 +273,6 @@ func ProcessParentBlockHash(prevHash common.Hash, evm *vm.EVM) {
 	if evm.StateDB.AccessEvents() != nil {
 		evm.StateDB.AccessEvents().Merge(evm.AccessEvents)
 	}
-	evm.StateDB.Finalise(true)
 }
 
 // ProcessWithdrawalQueue calls the EIP-7002 withdrawal queue contract.

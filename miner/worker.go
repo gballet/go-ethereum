@@ -266,6 +266,7 @@ func (miner *Miner) prepareWork(genParams *generateParams, witness bool) (*envir
 	if miner.chainConfig.IsPrague(header.Number, header.Time) {
 		core.ProcessParentBlockHash(header.ParentHash, env.evm)
 	}
+	env.evm.StateDB.Finalise(true)
 	return env, nil
 }
 
