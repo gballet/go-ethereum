@@ -326,9 +326,9 @@ func (db *CachingDB) OpenTrie(root common.Hash) (Trie, error) {
 		ts := LoadTransitionState(flatReader, root)
 		if isTransitionActive(flatReader) || db.triedb.IsVerkle() {
 			fmt.Printf("Opening transition-aware trie for root %s with transition state: %+v\n", root, ts)
-
 			// special case of the tree bootsrap: the root will be that of the MPT, so in that
-			// case, open an empty binary tree.
+			// case, open an empty binary tree. At this point, the base root hasn't been filled
+			// in the registry yet, so it will be zero if it's bootstrapping time.
 			var bt *bintrie.BinaryTrie
 			if ts.BaseRoot == (common.Hash{}) {
 				bt, err = bintrie.NewBinaryTrie(common.Hash{}, db.triedb)

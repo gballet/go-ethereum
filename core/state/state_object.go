@@ -150,6 +150,13 @@ func (s *stateObject) getPrefetchedTrie() Trie {
 	if (s.data.Root == types.EmptyRootHash && !s.db.db.TrieDB().IsVerkle()) || s.db.prefetcher == nil {
 		return nil
 	}
+	// In Verkle/transition mode, storage is part of the single unified trie,
+	// not separate per-account storage tries. The prefetcher opens standalone
+	// MPT storage tries that are incompatible with the unified verkle trie.
+	// Skip the prefetched trie to avoid directing storage updates to the wrong trie.
+	if s.db.trie != nil && s.db.trie.IsVerkle() {
+		return nil
+	}
 	// Attempt to retrieve the trie from the prefetcher
 	return s.db.prefetcher.trie(s.addrHash, s.data.Root)
 }
