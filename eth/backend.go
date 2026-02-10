@@ -32,6 +32,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/arena"
 	"github.com/ethereum/go-ethereum/core/filtermaps"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state/pruner"
@@ -237,6 +238,7 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 				EnablePreimageRecording: config.EnablePreimageRecording,
 				EnableWitnessStats:      config.EnableWitnessStats,
 				StatelessSelfValidation: config.StatelessSelfValidation,
+				Allocator:               newAllocatorFromConfig(config),
 			},
 			// Enables file journaling for the trie database. The journal files will be stored
 			// within the data directory. The corresponding paths will be either:
@@ -590,5 +592,14 @@ func (s *Ethereum) Stop() error {
 	s.chainDb.Close()
 	s.eventMux.Stop()
 
+	return nil
+}
+
+// newAllocatorFromConfig returns a BumpAllocator if arena allocation is enabled
+// in the config, or nil (which defaults to HeapAllocator) otherwise.
+func newAllocatorFromConfig(config *ethconfig.Config) arena.Allocator {
+	if config.EnableArenaAlloc {
+		return arena.NewBumpAllocator(make([]byte, 32<<20)) // 32 MiB arena
+	}
 	return nil
 }

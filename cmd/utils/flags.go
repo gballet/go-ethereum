@@ -599,6 +599,11 @@ var (
 		Usage:    "Generate execution witnesses and self-check against them (testing purpose)",
 		Category: flags.VMCategory,
 	}
+	VMArenaAllocFlag = &cli.BoolFlag{
+		Name:     "vmarena",
+		Usage:    "Use bump/arena allocator for transient EVM allocations during block processing",
+		Category: flags.VMCategory,
+	}
 	// API options.
 	RPCGlobalGasCapFlag = &cli.Uint64Flag{
 		Name:     "rpc.gascap",
@@ -1780,6 +1785,9 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	// Auto-enable StatelessSelfValidation when witness stats are enabled
 	if ctx.Bool(VMWitnessStatsFlag.Name) {
 		cfg.StatelessSelfValidation = true
+	}
+	if ctx.IsSet(VMArenaAllocFlag.Name) {
+		cfg.EnableArenaAlloc = ctx.Bool(VMArenaAllocFlag.Name)
 	}
 
 	if ctx.IsSet(RPCGlobalGasCapFlag.Name) {

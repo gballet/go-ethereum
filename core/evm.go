@@ -22,6 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
+	"github.com/ethereum/go-ethereum/core/arena"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -39,6 +40,12 @@ type ChainContext interface {
 
 // NewEVMBlockContext creates a new context for use in the EVM.
 func NewEVMBlockContext(header *types.Header, chain ChainContext, author *common.Address) vm.BlockContext {
+	return NewEVMBlockContextWithAlloc(header, chain, author, arena.DefaultHeap)
+}
+
+// NewEVMBlockContextWithAlloc creates a new context for use in the EVM, using
+// the provided allocator for transient big.Int allocations.
+func NewEVMBlockContextWithAlloc(header *types.Header, chain ChainContext, author *common.Address, alloc arena.Allocator) vm.BlockContext {
 	var (
 		beneficiary common.Address
 		baseFee     *big.Int
@@ -53,7 +60,8 @@ func NewEVMBlockContext(header *types.Header, chain ChainContext, author *common
 		beneficiary = *author
 	}
 	if header.BaseFee != nil {
-		baseFee = new(big.Int).Set(header.BaseFee)
+		baseFee = arena.New[big.Int](alloc)
+		baseFee.Set(header.BaseFee)
 	}
 	if header.ExcessBlobGas != nil {
 		blobBaseFee = eip4844.CalcBlobFee(chain.Config(), header)
@@ -61,14 +69,18 @@ func NewEVMBlockContext(header *types.Header, chain ChainContext, author *common
 	if header.Difficulty.Sign() == 0 {
 		random = &header.MixDigest
 	}
+	blockNumber := arena.New[big.Int](alloc)
+	blockNumber.Set(header.Number)
+	difficulty := arena.New[big.Int](alloc)
+	difficulty.Set(header.Difficulty)
 	return vm.BlockContext{
 		CanTransfer: CanTransfer,
 		Transfer:    Transfer,
 		GetHash:     GetHashFn(header, chain),
 		Coinbase:    beneficiary,
-		BlockNumber: new(big.Int).Set(header.Number),
+		BlockNumber: blockNumber,
 		Time:        header.Time,
-		Difficulty:  new(big.Int).Set(header.Difficulty),
+		Difficulty:  difficulty,
 		BaseFee:     baseFee,
 		BlobBaseFee: blobBaseFee,
 		GasLimit:    header.GasLimit,
@@ -78,13 +90,23 @@ func NewEVMBlockContext(header *types.Header, chain ChainContext, author *common
 
 // NewEVMTxContext creates a new transaction context for a single transaction.
 func NewEVMTxContext(msg *Message) vm.TxContext {
+	return NewEVMTxContextWithAlloc(msg, arena.DefaultHeap)
+}
+
+// NewEVMTxContextWithAlloc creates a new transaction context, using the
+// provided allocator for transient big.Int allocations.
+func NewEVMTxContextWithAlloc(msg *Message, alloc arena.Allocator) vm.TxContext {
+	gasPrice := arena.New[big.Int](alloc)
+	gasPrice.Set(msg.GasPrice)
 	ctx := vm.TxContext{
 		Origin:     msg.From,
-		GasPrice:   new(big.Int).Set(msg.GasPrice),
+		GasPrice:   gasPrice,
 		BlobHashes: msg.BlobHashes,
 	}
 	if msg.BlobGasFeeCap != nil {
-		ctx.BlobFeeCap = new(big.Int).Set(msg.BlobGasFeeCap)
+		blobFeeCap := arena.New[big.Int](alloc)
+		blobFeeCap.Set(msg.BlobGasFeeCap)
+		ctx.BlobFeeCap = blobFeeCap
 	}
 	return ctx
 }
