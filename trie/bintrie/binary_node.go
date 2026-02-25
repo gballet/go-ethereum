@@ -78,7 +78,7 @@ type BinaryNode interface {
 // It traverses up to `remainingDepth` levels, storing hashes of bottom-layer children.
 // position tracks the current index (0 to 2^groupDepth - 1) for bitmap placement.
 // hashes collects the hashes of present children, bitmap tracks which positions are present.
-func serializeSubtree(node BinaryNode, remainingDepth int, position int, bitmap []byte, hashes *[]common.Hash) {
+func serializeSubtree(node BinaryNode, remainingDepth int, position int, absoluteDepth int, bitmap []byte, hashes *[]common.Hash) {
 	if remainingDepth == 0 {
 		// Bottom layer: store hash if not empty
 		switch node.(type) {
@@ -98,18 +98,26 @@ func serializeSubtree(node BinaryNode, remainingDepth int, position int, bitmap 
 		// Recurse into left (bit 0) and right (bit 1) children
 		leftPos := position * 2
 		rightPos := position*2 + 1
-		serializeSubtree(n.left, remainingDepth-1, leftPos, bitmap, hashes)
-		serializeSubtree(n.right, remainingDepth-1, rightPos, bitmap, hashes)
+		serializeSubtree(n.left, remainingDepth-1, leftPos, absoluteDepth+1, bitmap, hashes)
+		serializeSubtree(n.right, remainingDepth-1, rightPos, absoluteDepth+1, bitmap, hashes)
 	case Empty:
 		// Empty subtree: all positions in this subtree are empty (bits already 0)
 		return
 	default:
-		// StemNode or HashedNode before reaching bottom: store hash at current position
-		// This creates a variable-depth group where this branch terminates early.
-		// We need to mark this single position and all its would-be descendants as "this hash".
-		// For simplicity, we store the hash at the first leaf position of this subtree.
-		firstLeafPos := position << remainingDepth
-		bitmap[firstLeafPos/8] |= 1 << (7 - (firstLeafPos % 8))
+		// StemNode or HashedNode before reaching bottom: store hash at a leaf position.
+		// For StemNode, extend position using the stem key bits so that
+		// GetValuesAtStem traversal (which follows key bits) reaches the HashedNode.
+		// For HashedNode/other, fall back to firstLeafPos (all-left extension).
+		leafPos := position
+		if sn, ok := node.(*StemNode); ok {
+			for d := 0; d < remainingDepth; d++ {
+				bit := sn.Stem[(absoluteDepth+d)/8] >> (7 - ((absoluteDepth + d) % 8)) & 1
+				leafPos = leafPos*2 + int(bit)
+			}
+		} else {
+			leafPos = position << remainingDepth
+		}
+		bitmap[leafPos/8] |= 1 << (7 - (leafPos % 8))
 		*hashes = append(*hashes, node.Hash())
 	}
 }
@@ -127,7 +135,7 @@ func SerializeNode(node BinaryNode, groupDepth int) []byte {
 		bitmap := make([]byte, bitmapSize)
 		var hashes []common.Hash
 
-		serializeSubtree(n, groupDepth, 0, bitmap, &hashes)
+		serializeSubtree(n, groupDepth, 0, n.depth, bitmap, &hashes)
 
 		// Build serialized output
 		serializedLen := NodeTypeBytes + 1 + bitmapSize + len(hashes)*HashSize
