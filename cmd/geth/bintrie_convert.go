@@ -90,6 +90,13 @@ type conversionStats struct {
 	start      time.Time
 	lastReport time.Time
 	lastMemChk time.Time
+	lastKey    []byte // current iterator key for progress tracking
+
+	// Cumulative timing for bottleneck analysis
+	hashTime  time.Duration // time in bt.Commit() (hashing)
+	dbTime    time.Duration // time in destDB.Update() + destDB.Commit() (DB writes)
+	gcTime    time.Duration // time in runtime.GC() + FreeOSMemory()
+	reloadTime time.Duration // time to reload trie after commit
 }
 
 func (s *conversionStats) report(force bool) {
@@ -101,13 +108,24 @@ func (s *conversionStats) report(force bool) {
 	if elapsed > 0 {
 		acctRate = float64(s.accounts) / elapsed
 	}
+	// Estimate progress from first byte of iterator key (0x00..0xFF → 0%..100%)
+	progress := "n/a"
+	if len(s.lastKey) > 0 {
+		pct := float64(s.lastKey[0]) / 256.0 * 100.0
+		progress = fmt.Sprintf("%.1f%%", pct)
+	}
 	log.Info("Conversion progress",
+		"progress", progress,
 		"accounts", s.accounts,
 		"slots", s.slots,
 		"codes", s.codes,
 		"commits", s.commits,
 		"accounts/sec", fmt.Sprintf("%.0f", acctRate),
 		"elapsed", common.PrettyDuration(time.Since(s.start)),
+		"t_hash", common.PrettyDuration(s.hashTime),
+		"t_db", common.PrettyDuration(s.dbTime),
+		"t_gc", common.PrettyDuration(s.gcTime),
+		"t_reload", common.PrettyDuration(s.reloadTime),
 	)
 	s.lastReport = time.Now()
 }
@@ -143,6 +161,11 @@ func convertToBinaryTrie(ctx *cli.Context) error {
 	srcTriedb := utils.MakeTrieDatabase(ctx, stack, chaindb, true, true, false)
 	defer srcTriedb.Close()
 
+	// Ensure the snap sync status flag doesn't disable the destination pathdb.
+	if rawdb.ReadSnapSyncStatusFlag(chaindb) == rawdb.StateSyncRunning {
+		log.Warn("Snap sync flag is set, clearing for bintrie conversion")
+		rawdb.WriteSnapSyncStatusFlag(chaindb, rawdb.StateSyncFinished)
+	}
 	destTriedb := triedb.NewDatabase(chaindb, &triedb.Config{
 		IsVerkle: true,
 		PathDB: &pathdb.Config{
@@ -151,13 +174,27 @@ func convertToBinaryTrie(ctx *cli.Context) error {
 	})
 	defer destTriedb.Close()
 
-	binTrie, err := bintrie.NewBinaryTrie(types.EmptyBinaryHash, destTriedb)
+	// Determine the current binary trie root from the destination pathdb.
+	// If a previous partial conversion left data in the verkle namespace,
+	// the disk layer root will be non-empty. We must use that as both
+	// the starting trie root and the parent root for Update() calls.
+	verkleDB := rawdb.NewTable(chaindb, string(rawdb.VerklePrefix))
+	destRoot := types.EmptyBinaryHash
+	if blob := rawdb.ReadAccountTrieNode(verkleDB, nil); len(blob) > 0 {
+		n, err := bintrie.DeserializeNode(blob, 0)
+		if err != nil {
+			return fmt.Errorf("failed to deserialize existing binary root: %v", err)
+		}
+		destRoot = n.Hash()
+		log.Info("Resuming from existing binary trie root", "root", destRoot)
+	}
+	binTrie, err := bintrie.NewBinaryTrie(destRoot, destTriedb)
 	if err != nil {
 		return fmt.Errorf("failed to create binary trie: %v", err)
 	}
 	memLimit := ctx.Uint64(memoryLimitFlag.Name) * 1024 * 1024
 
-	currentRoot, err := runConversionLoop(chaindb, srcTriedb, destTriedb, binTrie, root, memLimit)
+	currentRoot, err := runConversionLoop(chaindb, srcTriedb, destTriedb, binTrie, root, memLimit, destRoot)
 	if err != nil {
 		return err
 	}
@@ -249,8 +286,8 @@ func runConversion(chaindb ethdb.Database, srcTriedb *triedb.Database, binTrie *
 	return nil
 }
 
-func runConversionLoop(chaindb ethdb.Database, srcTriedb *triedb.Database, destTriedb *triedb.Database, binTrie *bintrie.BinaryTrie, root common.Hash, memLimit uint64) (common.Hash, error) {
-	currentRoot := types.EmptyBinaryHash
+func runConversionLoop(chaindb ethdb.Database, srcTriedb *triedb.Database, destTriedb *triedb.Database, binTrie *bintrie.BinaryTrie, root common.Hash, memLimit uint64, initialRoot common.Hash) (common.Hash, error) {
+	currentRoot := initialRoot
 	stats := &conversionStats{
 		start:      time.Now(),
 		lastReport: time.Now(),
@@ -337,6 +374,7 @@ func runConversionLoop(chaindb ethdb.Database, srcTriedb *triedb.Database, destT
 			}
 		}
 		stats.accounts++
+		stats.lastKey = accIter.Key
 		stats.report(false)
 
 		if stats.accounts%1000 == 0 {
@@ -350,7 +388,7 @@ func runConversionLoop(chaindb ethdb.Database, srcTriedb *triedb.Database, destT
 		return common.Hash{}, fmt.Errorf("account iteration error: %v", accIter.Err)
 	}
 
-	_, currentRoot, err = commitBinaryTrie(binTrie, currentRoot, destTriedb)
+	_, currentRoot, err = commitBinaryTrie(binTrie, currentRoot, destTriedb, stats)
 	if err != nil {
 		return common.Hash{}, fmt.Errorf("final commit failed: %v", err)
 	}
@@ -372,7 +410,7 @@ func maybeCommit(bt *bintrie.BinaryTrie, currentRoot common.Hash, destDB *triedb
 	}
 	log.Info("Memory limit reached, committing", "alloc", common.StorageSize(m.Alloc), "limit", common.StorageSize(memLimit))
 
-	bt, currentRoot, err := commitBinaryTrie(bt, currentRoot, destDB)
+	bt, currentRoot, err := commitBinaryTrie(bt, currentRoot, destDB, stats)
 	if err != nil {
 		return nil, common.Hash{}, err
 	}
@@ -381,9 +419,15 @@ func maybeCommit(bt *bintrie.BinaryTrie, currentRoot common.Hash, destDB *triedb
 	return bt, currentRoot, nil
 }
 
-func commitBinaryTrie(bt *bintrie.BinaryTrie, currentRoot common.Hash, destDB *triedb.Database) (*bintrie.BinaryTrie, common.Hash, error) {
+func commitBinaryTrie(bt *bintrie.BinaryTrie, currentRoot common.Hash, destDB *triedb.Database, stats *conversionStats) (*bintrie.BinaryTrie, common.Hash, error) {
+	// Phase 1: Hash computation
+	t0 := time.Now()
 	newRoot, nodeSet := bt.Commit(false)
+	stats.hashTime += time.Since(t0)
+
+	// Phase 2: DB writes
 	if nodeSet != nil {
+		t1 := time.Now()
 		merged := trienode.NewWithNodeSet(nodeSet)
 		if err := destDB.Update(newRoot, currentRoot, 0, merged, triedb.NewStateSet()); err != nil {
 			return nil, common.Hash{}, fmt.Errorf("triedb update failed: %v", err)
@@ -391,14 +435,24 @@ func commitBinaryTrie(bt *bintrie.BinaryTrie, currentRoot common.Hash, destDB *t
 		if err := destDB.Commit(newRoot, false); err != nil {
 			return nil, common.Hash{}, fmt.Errorf("triedb commit failed: %v", err)
 		}
+		stats.dbTime += time.Since(t1)
+		nodes, storage := nodeSet.Size()
+		log.Info("Commit details", "nodes", nodes, "storage", common.StorageSize(storage), "hash", stats.hashTime, "db", stats.dbTime)
 	}
+
+	// Phase 3: GC
+	t2 := time.Now()
 	runtime.GC()
 	debug.FreeOSMemory()
+	stats.gcTime += time.Since(t2)
 
+	// Phase 4: Reload trie
+	t3 := time.Now()
 	bt, err := bintrie.NewBinaryTrie(newRoot, destDB)
 	if err != nil {
 		return nil, common.Hash{}, fmt.Errorf("failed to reload binary trie: %v", err)
 	}
+	stats.reloadTime += time.Since(t3)
 	return bt, newRoot, nil
 }
 
