@@ -1502,3 +1502,10 @@ func (s *StateDB) Witness() *stateless.Witness {
 func (s *StateDB) AccessEvents() *AccessEvents {
 	return s.accessEvents
 }
+
+// SetAccessEvents overrides the access events tracker. Passing nil disables
+// verkle-style witness gas accounting, which is useful when replaying blocks
+// on a binary trie outside of the actual verkle fork.
+func (s *StateDB) SetAccessEvents(ae *AccessEvents) {
+	s.accessEvents = ae
+}

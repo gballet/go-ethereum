@@ -166,7 +166,7 @@ func ApplyTransactionWithEVM(msg *Message, gp *GasPool, statedb *state.StateDB, 
 
 	// Merge the tx-local access event into the "block-local" one, in order to collect
 	// all values, so that the witness can be built.
-	if statedb.Database().TrieDB().IsVerkle() {
+	if statedb.AccessEvents() != nil && evm.AccessEvents != nil {
 		statedb.AccessEvents().Merge(evm.AccessEvents)
 	}
 	return MakeReceipt(evm, result, statedb, blockNumber, blockHash, blockTime, tx, *usedGas, root), nil
@@ -265,7 +265,7 @@ func ProcessParentBlockHash(prevHash common.Hash, evm *vm.EVM) {
 	if err != nil {
 		panic(err)
 	}
-	if evm.StateDB.AccessEvents() != nil {
+	if evm.StateDB.AccessEvents() != nil && evm.AccessEvents != nil {
 		evm.StateDB.AccessEvents().Merge(evm.AccessEvents)
 	}
 	evm.StateDB.Finalise(true)
