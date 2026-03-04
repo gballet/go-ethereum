@@ -21,6 +21,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -118,6 +119,10 @@ type BinaryTrie struct {
 	root   BinaryNode
 	reader *trie.Reader
 	tracer *trie.PrevalueTracer
+
+	// Instrumentation for node resolution during inserts
+	ResolveTime time.Duration
+	ResolveCnt  uint64
 }
 
 // ToDot converts the binary trie to a DOT language representation. Useful for debugging.
@@ -159,7 +164,10 @@ func (t *BinaryTrie) nodeResolver(path []byte, hash common.Hash) ([]byte, error)
 	if hash == (common.Hash{}) {
 		return nil, nil // empty node
 	}
+	start := time.Now()
 	blob, err := t.reader.Node(path, hash)
+	t.ResolveTime += time.Since(start)
+	t.ResolveCnt++
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +244,7 @@ func (t *BinaryTrie) GetAccount(addr common.Address) (*types.StateAccount, error
 // not be modified by the caller. If a node was not found in the database, a
 // trie.MissingNodeError is returned.
 func (t *BinaryTrie) GetStorage(addr common.Address, key []byte) ([]byte, error) {
-	return t.root.Get(GetBinaryTreeKey(addr, key), t.nodeResolver)
+	return t.root.Get(GetBinaryTreeKeyStorageSlot(addr, key), t.nodeResolver)
 }
 
 // UpdateAccount updates the account information for the given address.
@@ -302,7 +310,7 @@ func (t *BinaryTrie) DeleteAccount(addr common.Address) error {
 // DeleteStorage removes any existing value for key from the trie. If a node was not
 // found in the database, a trie.MissingNodeError is returned.
 func (t *BinaryTrie) DeleteStorage(addr common.Address, key []byte) error {
-	k := GetBinaryTreeKey(addr, key)
+	k := GetBinaryTreeKeyStorageSlot(addr, key)
 	var zero [HashSize]byte
 	root, err := t.root.Insert(k, zero[:], t.nodeResolver, 0)
 	if err != nil {
