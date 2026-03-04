@@ -19,6 +19,8 @@ package main
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"slices"
@@ -49,6 +51,10 @@ var (
 		Usage: "Max heap allocation in MB before forcing a commit cycle",
 		Value: 16384,
 	}
+	freshConvertFlag = &cli.BoolFlag{
+		Name:  "fresh",
+		Usage: "Delete existing binary trie data and start conversion from scratch",
+	}
 
 	bintrieCommand = &cli.Command{
 		Name:        "bintrie",
@@ -63,6 +69,7 @@ var (
 				Flags: slices.Concat([]cli.Flag{
 					deleteSourceFlag,
 					memoryLimitFlag,
+					freshConvertFlag,
 				}, utils.NetworkFlags, utils.DatabaseFlags),
 				Description: `
 geth bintrie convert [--delete-source] [--memory-limit MB] [state-root]
@@ -76,6 +83,48 @@ If omitted, the head block's state root is used.
 Flags:
   --delete-source    Delete MPT trie nodes after successful conversion
   --memory-limit     Max heap allocation in MB before forcing a commit (default: 16384)
+`,
+			},
+			{
+				Name:   "replay",
+				Usage:  "Replay blocks on the binary trie (offline state re-execution)",
+				Action: replayBinaryTrie,
+				Flags: slices.Concat([]cli.Flag{
+					bintrieReplayStartFlag,
+					bintrieReplayEndFlag,
+					bintrieReplayBatchFlag,
+					bintrieReplayRootFlag,
+					bintrieReplayNoCommitFlag,
+				}, utils.NetworkFlags, utils.DatabaseFlags),
+				Description: `
+geth bintrie replay --start <block> [--end <block>] [--batch <n>]
+
+Replays blocks from the chain database against the binary trie state,
+starting from the block at which the MPT-to-binary conversion was performed.
+
+This command does NOT verify state roots against the block headers (since the
+binary trie produces different roots than the MPT). It processes transactions,
+applies state changes, and commits the resulting binary trie state.
+
+Flags:
+  --start   Block number at which the binary trie conversion was done (required)
+  --end     Block number to stop at (default: head block)
+  --batch   Blocks between disk flushes (default: 128)
+`,
+			},
+			{
+				Name:   "generate-preimages",
+				Usage:  "Re-execute blocks to generate missing preimages",
+				Action: generatePreimages,
+				Flags: slices.Concat([]cli.Flag{
+					bintrieReplayStartFlag,
+					bintrieReplayEndFlag,
+				}, utils.NetworkFlags, utils.DatabaseFlags),
+				Description: `
+geth bintrie generate-preimages --start <block> [--end <block>]
+
+Re-executes blocks from the chain database to record storage key preimages.
+Use this when blocks were originally synced without --cache.preimages.
 `,
 			},
 		},
@@ -93,10 +142,19 @@ type conversionStats struct {
 	lastKey    []byte // current iterator key for progress tracking
 
 	// Cumulative timing for bottleneck analysis
-	hashTime  time.Duration // time in bt.Commit() (hashing)
-	dbTime    time.Duration // time in destDB.Update() + destDB.Commit() (DB writes)
-	gcTime    time.Duration // time in runtime.GC() + FreeOSMemory()
-	reloadTime time.Duration // time to reload trie after commit
+	hashTime         time.Duration // time in bt.Commit() (hashing)
+	dbTime           time.Duration // time in destDB.Update() + destDB.Commit() (DB writes)
+	gcTime           time.Duration // time in runtime.GC() + FreeOSMemory()
+	reloadTime       time.Duration // time to reload trie after commit
+	iterTime         time.Duration // time iterating the MPT (account + storage iterators)
+	insertTime       time.Duration // time in binTrie.UpdateStorage/UpdateAccount/UpdateContractCode
+	resolveTime      time.Duration // time resolving hashed nodes during insertion (subset of insertTime)
+	resolveCnt       uint64        // number of node resolutions
+	preimageTime     time.Duration // time looking up preimages (GetKey)
+	codeReadTime     time.Duration // time reading contract code from DB
+	stoTrieTime      time.Duration // time opening storage tries (NewStateTrie + NodeIterator)
+	rlpTime          time.Duration // time decoding RLP (accounts + storage values)
+	missingPreimages uint64        // count of skipped entries due to missing preimages
 }
 
 func (s *conversionStats) report(force bool) {
@@ -114,6 +172,12 @@ func (s *conversionStats) report(force bool) {
 		pct := float64(s.lastKey[0]) / 256.0 * 100.0
 		progress = fmt.Sprintf("%.1f%%", pct)
 	}
+	// Compute the "other" time: total - all measured phases
+	measured := s.hashTime + s.dbTime + s.gcTime + s.reloadTime + s.iterTime + s.insertTime + s.preimageTime + s.codeReadTime + s.stoTrieTime + s.rlpTime
+	other := time.Since(s.start) - measured
+	if other < 0 {
+		other = 0
+	}
 	log.Info("Conversion progress",
 		"progress", progress,
 		"accounts", s.accounts,
@@ -122,10 +186,19 @@ func (s *conversionStats) report(force bool) {
 		"commits", s.commits,
 		"accounts/sec", fmt.Sprintf("%.0f", acctRate),
 		"elapsed", common.PrettyDuration(time.Since(s.start)),
+		"t_iter", common.PrettyDuration(s.iterTime),
+		"t_insert", common.PrettyDuration(s.insertTime),
+		"t_resolve", fmt.Sprintf("%s (%d calls)", common.PrettyDuration(s.resolveTime), s.resolveCnt),
+		"t_preimage", common.PrettyDuration(s.preimageTime),
+		"t_code", common.PrettyDuration(s.codeReadTime),
+		"t_stoTrie", common.PrettyDuration(s.stoTrieTime),
+		"t_rlp", common.PrettyDuration(s.rlpTime),
 		"t_hash", common.PrettyDuration(s.hashTime),
 		"t_db", common.PrettyDuration(s.dbTime),
 		"t_gc", common.PrettyDuration(s.gcTime),
 		"t_reload", common.PrettyDuration(s.reloadTime),
+		"t_other", common.PrettyDuration(other),
+		"missing", s.missingPreimages,
 	)
 	s.lastReport = time.Now()
 }
@@ -166,6 +239,44 @@ func convertToBinaryTrie(ctx *cli.Context) error {
 		log.Warn("Snap sync flag is set, clearing for bintrie conversion")
 		rawdb.WriteSnapSyncStatusFlag(chaindb, rawdb.StateSyncFinished)
 	}
+	// If --fresh is set, clean up old binary trie data before opening the dest DB.
+	if ctx.Bool(freshConvertFlag.Name) {
+		log.Info("Fresh conversion requested, clearing old binary trie data")
+		// Delete the conversion progress marker
+		if err := chaindb.Delete(bintrieConvertMarkerKey); err != nil {
+			log.Warn("Failed to delete conversion marker", "err", err)
+		}
+		// Delete all verkle-prefixed trie nodes from the key-value store
+		verklePrefix := string(rawdb.VerklePrefix)
+		it := chaindb.NewIterator([]byte(verklePrefix), nil)
+		batch := chaindb.NewBatch()
+		cleaned := 0
+		for it.Next() {
+			if err := batch.Delete(it.Key()); err != nil {
+				it.Release()
+				return fmt.Errorf("failed to delete verkle key: %v", err)
+			}
+			cleaned++
+			if cleaned%10000 == 0 {
+				if err := batch.Write(); err != nil {
+					it.Release()
+					return fmt.Errorf("failed to write cleanup batch: %v", err)
+				}
+				batch.Reset()
+			}
+		}
+		it.Release()
+		if err := batch.Write(); err != nil {
+			return fmt.Errorf("failed to write final cleanup batch: %v", err)
+		}
+		// Also remove the bintrie journal directory and state_verkle ancient store
+		bintrieJournalDir := stack.ResolvePath("triedb-bintrie")
+		os.RemoveAll(bintrieJournalDir)
+		verkleAncientDir := filepath.Join(stack.ResolvePath("chaindata"), "ancient", "state_verkle")
+		os.RemoveAll(verkleAncientDir)
+		log.Info("Cleaned old binary trie data", "keys", cleaned)
+	}
+
 	destTriedb := triedb.NewDatabase(chaindb, &triedb.Config{
 		IsVerkle: true,
 		PathDB: &pathdb.Config{
@@ -199,6 +310,10 @@ func convertToBinaryTrie(ctx *cli.Context) error {
 		return err
 	}
 	log.Info("Conversion complete", "binaryRoot", currentRoot)
+	// Clean up the conversion marker now that we're done.
+	if err := chaindb.Delete(bintrieConvertMarkerKey); err != nil {
+		log.Warn("Failed to delete conversion marker", "err", err)
+	}
 
 	if ctx.Bool(deleteSourceFlag.Name) {
 		log.Info("Deleting source MPT data")
@@ -286,6 +401,9 @@ func runConversion(chaindb ethdb.Database, srcTriedb *triedb.Database, binTrie *
 	return nil
 }
 
+// Key used to persist the conversion progress marker in the database.
+var bintrieConvertMarkerKey = []byte("bintrie-convert-marker")
+
 func runConversionLoop(chaindb ethdb.Database, srcTriedb *triedb.Database, destTriedb *triedb.Database, binTrie *bintrie.BinaryTrie, root common.Hash, memLimit uint64, initialRoot common.Hash) (common.Hash, error) {
 	currentRoot := initialRoot
 	stats := &conversionStats{
@@ -294,37 +412,60 @@ func runConversionLoop(chaindb ethdb.Database, srcTriedb *triedb.Database, destT
 		lastMemChk: time.Now(),
 	}
 
+	// Load the conversion marker to resume from where we left off.
+	var startKey []byte
+	if marker, _ := chaindb.Get(bintrieConvertMarkerKey); len(marker) > 0 {
+		startKey = marker
+		log.Info("Resuming conversion from marker", "marker", common.Bytes2Hex(startKey))
+	}
+
 	srcTrie, err := trie.NewStateTrie(trie.StateTrieID(root), srcTriedb)
 	if err != nil {
 		return common.Hash{}, fmt.Errorf("failed to open source trie: %v", err)
 	}
-	acctIt, err := srcTrie.NodeIterator(nil)
+	acctIt, err := srcTrie.NodeIterator(startKey)
 	if err != nil {
 		return common.Hash{}, fmt.Errorf("failed to create account iterator: %v", err)
 	}
 	accIter := trie.NewIterator(acctIt)
 
+	tIterStart := time.Now()
 	for accIter.Next() {
+		stats.iterTime += time.Since(tIterStart)
+
+		tRLP := time.Now()
 		var acc types.StateAccount
 		if err := rlp.DecodeBytes(accIter.Value, &acc); err != nil {
 			return common.Hash{}, fmt.Errorf("invalid account RLP: %v", err)
 		}
+		stats.rlpTime += time.Since(tRLP)
+
+		tPreimage := time.Now()
 		addrBytes := srcTrie.GetKey(accIter.Key)
+		stats.preimageTime += time.Since(tPreimage)
 		if addrBytes == nil {
-			return common.Hash{}, fmt.Errorf("missing preimage for account hash %x (run with --cache.preimages)", accIter.Key)
+			stats.missingPreimages++
+			if stats.missingPreimages <= 20 {
+				log.Warn("Missing preimage for account, skipping", "key", common.Bytes2Hex(accIter.Key))
+			}
+			tIterStart = time.Now()
+			continue
 		}
 		addr := common.BytesToAddress(addrBytes)
 
 		var code []byte
 		codeHash := common.BytesToHash(acc.CodeHash)
 		if codeHash != types.EmptyCodeHash {
+			tCode := time.Now()
 			code = rawdb.ReadCode(chaindb, codeHash)
+			stats.codeReadTime += time.Since(tCode)
 			if code == nil {
 				return common.Hash{}, fmt.Errorf("missing code for hash %x (account %x)", codeHash, addr)
 			}
 			stats.codes++
 		}
 
+		tInsert := time.Now()
 		if err := binTrie.UpdateAccount(addr, &acc, len(code)); err != nil {
 			return common.Hash{}, fmt.Errorf("failed to update account %x: %v", addr, err)
 		}
@@ -333,9 +474,11 @@ func runConversionLoop(chaindb ethdb.Database, srcTriedb *triedb.Database, destT
 				return common.Hash{}, fmt.Errorf("failed to update code for %x: %v", addr, err)
 			}
 		}
+		stats.insertTime += time.Since(tInsert)
 
 		if acc.Root != types.EmptyRootHash {
 			addrHash := common.BytesToHash(accIter.Key)
+			tStoTrie := time.Now()
 			storageTrie, err := trie.NewStateTrie(trie.StorageTrieID(root, addrHash, acc.Root), srcTriedb)
 			if err != nil {
 				return common.Hash{}, fmt.Errorf("failed to open storage trie for %x: %v", addr, err)
@@ -344,30 +487,46 @@ func runConversionLoop(chaindb ethdb.Database, srcTriedb *triedb.Database, destT
 			if err != nil {
 				return common.Hash{}, fmt.Errorf("failed to create storage iterator for %x: %v", addr, err)
 			}
+			stats.stoTrieTime += time.Since(tStoTrie)
 			storageIter := trie.NewIterator(storageNodeIt)
 
 			slotCount := uint64(0)
+			tIterStart = time.Now()
 			for storageIter.Next() {
+				stats.iterTime += time.Since(tIterStart)
+
+				tPreimage = time.Now()
 				slotKey := storageTrie.GetKey(storageIter.Key)
+				stats.preimageTime += time.Since(tPreimage)
 				if slotKey == nil {
-					return common.Hash{}, fmt.Errorf("missing preimage for storage key %x (account %x)", storageIter.Key, addr)
+					stats.missingPreimages++
+					if stats.missingPreimages <= 20 {
+						log.Warn("Missing preimage for storage key, skipping", "key", common.Bytes2Hex(storageIter.Key), "account", addr)
+					}
+					tIterStart = time.Now()
+					continue
 				}
+				tRLP = time.Now()
 				_, content, _, err := rlp.Split(storageIter.Value)
+				stats.rlpTime += time.Since(tRLP)
 				if err != nil {
 					return common.Hash{}, fmt.Errorf("invalid storage RLP for key %x (account %x): %v", slotKey, addr, err)
 				}
+				tInsert = time.Now()
 				if err := binTrie.UpdateStorage(addr, slotKey, content); err != nil {
 					return common.Hash{}, fmt.Errorf("failed to update storage %x/%x: %v", addr, slotKey, err)
 				}
+				stats.insertTime += time.Since(tInsert)
 				stats.slots++
 				slotCount++
 
-				if slotCount%10000 == 0 {
-					binTrie, currentRoot, err = maybeCommit(binTrie, currentRoot, destTriedb, memLimit, stats)
+				if slotCount%1000 == 0 {
+					binTrie, currentRoot, err = maybeCommit(binTrie, currentRoot, destTriedb, memLimit, stats, nil)
 					if err != nil {
 						return common.Hash{}, err
 					}
 				}
+				tIterStart = time.Now()
 			}
 			if storageIter.Err != nil {
 				return common.Hash{}, fmt.Errorf("storage iteration error for %x: %v", addr, storageIter.Err)
@@ -376,9 +535,10 @@ func runConversionLoop(chaindb ethdb.Database, srcTriedb *triedb.Database, destT
 		stats.accounts++
 		stats.lastKey = accIter.Key
 		stats.report(false)
+		tIterStart = time.Now()
 
 		if stats.accounts%1000 == 0 {
-			binTrie, currentRoot, err = maybeCommit(binTrie, currentRoot, destTriedb, memLimit, stats)
+			binTrie, currentRoot, err = maybeCommit(binTrie, currentRoot, destTriedb, memLimit, stats, chaindb)
 			if err != nil {
 				return common.Hash{}, err
 			}
@@ -387,6 +547,10 @@ func runConversionLoop(chaindb ethdb.Database, srcTriedb *triedb.Database, destT
 	if accIter.Err != nil {
 		return common.Hash{}, fmt.Errorf("account iteration error: %v", accIter.Err)
 	}
+
+	// Collect resolve stats from the trie before final commit
+	stats.resolveTime += binTrie.ResolveTime
+	stats.resolveCnt += binTrie.ResolveCnt
 
 	_, currentRoot, err = commitBinaryTrie(binTrie, currentRoot, destTriedb, stats)
 	if err != nil {
@@ -397,8 +561,9 @@ func runConversionLoop(chaindb ethdb.Database, srcTriedb *triedb.Database, destT
 	return currentRoot, nil
 }
 
-func maybeCommit(bt *bintrie.BinaryTrie, currentRoot common.Hash, destDB *triedb.Database, memLimit uint64, stats *conversionStats) (*bintrie.BinaryTrie, common.Hash, error) {
-	if time.Since(stats.lastMemChk) < 5*time.Second {
+func maybeCommit(bt *bintrie.BinaryTrie, currentRoot common.Hash, destDB *triedb.Database, memLimit uint64, stats *conversionStats, chaindb ethdb.Database) (*bintrie.BinaryTrie, common.Hash, error) {
+	// Only check memory stats at most once per second to avoid overhead
+	if time.Since(stats.lastMemChk) < time.Second {
 		return bt, currentRoot, nil
 	}
 	stats.lastMemChk = time.Now()
@@ -410,9 +575,19 @@ func maybeCommit(bt *bintrie.BinaryTrie, currentRoot common.Hash, destDB *triedb
 	}
 	log.Info("Memory limit reached, committing", "alloc", common.StorageSize(m.Alloc), "limit", common.StorageSize(memLimit))
 
+	// Collect resolve stats from the trie before commit reloads it
+	stats.resolveTime += bt.ResolveTime
+	stats.resolveCnt += bt.ResolveCnt
+
 	bt, currentRoot, err := commitBinaryTrie(bt, currentRoot, destDB, stats)
 	if err != nil {
 		return nil, common.Hash{}, err
+	}
+	// Persist the conversion marker so we can skip already-converted accounts on resume.
+	if chaindb != nil && len(stats.lastKey) > 0 {
+		if err := chaindb.Put(bintrieConvertMarkerKey, stats.lastKey); err != nil {
+			return nil, common.Hash{}, fmt.Errorf("failed to save conversion marker: %v", err)
+		}
 	}
 	stats.commits++
 	stats.report(true)
@@ -425,12 +600,27 @@ func commitBinaryTrie(bt *bintrie.BinaryTrie, currentRoot common.Hash, destDB *t
 	newRoot, nodeSet := bt.Commit(false)
 	stats.hashTime += time.Since(t0)
 
+	// If root hasn't changed (e.g. replaying already-converted data after resume),
+	// skip the DB update and just GC.
+	if newRoot == currentRoot {
+		log.Info("Root unchanged, skipping DB commit (replaying converted data)", "root", newRoot)
+		runtime.GC()
+		debug.FreeOSMemory()
+		bt, err := bintrie.NewBinaryTrie(newRoot, destDB)
+		if err != nil {
+			return nil, common.Hash{}, fmt.Errorf("failed to reload binary trie: %v", err)
+		}
+		return bt, currentRoot, nil
+	}
+
 	// Phase 2: DB writes
 	if nodeSet != nil {
 		t1 := time.Now()
+		dbgNodes, dbgStorage := nodeSet.Size()
+		log.Info("NodeSet details", "nodes", dbgNodes, "storage", common.StorageSize(dbgStorage))
 		merged := trienode.NewWithNodeSet(nodeSet)
 		if err := destDB.Update(newRoot, currentRoot, 0, merged, triedb.NewStateSet()); err != nil {
-			return nil, common.Hash{}, fmt.Errorf("triedb update failed: %v", err)
+			return nil, common.Hash{}, fmt.Errorf("triedb update failed (newRoot=%x currentRoot=%x): %v", newRoot, currentRoot, err)
 		}
 		if err := destDB.Commit(newRoot, false); err != nil {
 			return nil, common.Hash{}, fmt.Errorf("triedb commit failed: %v", err)
