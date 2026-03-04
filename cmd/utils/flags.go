@@ -98,6 +98,16 @@ var (
 		Usage:    "URL for remote database",
 		Category: flags.LoggingCategory,
 	}
+	BinaryTrieFlag = &cli.BoolFlag{
+		Name:     "bintrie",
+		Usage:    "Use binary trie as the state trie (requires prior conversion)",
+		Category: flags.EthCategory,
+	}
+	NoVerifyStateFlag = &cli.BoolFlag{
+		Name:     "no-verify-state",
+		Usage:    "Skip state root verification (for binary trie replay)",
+		Category: flags.EthCategory,
+	}
 	DBEngineFlag = &cli.StringFlag{
 		Name:     "db.engine",
 		Usage:    "Backing database implementation to use ('pebble' or 'leveldb')",
@@ -1045,6 +1055,8 @@ var (
 		DBEngineFlag,
 		StateSchemeFlag,
 		HttpHeaderFlag,
+		BinaryTrieFlag,
+		NoVerifyStateFlag,
 	}
 )
 
@@ -1695,6 +1707,12 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	if cfg.NoPruning && !cfg.Preimages {
 		cfg.Preimages = true
 		log.Info("Enabling recording of key preimages since archive mode is used")
+	}
+	if ctx.IsSet(BinaryTrieFlag.Name) {
+		cfg.BinaryTrie = ctx.Bool(BinaryTrieFlag.Name)
+	}
+	if ctx.IsSet(NoVerifyStateFlag.Name) {
+		cfg.NoVerifyState = ctx.Bool(NoVerifyStateFlag.Name)
 	}
 	if ctx.IsSet(StateHistoryFlag.Name) {
 		cfg.StateHistory = ctx.Uint64(StateHistoryFlag.Name)

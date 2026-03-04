@@ -23,6 +23,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 )
@@ -32,8 +33,9 @@ import (
 //
 // BlockValidator implements Validator.
 type BlockValidator struct {
-	config *params.ChainConfig // Chain configuration options
-	bc     *BlockChain         // Canonical block chain
+	config             *params.ChainConfig // Chain configuration options
+	bc                 *BlockChain         // Canonical block chain
+	SkipStateRootCheck bool                // Skip state root verification (for binary trie replay)
 }
 
 // NewBlockValidator returns a new block validator which is safe for re-use
@@ -162,7 +164,12 @@ func (v *BlockValidator) ValidateState(block *types.Block, statedb *state.StateD
 	}
 	// Validate the state root against the received state root and throw
 	// an error if they don't match.
-	if root := statedb.IntermediateRoot(v.config.IsEIP158(header.Number)); header.Root != root {
+	root := statedb.IntermediateRoot(v.config.IsEIP158(header.Number))
+	if v.SkipStateRootCheck {
+		log.Debug("Skipping state root check", "block", header.Number, "localRoot", root, "headerRoot", header.Root)
+		return nil
+	}
+	if header.Root != root {
 		return fmt.Errorf("invalid merkle root (remote: %x local: %x) dberr: %w", header.Root, root, statedb.Error())
 	}
 	return nil

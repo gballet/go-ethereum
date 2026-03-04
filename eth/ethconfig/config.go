@@ -194,6 +194,12 @@ type Config struct {
 	// EIP-7966: eth_sendRawTransactionSync timeouts
 	TxSyncDefaultTimeout time.Duration `toml:",omitempty"`
 	TxSyncMaxTimeout     time.Duration `toml:",omitempty"`
+
+	// BinaryTrie enables binary trie mode (uses converted binary trie as state trie)
+	BinaryTrie bool `toml:",omitempty"`
+
+	// NoVerifyState skips state root verification (for binary trie replay)
+	NoVerifyState bool `toml:",omitempty"`
 }
 
 // CreateConsensusEngine creates a consensus engine for the given chain config.

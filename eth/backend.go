@@ -242,9 +242,16 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 			// within the data directory. The corresponding paths will be either:
 			// - DATADIR/triedb/merkle.journal
 			// - DATADIR/triedb/verkle.journal
-			TrieJournalDirectory: stack.ResolvePath("triedb"),
-			StateSizeTracking:    config.EnableStateSizeTracking,
-			SlowBlockThreshold:   config.SlowBlockThreshold,
+			TrieJournalDirectory: func() string {
+				if config.BinaryTrie {
+					return stack.ResolvePath("triedb-bintrie")
+				}
+				return stack.ResolvePath("triedb")
+			}(),
+			StateSizeTracking:  config.EnableStateSizeTracking,
+			SlowBlockThreshold: config.SlowBlockThreshold,
+			ForceBinaryTrie:    config.BinaryTrie,
+			NoVerifyState:      config.NoVerifyState,
 		}
 	)
 	if config.VMTrace != "" {
@@ -277,6 +284,10 @@ func New(stack *node.Node, config *ethconfig.Config) (*Ethereum, error) {
 	eth.blockchain, err = core.NewBlockChain(chainDb, config.Genesis, eth.engine, options)
 	if err != nil {
 		return nil, err
+	}
+	if config.NoVerifyState {
+		eth.blockchain.SetSkipStateRootCheck(true)
+		log.Info("State root verification disabled")
 	}
 
 	// Initialize filtermaps log index.

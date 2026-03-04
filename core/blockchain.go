@@ -204,6 +204,14 @@ type BlockChainConfig struct {
 	// SlowBlockThreshold is the block execution time threshold beyond which
 	// detailed statistics will be logged.
 	SlowBlockThreshold time.Duration
+
+	// ForceBinaryTrie forces the use of binary trie as the state trie,
+	// regardless of genesis configuration. Used for binary trie replay.
+	ForceBinaryTrie bool
+
+	// NoVerifyState skips state root verification during block processing.
+	// Used for binary trie replay where the state root differs from the MPT root.
+	NoVerifyState bool
 }
 
 // DefaultConfig returns the default config.
@@ -360,6 +368,9 @@ func NewBlockChain(db ethdb.Database, genesis *Genesis, engine consensus.Engine,
 	enableVerkle, err := EnableVerkleAtGenesis(db, genesis)
 	if err != nil {
 		return nil, err
+	}
+	if cfg.ForceBinaryTrie {
+		enableVerkle = true
 	}
 	triedb := triedb.NewDatabase(db, cfg.triedbConfig(enableVerkle))
 
@@ -2900,6 +2911,14 @@ func (bc *BlockChain) InsertHeadersBeforeCutoff(headers []*types.Header) (int, e
 func (bc *BlockChain) SetBlockValidatorAndProcessorForTesting(v Validator, p Processor) {
 	bc.validator = v
 	bc.processor = p
+}
+
+// SetSkipStateRootCheck disables state root validation in the block validator.
+// This is used for binary trie replay where the state root differs from the MPT root.
+func (bc *BlockChain) SetSkipStateRootCheck(skip bool) {
+	if bv, ok := bc.validator.(*BlockValidator); ok {
+		bv.SkipStateRootCheck = skip
+	}
 }
 
 // SetTrieFlushInterval configures how often in-memory tries are persisted to disk.
