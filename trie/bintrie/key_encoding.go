@@ -17,7 +17,6 @@
 package bintrie
 
 import (
-	"bytes"
 	"crypto/sha256"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -69,21 +68,18 @@ func GetBinaryTreeKeyCodeHash(addr common.Address) []byte {
 }
 
 func GetBinaryTreeKeyStorageSlot(address common.Address, key []byte) []byte {
+	// Use StorageIndex to correctly compute the tree index and suffix.
+	// This performs proper uint256 arithmetic to add the main storage
+	// offset (1 << 248) divided by the node width (256), avoiding the
+	// byte-level manipulation that previously dropped key[30].
+	treeIndex, suffix := StorageIndex(key)
+
 	var k [32]byte
-
-	// Case when the key belongs to the account header
-	if bytes.Equal(key[:31], zeroHash[:31]) && key[31] < 64 {
-		k[31] = 64 + key[31]
-		return GetBinaryTreeKey(address, k[:])
-	}
-
-	// Set the main storage offset
-	// note that the first 64 bytes of the main offset storage
-	// are unreachable, which is consistent with the spec and
-	// what verkle does.
-	k[0] = 1 // 1 << 248
-	copy(k[1:], key[:31])
-	k[31] = key[31]
+	indexBytes := treeIndex.Bytes32()
+	// tree_index fits in 31 bytes (max ~2^249), so skip the leading
+	// byte of the 32-byte big-endian representation.
+	copy(k[:31], indexBytes[1:])
+	k[31] = suffix
 
 	return GetBinaryTreeKey(address, k[:])
 }
