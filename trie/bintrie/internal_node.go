@@ -20,6 +20,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -40,6 +41,9 @@ func keyToPath(depth int, key []byte) ([]byte, error) {
 type InternalNode struct {
 	left, right BinaryNode
 	depth       int
+
+	cachedHash common.Hash // cached hash, valid when hashValid == true
+	hashValid  bool        // true if cachedHash is up-to-date (default false for new nodes)
 }
 
 // GetValuesAtStem retrieves the group of values located at the given stem key.
@@ -108,26 +112,52 @@ func (bt *InternalNode) Insert(key []byte, value []byte, resolver NodeResolverFn
 // Copy creates a deep copy of the node.
 func (bt *InternalNode) Copy() BinaryNode {
 	return &InternalNode{
-		left:  bt.left.Copy(),
-		right: bt.right.Copy(),
-		depth: bt.depth,
+		left:       bt.left.Copy(),
+		right:      bt.right.Copy(),
+		depth:      bt.depth,
+		cachedHash: bt.cachedHash,
+		hashValid:  bt.hashValid,
 	}
 }
 
 // Hash returns the hash of the node.
+// parallelHashDepth is the maximum tree depth at which Hash() spawns
+// goroutines to hash left and right children concurrently. Deeper nodes
+// hash sequentially to avoid goroutine overhead on small subtrees.
+const parallelHashDepth = 5
+
 func (bt *InternalNode) Hash() common.Hash {
+	if bt.hashValid {
+		return bt.cachedHash
+	}
+
+	var leftHash, rightHash common.Hash
+
+	// Parallelize hashing for nodes near the root (up to 2^parallelHashDepth goroutines)
+	if bt.depth < parallelHashDepth && bt.left != nil && bt.right != nil {
+		var wg sync.WaitGroup
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			rightHash = bt.right.Hash()
+		}()
+		leftHash = bt.left.Hash()
+		wg.Wait()
+	} else {
+		if bt.left != nil {
+			leftHash = bt.left.Hash()
+		}
+		if bt.right != nil {
+			rightHash = bt.right.Hash()
+		}
+	}
+
 	h := sha256.New()
-	if bt.left != nil {
-		h.Write(bt.left.Hash().Bytes())
-	} else {
-		h.Write(zero[:])
-	}
-	if bt.right != nil {
-		h.Write(bt.right.Hash().Bytes())
-	} else {
-		h.Write(zero[:])
-	}
-	return common.BytesToHash(h.Sum(nil))
+	h.Write(leftHash.Bytes())
+	h.Write(rightHash.Bytes())
+	bt.cachedHash = common.BytesToHash(h.Sum(nil))
+	bt.hashValid = true
+	return bt.cachedHash
 }
 
 // InsertValuesAtStem inserts a full value group at the given stem in the internal node.
@@ -157,6 +187,7 @@ func (bt *InternalNode) InsertValuesAtStem(stem []byte, values [][]byte, resolve
 		}
 
 		bt.left, err = bt.left.InsertValuesAtStem(stem, values, resolver, depth+1)
+		bt.hashValid = false
 		return bt, err
 	}
 
@@ -181,6 +212,7 @@ func (bt *InternalNode) InsertValuesAtStem(stem []byte, values [][]byte, resolve
 	}
 
 	bt.right, err = bt.right.InsertValuesAtStem(stem, values, resolver, depth+1)
+	bt.hashValid = false
 	return bt, err
 }
 
@@ -205,8 +237,14 @@ func (bt *InternalNode) CollectNodes(path []byte, flushfn NodeFlushFn) error {
 			return err
 		}
 	}
+	// After collecting children, flush this node (which triggers serialization + hashing)
 	flushfn(path, bt)
 	return nil
+}
+
+// IsDirty returns whether this node has been modified since the last hash computation.
+func (bt *InternalNode) IsDirty() bool {
+	return !bt.hashValid
 }
 
 // GetHeight returns the height of the node.

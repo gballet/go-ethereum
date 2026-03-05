@@ -31,6 +31,9 @@ type StemNode struct {
 	Stem   []byte   // Stem path to get to StemNodeWidth values
 	Values [][]byte // All values, indexed by the last byte of the key.
 	depth  int      // Depth of the node
+
+	cachedHash common.Hash // cached hash, valid when hashValid == true
+	hashValid  bool        // true if cachedHash is up-to-date
 }
 
 // Get retrieves the value for the given key.
@@ -79,6 +82,7 @@ func (bt *StemNode) Insert(key []byte, value []byte, _ NodeResolverFn, depth int
 		return bt, errors.New("invalid insertion: value length")
 	}
 	bt.Values[key[StemSize]] = value
+	bt.hashValid = false
 	return bt, nil
 }
 
@@ -89,9 +93,11 @@ func (bt *StemNode) Copy() BinaryNode {
 		values[i] = slices.Clone(v)
 	}
 	return &StemNode{
-		Stem:   slices.Clone(bt.Stem),
-		Values: values[:],
-		depth:  bt.depth,
+		Stem:       slices.Clone(bt.Stem),
+		Values:     values[:],
+		depth:      bt.depth,
+		cachedHash: bt.cachedHash,
+		hashValid:  bt.hashValid,
 	}
 }
 
@@ -102,6 +108,9 @@ func (bt *StemNode) GetHeight() int {
 
 // Hash returns the hash of the node.
 func (bt *StemNode) Hash() common.Hash {
+	if bt.hashValid {
+		return bt.cachedHash
+	}
 	var data [StemNodeWidth]common.Hash
 	for i, v := range bt.Values {
 		if v != nil {
@@ -130,7 +139,9 @@ func (bt *StemNode) Hash() common.Hash {
 	h.Write(bt.Stem)
 	h.Write([]byte{0})
 	h.Write(data[0][:])
-	return common.BytesToHash(h.Sum(nil))
+	bt.cachedHash = common.BytesToHash(h.Sum(nil))
+	bt.hashValid = true
+	return bt.cachedHash
 }
 
 // CollectNodes collects all child nodes at a given path, and flushes it
@@ -189,6 +200,7 @@ func (bt *StemNode) InsertValuesAtStem(key []byte, values [][]byte, _ NodeResolv
 	for i, v := range values {
 		if v != nil {
 			bt.Values[i] = v
+			bt.hashValid = false
 		}
 	}
 	return bt, nil

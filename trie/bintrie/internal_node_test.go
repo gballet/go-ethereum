@@ -239,6 +239,7 @@ func TestInternalNodeHash(t *testing.T) {
 
 	// Changing a child should change the hash
 	node.left = HashedNode(common.HexToHash("0x3333"))
+	node.hashValid = false // invalidate cache after direct field modification
 	hash3 := node.Hash()
 	if hash1 == hash3 {
 		t.Error("Hash didn't change after modifying left child")
