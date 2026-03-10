@@ -104,17 +104,21 @@ func serializeSubtree(node BinaryNode, remainingDepth int, position int, absolut
 		// Empty subtree: all positions in this subtree are empty (bits already 0)
 		return
 	default:
-		// StemNode or HashedNode before reaching bottom: store hash at a leaf position.
-		// For StemNode, extend position using the stem key bits so that
-		// GetValuesAtStem traversal (which follows key bits) reaches the HashedNode.
-		// For HashedNode/other, fall back to firstLeafPos (all-left extension).
+		// StemNode or HashedNode encountered before reaching the group's bottom
+		// layer. Compute the leaf bitmap position where this node's hash will
+		// be stored.
 		leafPos := position
-		if sn, ok := node.(*StemNode); ok {
+		switch sn := node.(type) {
+		case *StemNode:
+			// Extend position using the stem's key bits so that
+			// GetValuesAtStem traversal (which follows key bits) finds the hash.
 			for d := 0; d < remainingDepth; d++ {
 				bit := sn.Stem[(absoluteDepth+d)/8] >> (7 - ((absoluteDepth + d) % 8)) & 1
 				leafPos = leafPos*2 + int(bit)
 			}
-		} else {
+		default:
+			// HashedNode or unknown: extend all-left (no key bits available).
+			// This matches the all-zero path that resolveNode would follow.
 			leafPos = position << remainingDepth
 		}
 		bitmap[leafPos/8] |= 1 << (7 - (leafPos % 8))
@@ -141,6 +145,10 @@ func SerializeNode(node BinaryNode, groupDepth int) []byte {
 		serializedLen := NodeTypeBytes + 1 + bitmapSize + len(hashes)*HashSize
 		serialized := make([]byte, serializedLen)
 		serialized[0] = nodeTypeInternal
+		// Store the group depth so deserialization knows the bitmap size.
+		// The bottom layer of the internal subtree may be sparse (e.g. a
+		// StemNode terminates a branch early), making the depth necessary
+		// to correctly interpret the variable-length bitmap that follows.
 		serialized[1] = byte(groupDepth)
 		copy(serialized[2:2+bitmapSize], bitmap)
 
