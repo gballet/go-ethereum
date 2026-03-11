@@ -188,11 +188,8 @@ func (a *Archiver) processTrie(owner common.Hash, t *Trie) error {
 		// This does NOT load the trie into memory — it reads blobs from
 		// the DB, decodes them, computes height, and discards them.
 		height := a.probeHeight(owner, path, hash, 3)
-		if height < 3 {
+		if height != 3 {
 			// Too small to archive; the iterator will visit children.
-			continue
-		}
-		if height > 3 {
 			// Too tall — descend into children to find height-3 subtrees.
 			continue
 		}
