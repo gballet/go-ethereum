@@ -17,9 +17,12 @@
 package trie
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
+	"time"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/trie/archive"
 )
@@ -33,11 +36,12 @@ const expiredNodeMarker = 0x00
 type expiredNode struct {
 	offset          uint64
 	size            uint64
+	cachedHash      hashNode
 	archiveResolver archive.ResolverFn
 }
 
 func (n *expiredNode) cache() (hashNode, bool) {
-	return nil, true
+	return n.cachedHash, n.cachedHash == nil
 }
 
 func (n *expiredNode) encode(w rlp.EncoderBuffer) {
@@ -62,36 +66,197 @@ func (n *expiredNode) SetArchiveResolver(resolver archive.ResolverFn) {
 	n.archiveResolver = resolver
 }
 
+// resolveExpiredNodeData resolves an expired node from the archive, verifies
+// the reconstructed subtree hash, and stamps the cached hash onto the root.
+// Returns an error if the archive data is corrupted (hash mismatch).
+func resolveExpiredNodeData(n *expiredNode) (node, error) {
+	start := time.Now()
+	records, err := archive.ArchivedNodeResolver(n.offset, n.size)
+	if err != nil {
+		return nil, fmt.Errorf("failed to resolve expired node: %w", err)
+	}
+	resolved, err := archiveRecordsToNode(records)
+	if err != nil {
+		return nil, fmt.Errorf("failed to rebuild expired node from archive: %w", err)
+	}
+	depth := subtreeDepth(resolved)
+	log.Debug("Resurrected expired node from archive",
+		"offset", n.offset, "archiveBytes", n.size,
+		"records", len(records), "depth", depth,
+		"elapsed", time.Since(start))
+	// Verify hash integrity: if the original hash is known, check that the
+	// reconstructed subtree produces the same hash. A mismatch means the
+	// archive is corrupted (e.g. missing leaves due to unresolvable hashNodes
+	// during archival) and any data from it is unreliable.
+	if n.cachedHash != nil {
+		h := newHasher(false)
+		gotHash := h.hash(resolved, true)
+		returnHasherToPool(h)
+		if !bytes.Equal(gotHash, n.cachedHash) {
+			return nil, fmt.Errorf("expired node hash mismatch at offset=%d size=%d: archive data is corrupted (expected %x got %x, %d records)",
+				n.offset, n.size, []byte(n.cachedHash), gotHash, len(records))
+		}
+		// Stamp the original hash onto the resolved subtree root so the
+		// hasher returns it directly instead of re-computing.
+		switch nn := resolved.(type) {
+		case *fullNode:
+			nn.flags.hash = n.cachedHash
+		case *shortNode:
+			nn.flags.hash = n.cachedHash
+		}
+	}
+	// Mark the entire resolved subtree as dirty. This is critical for
+	// correctness with pathdb's diff layer model: when a trie with expired
+	// nodes is modified and committed, the committer only captures dirty
+	// nodes into the NodeSet (which becomes the diff layer). Without this
+	// marking, resolved-but-unmodified sibling nodes within the subtree
+	// would exist nowhere — not in any diff layer (they're clean) and not
+	// in the raw DB (the archiver deleted them). Subsequent trie accesses
+	// from higher diff layers would fall through to the disk layer, find
+	// nothing, and produce MissingNodeError.
+	//
+	// For read-only tries (only get operations, no commit), this dirty
+	// marking is harmless — the nodes are discarded when the trie is GC'd.
+	markSubtreeDirty(resolved)
+	return resolved, nil
+}
+
+// subtreeDepth returns the maximum depth of a trie subtree.
+func subtreeDepth(n node) int {
+	switch n := n.(type) {
+	case *fullNode:
+		max := 0
+		for _, child := range &n.Children {
+			if child != nil {
+				if d := subtreeDepth(child); d > max {
+					max = d
+				}
+			}
+		}
+		return 1 + max
+	case *shortNode:
+		return 1 + subtreeDepth(n.Val)
+	default:
+		return 0
+	}
+}
+
+// markSubtreeDirty recursively marks all fullNode and shortNode in the
+// subtree as dirty, preserving any cached hashes. This ensures the
+// committer will capture them in the NodeSet during trie commit.
+func markSubtreeDirty(n node) {
+	switch n := n.(type) {
+	case *fullNode:
+		n.flags.dirty = true
+		for _, child := range n.Children[:16] {
+			if child != nil {
+				markSubtreeDirty(child)
+			}
+		}
+	case *shortNode:
+		n.flags.dirty = true
+		markSubtreeDirty(n.Val)
+	}
+	// valueNode, hashNode, nil: no flags to mark
+}
+
 func archiveRecordsToNode(records []*archive.Record) (node, error) {
 	if len(records) == 0 {
 		return nil, archive.EmptyArchiveRecord
 	}
-	if len(records) == 1 {
-		return decodeNodeUnsafe(nil, records[0].Value)
-	}
 
-	var (
-		newnode fullNode
-		curnode *fullNode
-	)
-	for _, record := range records {
-		curnode = &newnode
-		resolved, err := decodeNodeUnsafe(nil, record.Value)
+	// Build the trie incrementally from nil to produce the canonical
+	// MPT structure. Starting with a fullNode would be wrong when the
+	// original subtree root was a shortNode (shared prefix).
+	var root node
+	for i, record := range records {
+		if err := validateRecordPath(record.Path); err != nil {
+			return nil, err
+		}
+
+		key, err := normalizeRecordKey(record.Path)
 		if err != nil {
 			return nil, err
 		}
-		// It's not needed to resurrect all nodes, nodes
-		// not along the path of what has been asked can
-		// be updated as expired. This is for v2.
-		for i, b := range record.Path {
-			if curnode.Children[b] == nil {
-				if i < len(record.Path)-1 {
-					curnode.Children[b] = &fullNode{}
-				} else {
-					curnode.Children[b] = resolved
-				}
-			}
+		if len(key) < 1 {
+			return nil, fmt.Errorf("empty key in record #%d", i)
+		}
+		root, err = insertTrieNode(root, key, valueNode(record.Value))
+		if err != nil {
+			return nil, err
 		}
 	}
-	return &newnode, nil
+	return root, nil
+}
+
+func validateRecordPath(path []byte) error {
+	for i, b := range path {
+		if b > 16 {
+			return fmt.Errorf("invalid nibble in record path: %d", b)
+		}
+		if b == 16 && i != len(path)-1 {
+			return fmt.Errorf("terminator nibble in middle of record path")
+		}
+	}
+	return nil
+}
+
+// normalizeRecordKey ensures the record path is a hex-nibble key suitable for
+// leaf insertion by guaranteeing a single terminator nibble and preserving any
+// already-terminated path. Empty paths are normalized to a sole terminator.
+func normalizeRecordKey(path []byte) ([]byte, error) {
+	if len(path) == 0 {
+		return []byte{16}, nil
+	}
+	if hasTerm(path) {
+		return path, nil
+	}
+	key := append([]byte{}, path...)
+	key = append(key, 16)
+	return key, nil
+}
+
+func insertTrieNode(n node, key []byte, value node) (node, error) {
+	if len(key) == 0 {
+		return value, nil
+	}
+	switch n := n.(type) {
+	case *shortNode:
+		matchlen := prefixLen(key, n.Key)
+		if matchlen == len(n.Key) {
+			nn, err := insertTrieNode(n.Val, key[matchlen:], value)
+			if err != nil {
+				return nil, err
+			}
+			return &shortNode{Key: n.Key, Val: nn}, nil
+		}
+		branch := &fullNode{}
+		var err error
+		branch.Children[n.Key[matchlen]], err = insertTrieNode(nil, n.Key[matchlen+1:], n.Val)
+		if err != nil {
+			return nil, err
+		}
+		branch.Children[key[matchlen]], err = insertTrieNode(nil, key[matchlen+1:], value)
+		if err != nil {
+			return nil, err
+		}
+		if matchlen == 0 {
+			return branch, nil
+		}
+		return &shortNode{Key: key[:matchlen], Val: branch}, nil
+
+	case *fullNode:
+		child, err := insertTrieNode(n.Children[key[0]], key[1:], value)
+		if err != nil {
+			return nil, err
+		}
+		n.Children[key[0]] = child
+		return n, nil
+
+	case nil:
+		return &shortNode{Key: key, Val: value}, nil
+
+	default:
+		return nil, fmt.Errorf("invalid node type in trie insert: %T", n)
+	}
 }
