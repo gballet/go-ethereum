@@ -18,7 +18,23 @@ package overlay
 
 import (
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/params"
 )
+
+var (
+	transitionStartedKey               = common.Hash{}
+	conversionProgressAddressKey       = common.BytesToHash([]byte{1})
+	conversionProgressSlotKey          = common.BytesToHash([]byte{2})
+	conversionProgressStorageProcessed = common.BytesToHash([]byte{3})
+	transitionEndedKey                 = common.BytesToHash([]byte{4})
+	baseRootKey                        = common.BytesToHash([]byte{5})
+)
+
+// StorageReader is a minimal interface for reading contract storage slots,
+// used by the transition state loading functions.
+type StorageReader interface {
+	Storage(addr common.Address, slot common.Hash) (common.Hash, error)
+}
 
 // TransitionState is a structure that holds the progress markers of the
 // translation process.
@@ -61,4 +77,46 @@ func (ts *TransitionState) Copy() *TransitionState {
 		ret.CurrentAccountAddress = &addr
 	}
 	return ret
+}
+
+// IsTransitionActive checks whether the binary transition registry has been
+// initialized by reading slot 0 (started) from the system contract.
+func IsTransitionActive(reader StorageReader) bool {
+	val, err := reader.Storage(params.BinaryTransitionRegistryAddress, transitionStartedKey)
+	if err != nil {
+		return false
+	}
+	return val != (common.Hash{})
+}
+
+// LoadTransitionState reads the full transition state from the binary
+// transition registry system contract. Returns nil if the transition
+// has not been started.
+func LoadTransitionState(reader StorageReader, root common.Hash) *TransitionState {
+	started, err := reader.Storage(params.BinaryTransitionRegistryAddress, transitionStartedKey)
+	if err != nil || started == (common.Hash{}) {
+		return nil
+	}
+
+	ended, _ := reader.Storage(params.BinaryTransitionRegistryAddress, transitionEndedKey)
+	baseRoot, _ := reader.Storage(params.BinaryTransitionRegistryAddress, baseRootKey)
+
+	var currentAddr *common.Address
+	addrVal, _ := reader.Storage(params.BinaryTransitionRegistryAddress, conversionProgressAddressKey)
+	if addrVal != (common.Hash{}) {
+		addr := common.BytesToAddress(addrVal.Bytes())
+		currentAddr = &addr
+	}
+
+	slotHash, _ := reader.Storage(params.BinaryTransitionRegistryAddress, conversionProgressSlotKey)
+	storageProcessed, _ := reader.Storage(params.BinaryTransitionRegistryAddress, conversionProgressStorageProcessed)
+
+	return &TransitionState{
+		Started:               true,
+		Ended:                 ended != (common.Hash{}),
+		BaseRoot:              baseRoot,
+		CurrentAccountAddress: currentAddr,
+		CurrentSlotHash:       slotHash,
+		StorageProcessed:      storageProcessed != (common.Hash{}),
+	}
 }

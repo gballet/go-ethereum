@@ -27,59 +27,12 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/bintrie"
 	"github.com/ethereum/go-ethereum/trie/transitiontrie"
 	"github.com/ethereum/go-ethereum/trie/trienode"
 	"github.com/ethereum/go-ethereum/triedb"
 )
-
-var (
-	transitionStartedKey               = common.Hash{}
-	conversionProgressAddressKey       = common.BytesToHash([]byte{1})
-	conversionProgressSlotKey          = common.BytesToHash([]byte{2})
-	conversionProgressStorageProcessed = common.BytesToHash([]byte{3})
-	transitionEndedKey                 = common.BytesToHash([]byte{4})
-	baseRootKey                        = common.BytesToHash([]byte{5})
-)
-
-func isTransitionActive(reader StateReader) bool {
-	val, err := reader.Storage(params.BinaryTransitionRegistryAddress, transitionStartedKey)
-	if err != nil {
-		return false
-	}
-	return val != (common.Hash{})
-}
-
-func LoadTransitionState(reader StateReader, root common.Hash) *overlay.TransitionState {
-	started, err := reader.Storage(params.BinaryTransitionRegistryAddress, transitionStartedKey)
-	if err != nil || started == (common.Hash{}) {
-		return nil
-	}
-
-	ended, _ := reader.Storage(params.BinaryTransitionRegistryAddress, transitionEndedKey)
-	baseRoot, _ := reader.Storage(params.BinaryTransitionRegistryAddress, baseRootKey)
-
-	var currentAddr *common.Address
-	addrVal, _ := reader.Storage(params.BinaryTransitionRegistryAddress, conversionProgressAddressKey)
-	if addrVal != (common.Hash{}) {
-		addr := common.BytesToAddress(addrVal.Bytes())
-		currentAddr = &addr
-	}
-
-	slotHash, _ := reader.Storage(params.BinaryTransitionRegistryAddress, conversionProgressSlotKey)
-	storageProcessed, _ := reader.Storage(params.BinaryTransitionRegistryAddress, conversionProgressStorageProcessed)
-
-	return &overlay.TransitionState{
-		Started:               true,
-		Ended:                 ended != (common.Hash{}),
-		BaseRoot:              baseRoot,
-		CurrentAccountAddress: currentAddr,
-		CurrentSlotHash:       slotHash,
-		StorageProcessed:      storageProcessed != (common.Hash{}),
-	}
-}
 
 // Database wraps access to tries and contract code.
 type Database interface {
@@ -283,8 +236,8 @@ func (db *CachingDB) StateReader(stateRoot common.Hash) (StateReader, error) {
 			fr := newFlatReader(reader)
 			readers = append(readers, fr)
 
-			if isTransitionActive(fr) || db.triedb.IsVerkle() {
-				ts = LoadTransitionState(fr, stateRoot)
+			if overlay.IsTransitionActive(fr) || db.triedb.IsVerkle() {
+				ts = overlay.LoadTransitionState(fr, stateRoot)
 				if ts == nil {
 					ts = &overlay.TransitionState{Ended: db.triedb.IsVerkle()}
 				}
