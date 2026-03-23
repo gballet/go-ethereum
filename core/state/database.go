@@ -51,6 +51,11 @@ type Database interface {
 	// Snapshot returns the underlying state snapshot.
 	Snapshot() *snapshot.Tree
 
+	// ReadersWithCacheStats creates a pair of state readers that share the
+	// same underlying state reader and internal state cache, while maintaining
+	// separate statistics respectively.
+	ReadersWithCacheStats(stateRoot common.Hash) (Reader, Reader, error)
+
 	// Commit flushes all pending writes and finalizes the state transition,
 	// committing the changes to the underlying storage. It returns an error
 	// if the commit fails.
@@ -146,26 +151,9 @@ type Trie interface {
 // state snapshot to provide functionalities for state access. It's meant to be a
 // long-live object and has a few caches inside for sharing between blocks.
 type CachingDB struct {
-	triedb    *triedb.Database
-	codedb    *CodeDB
-	snap      *snapshot.Tree
-	bintriedb *triedb.Database
-	baseRoot  common.Hash
-}
-
-// SetBinaryTrieDB configures a separate trie database for binary trie nodes
-// during the MPT-to-binary transition. The baseRoot is the frozen MPT root
-// at the point of transition. When set, OpenTrie creates a TransitionTrie
-// with the binary overlay from bintriedb and the MPT base from triedb.
-func (db *CachingDB) SetBinaryTrieDB(bintriedb *triedb.Database, baseRoot common.Hash) {
-	db.bintriedb = bintriedb
-	db.baseRoot = baseRoot
-}
-
-// BinaryTrieDB returns the binary trie database, or nil if no transition
-// is active.
-func (db *CachingDB) BinaryTrieDB() *triedb.Database {
-	return db.bintriedb
+	triedb *triedb.Database
+	codedb *CodeDB
+	snap   *snapshot.Tree
 }
 
 // NewDatabase creates a state database with the provided data sources.
@@ -199,23 +187,6 @@ func (db *CachingDB) StateReader(stateRoot common.Hash) (StateReader, error) {
 		readers []StateReader
 		ts      *overlay.TransitionState
 	)
-
-	if db.bintriedb != nil {
-		reader, err := db.bintriedb.StateReader(stateRoot)
-		if err == nil {
-			readers = append(readers, newFlatReader(reader))
-		}
-		baseReader, err := db.triedb.StateReader(db.baseRoot)
-		if err == nil {
-			readers = append(readers, newFlatReader(baseReader))
-		}
-		tr, err := newTrieReader(stateRoot, db.bintriedb, nil)
-		if err != nil {
-			return nil, err
-		}
-		readers = append(readers, tr)
-		return newMultiStateReader(readers...)
-	}
 
 	// Configure the state reader using the standalone snapshot in hash mode.
 	// This reader offers improved performance but is optional and only
@@ -281,26 +252,8 @@ func (db *CachingDB) ReadersWithCacheStats(stateRoot common.Hash) (Reader, Reade
 
 // OpenTrie opens the main account trie at a specific root hash.
 func (db *CachingDB) OpenTrie(root common.Hash) (Trie, error) {
-	if db.bintriedb != nil {
-		bt, err := bintrie.NewBinaryTrie(root, db.bintriedb)
-		if err != nil {
-			bt, err = bintrie.NewBinaryTrie(common.Hash{}, db.bintriedb)
-			if err != nil {
-				return nil, err
-			}
-		}
-		base, err := trie.NewStateTrie(trie.StateTrieID(db.baseRoot), db.triedb)
-		if err != nil {
-			return nil, err
-		}
-		return transitiontrie.NewTransitionTrie(base, bt, false), nil
-	}
 	if db.triedb.IsVerkle() {
-		bt, err := bintrie.NewBinaryTrie(root, db.triedb)
-		if err != nil {
-			return nil, err
-		}
-		return bt, nil
+		return bintrie.NewBinaryTrie(root, db.triedb)
 	}
 	return trie.NewStateTrie(trie.StateTrieID(root), db.triedb)
 }
@@ -358,13 +311,6 @@ func (db *CachingDB) Commit(update *stateUpdate) error {
 			log.Warn("Failed to cap snapshot tree", "root", update.root, "layers", TriesInMemory, "err", err)
 		}
 	}
-	if db.bintriedb != nil {
-		originRoot := update.originRoot
-		if originRoot == db.baseRoot {
-			originRoot = types.EmptyBinaryHash
-		}
-		return db.bintriedb.Update(update.root, originRoot, update.blockNumber, update.nodes, update.stateSet())
-	}
 	return db.triedb.Update(update.root, update.originRoot, update.blockNumber, update.nodes, update.stateSet())
 }
 
@@ -374,6 +320,8 @@ func mustCopyTrie(t Trie) Trie {
 	case *trie.StateTrie:
 		return t.Copy()
 	case *transitiontrie.TransitionTrie:
+		return t.Copy()
+	case *bintrie.BinaryTrie:
 		return t.Copy()
 	default:
 		panic(fmt.Errorf("unknown trie type %T", t))

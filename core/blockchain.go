@@ -38,6 +38,7 @@ import (
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core/history"
+	"github.com/ethereum/go-ethereum/core/overlay"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/state/snapshot"
@@ -324,6 +325,7 @@ type BlockChain struct {
 	lastWrite     uint64                           // Last block when the state was flushed
 	flushInterval atomic.Int64                     // Time interval (processing time) after which to flush a state
 	triedb        *triedb.Database                 // The database handler for maintaining trie nodes.
+	bintriedb     *triedb.Database                 // Binary trie database for MPT-to-binary transition, nil if not applicable.
 	codedb        *state.CodeDB                    // The database handler for maintaining contract codes.
 	txIndexer     *txIndexer                       // Transaction indexer, might be nil if not enabled
 
@@ -368,6 +370,13 @@ type BlockChain struct {
 
 	lastForkReadyAlert time.Time     // Last time there was a fork readiness print out
 	slowBlockThreshold time.Duration // Block execution time threshold beyond which detailed statistics will be logged
+}
+
+// newBinaryTrieDB creates a binary trie database for the MPT-to-binary
+// transition. This must be called before the triedb local variable shadows
+// the triedb package import.
+func newBinaryTrieDB(db ethdb.Database) *triedb.Database {
+	return triedb.NewDatabase(db, &triedb.Config{IsVerkle: true, PathDB: pathdb.Defaults})
 }
 
 // NewBlockChain returns a fully initialised block chain using information
@@ -417,6 +426,9 @@ func NewBlockChain(db ethdb.Database, genesis *Genesis, engine consensus.Engine,
 		engine:             engine,
 		logger:             cfg.VmConfig.Tracer,
 		slowBlockThreshold: cfg.SlowBlockThreshold,
+	}
+	if !enableVerkle && chainConfig.VerkleTime != nil {
+		bc.bintriedb = newBinaryTrieDB(db)
 	}
 	bc.hc, err = NewHeaderChain(db, chainConfig, engine, bc.insertStopped)
 	if err != nil {
@@ -1383,8 +1395,12 @@ func (bc *BlockChain) Stop() {
 		}
 		bc.snaps.Release()
 	}
+	if bc.bintriedb != nil {
+		if err := bc.bintriedb.Journal(bc.CurrentBlock().Root); err != nil {
+			log.Info("Failed to journal binary trie nodes", "err", err)
+		}
+	}
 	if bc.triedb.Scheme() == rawdb.PathScheme {
-		// Ensure that the in-memory trie nodes are journaled to disk properly.
 		if err := bc.triedb.Journal(bc.CurrentBlock().Root); err != nil {
 			log.Info("Failed to journal in-memory trie nodes", "err", err)
 		}
@@ -1426,6 +1442,11 @@ func (bc *BlockChain) Stop() {
 		bc.logger.OnClose()
 	}
 	// Close the trie database, release all the held resources as the last step.
+	if bc.bintriedb != nil {
+		if err := bc.bintriedb.Close(); err != nil {
+			log.Error("Failed to close binary trie database", "err", err)
+		}
+	}
 	if err := bc.triedb.Close(); err != nil {
 		log.Error("Failed to close trie database", "err", err)
 	}
@@ -2147,6 +2168,59 @@ type ExecuteConfig struct {
 	EnableWitnessStats bool
 }
 
+// stateDatabase returns the appropriate state.Database implementation for
+// the given block. For pre-verkle blocks it returns a CachingDB (MPT-only).
+// For blocks during the MPT-to-binary transition, it returns a BinaryDB with
+// both the binary overlay and frozen MPT base. For post-transition blocks
+// (or binary-at-genesis), it returns a BinaryDB without MPT.
+func (bc *BlockChain) stateDatabase(parentRoot common.Hash, header *types.Header) state.Database {
+	if bc.triedb.IsVerkle() {
+		return state.NewBinaryDatabase(bc.triedb, bc.codedb).WithSnapshot(bc.snaps)
+	}
+	if bc.bintriedb == nil {
+		return state.NewDatabase(bc.triedb, bc.codedb).WithSnapshot(bc.snaps)
+	}
+	if header == nil || !bc.chainConfig.IsVerkle(header.Number, header.Time) {
+		return state.NewDatabase(bc.triedb, bc.codedb).WithSnapshot(bc.snaps)
+	}
+	parentHeader := bc.GetHeaderByHash(header.ParentHash)
+	if parentHeader != nil && !bc.chainConfig.IsVerkle(parentHeader.Number, parentHeader.Time) {
+		return state.NewTransitionDatabase(bc.bintriedb, bc.triedb, bc.codedb, parentRoot).WithSnapshot(bc.snaps)
+	}
+	return bc.probeTransitionDatabase(parentRoot)
+}
+
+// stateDatabaseForRoot returns the appropriate state.Database for accessing
+// state at the given root, when no header context is available.
+func (bc *BlockChain) stateDatabaseForRoot(root common.Hash) state.Database {
+	if bc.triedb.IsVerkle() {
+		return state.NewBinaryDatabase(bc.triedb, bc.codedb).WithSnapshot(bc.snaps)
+	}
+	if bc.bintriedb == nil {
+		return state.NewDatabase(bc.triedb, bc.codedb).WithSnapshot(bc.snaps)
+	}
+	if _, err := bc.bintriedb.StateReader(root); err != nil {
+		return state.NewDatabase(bc.triedb, bc.codedb).WithSnapshot(bc.snaps)
+	}
+	return bc.probeTransitionDatabase(root)
+}
+
+// probeTransitionDatabase reads the transition registry from the binary trie
+// database to determine whether the transition is still active or has ended,
+// and returns the appropriate BinaryDB variant.
+func (bc *BlockChain) probeTransitionDatabase(root common.Hash) state.Database {
+	reader, err := bc.bintriedb.StateReader(root)
+	if err != nil {
+		return state.NewBinaryDatabase(bc.bintriedb, bc.codedb).WithSnapshot(bc.snaps)
+	}
+	fr := state.NewFlatReader(reader)
+	ts := overlay.LoadTransitionState(fr, root)
+	if ts == nil || ts.Transitioned() {
+		return state.NewBinaryDatabase(bc.bintriedb, bc.codedb).WithSnapshot(bc.snaps)
+	}
+	return state.NewTransitionDatabase(bc.bintriedb, bc.triedb, bc.codedb, ts.BaseRoot).WithSnapshot(bc.snaps)
+}
+
 // ProcessBlock executes and validates the given block. If there was no error
 // it writes the block and associated state to database.
 func (bc *BlockChain) ProcessBlock(ctx context.Context, parentRoot common.Hash, block *types.Block, config ExecuteConfig) (result *blockProcessingResult, blockEndErr error) {
@@ -2155,7 +2229,7 @@ func (bc *BlockChain) ProcessBlock(ctx context.Context, parentRoot common.Hash, 
 		startTime = time.Now()
 		statedb   *state.StateDB
 		interrupt atomic.Bool
-		sdb       = state.NewDatabase(bc.triedb, bc.codedb).WithSnapshot(bc.snaps)
+		sdb       = bc.stateDatabase(parentRoot, block.Header())
 	)
 	defer interrupt.Store(true) // terminate the prefetch at the end
 

@@ -91,6 +91,13 @@ func newFlatReader(reader database.StateReader) *flatReader {
 	return &flatReader{reader: reader}
 }
 
+// NewFlatReader constructs a flat state reader from a database-level state
+// reader. It satisfies the overlay.StorageReader interface and can be used
+// to probe the transition state from outside the state package.
+func NewFlatReader(reader database.StateReader) *flatReader {
+	return newFlatReader(reader)
+}
+
 // Account implements StateReader, retrieving the account specified by the address.
 //
 // An error will be returned if the associated snapshot is already stale or

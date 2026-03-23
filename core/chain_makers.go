@@ -369,9 +369,8 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 	cm := newChainMaker(parent, config, engine)
 
 	var bintriedb *triedb.Database
-	var binBaseRoot common.Hash
 
-	genblock := func(i int, parent *types.Block, triedb *triedb.Database, statedb *state.StateDB) (*types.Block, types.Receipts) {
+	genblock := func(i int, parent *types.Block, statedb *state.StateDB) (*types.Block, types.Receipts) {
 		b := &BlockGen{i: i, cm: cm, parent: parent, statedb: statedb, engine: engine}
 		b.header = cm.makeHeader(parent, statedb, b.engine)
 
@@ -412,10 +411,6 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 		if config.IsVerkle(b.header.Number, b.header.Time) {
 			parentIsVerkle := config.IsVerkle(parent.Number(), parent.Time())
 			if !parentIsVerkle {
-				binBaseRoot = parent.Root()
-				if cdb, ok := statedb.Database().(*state.CachingDB); ok {
-					cdb.SetBinaryTrieDB(bintriedb, binBaseRoot)
-				}
 				InitializeBinaryTransitionRegistry(statedb)
 			}
 		}
@@ -446,11 +441,7 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 		if err != nil {
 			panic(fmt.Sprintf("state write error: %v", err))
 		}
-		commitdb := triedb
-		if bintriedb != nil && config.IsVerkle(b.header.Number, b.header.Time) {
-			commitdb = bintriedb
-		}
-		if err = commitdb.Commit(root, false); err != nil {
+		if err = statedb.Database().TrieDB().Commit(root, false); err != nil {
 			panic(fmt.Sprintf("trie write error: %v", err))
 		}
 		return block, b.receipts
@@ -486,16 +477,24 @@ func GenerateChain(config *params.ChainConfig, parent *types.Block, engine conse
 	triedb := triedb.NewDatabase(db, triedbConfig)
 	defer triedb.Close()
 
+	var binBaseRoot common.Hash
 	for i := range n {
-		sdb := state.NewDatabase(triedb, nil)
-		if binBaseRoot != (common.Hash{}) {
-			sdb.SetBinaryTrieDB(bintriedb, binBaseRoot)
+		var sdb state.Database
+		nextTime := parent.Time() + 10
+		nextNumber := new(big.Int).Add(parent.Number(), common.Big1)
+		if bintriedb != nil && config.IsVerkle(nextNumber, nextTime) {
+			if !config.IsVerkle(parent.Number(), parent.Time()) {
+				binBaseRoot = parent.Root()
+			}
+			sdb = state.NewTransitionDatabase(bintriedb, triedb, nil, binBaseRoot)
+		} else {
+			sdb = state.NewDatabase(triedb, nil)
 		}
 		statedb, err := state.New(parent.Root(), sdb)
 		if err != nil {
 			panic(err)
 		}
-		block, receipts := genblock(i, parent, triedb, statedb)
+		block, receipts := genblock(i, parent, statedb)
 
 		// Post-process the receipts.
 		// Here we assign the final block hash and other info into the receipt.

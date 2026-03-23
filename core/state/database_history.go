@@ -297,6 +297,11 @@ func (db *HistoricDB) Snapshot() *snapshot.Tree {
 // Commit flushes all pending writes and finalizes the state transition,
 // committing the changes to the underlying storage. It returns an error
 // if the commit fails.
+// ReadersWithCacheStats is not supported by HistoricDB.
+func (db *HistoricDB) ReadersWithCacheStats(stateRoot common.Hash) (Reader, Reader, error) {
+	return nil, nil, errors.New("not supported by historic database")
+}
+
 func (db *HistoricDB) Commit(update *stateUpdate) error {
 	return errors.New("not implemented")
 }

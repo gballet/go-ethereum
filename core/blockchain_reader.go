@@ -376,6 +376,12 @@ func (bc *BlockChain) HasState(hash common.Hash) bool {
 	if err == nil {
 		return true
 	}
+	if bc.bintriedb != nil {
+		_, err = bintrie.NewBinaryTrie(hash, bc.bintriedb)
+		if err == nil {
+			return true
+		}
+	}
 	_, err = bintrie.NewBinaryTrie(hash, bc.triedb)
 	return err == nil
 }
@@ -418,7 +424,14 @@ func (bc *BlockChain) State() (*state.StateDB, error) {
 
 // StateAt returns a new mutable state based on a particular point in time.
 func (bc *BlockChain) StateAt(root common.Hash) (*state.StateDB, error) {
-	return state.New(root, state.NewDatabase(bc.triedb, bc.codedb).WithSnapshot(bc.snaps))
+	return state.New(root, bc.stateDatabaseForRoot(root))
+}
+
+// StateAtWithHeader returns a new mutable state for building a block on top
+// of parentRoot, using the given header to determine the correct database type
+// (MPT vs binary transition).
+func (bc *BlockChain) StateAtWithHeader(parentRoot common.Hash, header *types.Header) (*state.StateDB, error) {
+	return state.New(parentRoot, bc.stateDatabase(parentRoot, header))
 }
 
 // HistoricState returns a historic state specified by the given root.
