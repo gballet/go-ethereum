@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/consensus"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
+	"github.com/ethereum/go-ethereum/core/overlay"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/state/snapshot"
@@ -437,8 +438,12 @@ func (bc *BlockChain) StateAtForkBoundary(parent *types.Header, header *types.He
 	// The current block is the first block in the UBT fork
 	// (i.e., the parent is the last MPT block).
 	if bc.chainConfig.IsUBT(header.Number, header.Time) {
-		// TODO(gballet): register chain context if needed
-		return state.New(parent.Root, state.NewUBTDatabase(bc.triedb, bc.codedb))
+		statedb, err := state.New(parent.Root, state.NewUBTDatabase(bc.triedb, bc.codedb))
+		if err != nil {
+			return nil, err
+		}
+		overlay.InitializeBinaryTransitionRegistry(statedb)
+		return statedb, err
 	}
 	// Both the parent and current block are in the MPT fork.
 	return state.New(parent.Root, state.NewMPTDatabase(bc.triedb, bc.codedb).WithSnapshot(bc.snaps))
