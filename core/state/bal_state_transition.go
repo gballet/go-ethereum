@@ -1,7 +1,10 @@
 package state
 
 import (
+	"os"
+	"runtime"
 	"slices"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -130,6 +133,22 @@ func (s *BALStateTransition) setError(err error) {
 	if s.err == nil {
 		s.err = err
 	}
+}
+
+// balCommitConcurrency bounds the per-mutated-account goroutine fan-out in the
+// IntermediateRoot and CommitWithUpdate loops. Each such goroutine can block
+// resolving cold storage-trie nodes from the HDD flat-file (pinning an OS
+// thread), so an unbounded fan-out over a large block trips the runtime's
+// thread limit. The default is GOMAXPROCS (match commit parallelism to the
+// hardware); override at startup via GETH_BAL_COMMIT_CONCURRENCY. The value is
+// finalized empirically per the article's parameter sweep.
+func balCommitConcurrency() int {
+	if v := os.Getenv("GETH_BAL_COMMIT_CONCURRENCY"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	return runtime.GOMAXPROCS(0)
 }
 
 // isAccountDeleted checks whether the state account was deleted in this block.  Post selfdestruct-removal,
@@ -295,6 +314,10 @@ func (s *BALStateTransition) CommitWithUpdate(block uint64, deleteEmptyObjects b
 		root    common.Hash
 		workers errgroup.Group
 	)
+	// Bound the per-account commit fan-out for the same reason as IntermediateRoot:
+	// an unbounded goroutine-per-storage-trie loop can pile up cold HDD reads and
+	// exhaust OS threads. SetLimit caps it; on all-NVMe state no cold read is hit.
+	workers.SetLimit(balCommitConcurrency())
 	// Schedule the account trie first since that will be the biggest, so give
 	// it the most time to crunch.
 	//
@@ -408,22 +431,45 @@ func (s *BALStateTransition) IntermediateRoot(_ bool) common.Hash {
 
 	start := time.Now()
 
-	var wg sync.WaitGroup
+	g := new(errgroup.Group)
+	// Bound the per-mutated-account fan-out. The original code spawned one
+	// goroutine per mutated address with no limit; on cold state each goroutine
+	// blocks resolving storage-trie nodes from the HDD flat-file, pinning an OS
+	// thread, and a large block trips the runtime's thread limit ("thread
+	// exhaustion"). SetLimit caps the live goroutines (and thus the cold reads in
+	// flight) to the hardware; the resolver's own semaphore is the universal
+	// backstop. On all-NVMe state no resolver is hit, so this is just
+	// GOMAXPROCS-way parallelism with no added cost.
+	g.SetLimit(balCommitConcurrency())
 
 	s.diffs = *s.accessList.Mutations(s.maxBALIdx + 1)
 
+	// 1 (c): prefetch the intermediate trie nodes of the mutated state set from
+	// the account trie. Dispatched first so it runs concurrently with the
+	// per-account workers below (it reads s.diffs read-only, as do they).
+	g.Go(func() error {
+		prefetchStart := time.Now()
+		var prefetchAddrs []common.Address
+		for addr, _ := range s.diffs {
+			prefetchAddrs = append(prefetchAddrs, addr)
+		}
+		if err := s.stateTrie.PrefetchAccount(prefetchAddrs); err != nil {
+			s.setError(err)
+			return nil
+		}
+		s.metrics.StatePrefetch = time.Since(prefetchStart)
+		return nil
+	})
+
 	for addr, d := range s.diffs {
-		wg.Add(1)
 		address := addr
 		diff := d
-		go func() {
-			defer wg.Done()
-
+		g.Go(func() error {
 			// 1 (b): update each mutated account, producing the post-block state object by applying the state mutations to the prestate (retrieved in 1a).
 			acct, err := s.reader.Account(address)
 			if err != nil {
 				s.setError(err)
-				return
+				return nil
 			}
 
 			if acct == nil {
@@ -435,7 +481,7 @@ func (s *BALStateTransition) IntermediateRoot(_ bool) common.Hash {
 				tr, err := s.db.OpenStorageTrie(s.parentRoot, address, acct.Root, s.stateTrie)
 				if err != nil {
 					s.setError(err)
-					return
+					return nil
 				}
 				s.tries.Store(address, tr)
 
@@ -454,13 +500,13 @@ func (s *BALStateTransition) IntermediateRoot(_ bool) common.Hash {
 
 				if err := tr.UpdateStorageBatch(address, updateKeys, updateValues); err != nil {
 					s.setError(err)
-					return
+					return nil
 				}
 
 				for _, key := range deleteKeys {
 					if err := tr.DeleteStorage(address, key); err != nil {
 						s.setError(err)
-						return
+						return nil
 					}
 				}
 
@@ -468,26 +514,11 @@ func (s *BALStateTransition) IntermediateRoot(_ bool) common.Hash {
 				tr.Hash()
 				s.metrics.StateHash = time.Since(hashStart)
 			}
-		}()
+			return nil
+		})
 	}
 
-	wg.Add(1)
-	// 1 (c): prefetch the intermediate trie nodes of the mutated state set from the account trie.
-	go func() {
-		defer wg.Done()
-		prefetchStart := time.Now()
-		var prefetchAddrs []common.Address
-		for addr, _ := range s.diffs {
-			prefetchAddrs = append(prefetchAddrs, addr)
-		}
-		if err := s.stateTrie.PrefetchAccount(prefetchAddrs); err != nil {
-			s.setError(err)
-			return
-		}
-		s.metrics.StatePrefetch = time.Since(prefetchStart)
-	}()
-
-	wg.Wait()
+	g.Wait()
 	s.metrics.AccountUpdate = time.Since(start)
 
 	// 2: compute the post-state root of the account trie
