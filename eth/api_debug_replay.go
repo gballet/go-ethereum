@@ -128,7 +128,7 @@ func (api *DebugAPI) replayBuild(ctx context.Context, block *types.Block, stated
 		tcount    = 0
 	)
 	// Pre-execution system calls.
-	blockAL.Merge(core.PreExecution(ctx, header.ParentBeaconRoot, parent, config, evm, header.Number, header.Time))
+	blockAL.Merge(core.PreExecution(ctx, header.ParentBeaconRoot, parent.Hash(), config, evm, header.Number, header.Time))
 
 	// Group the reverted transactions by build slot.
 	revBySlot := make(map[int][]*types.Transaction)

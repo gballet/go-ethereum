@@ -161,7 +161,7 @@ func (p *StateProcessor) processParallel(ctx context.Context, block *types.Block
 	if precompileCache != nil {
 		preEVM.SetPrecompileCache(precompileCache)
 	}
-	blockAccessList.Merge(PreExecution(ctx, block.BeaconRoot(), parent, config, preEVM, header.Number, header.Time))
+	blockAccessList.Merge(PreExecution(ctx, block.BeaconRoot(), block.ParentHash(), config, preEVM, header.Number, header.Time))
 	preEVM.Release()
 	if err := preState.Error(); err != nil {
 		return nil, fmt.Errorf("database error in pre-execution system calls: %w", err)

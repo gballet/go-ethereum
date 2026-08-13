@@ -53,12 +53,21 @@ type Processor interface {
 	Process(ctx context.Context, block *types.Block, statedb *state.StateDB, jumpDestCache vm.JumpDestCache, precompileCache *vm.PrecompileCache, cfg vm.Config, execIndex *atomic.Int64) (*ProcessResult, error)
 }
 
+// RejectedTx records a transaction that could not be applied, together with the
+// reason it was skipped.
+type RejectedTx struct {
+	Index int
+	Err   string
+}
+
 // ProcessResult contains the values computed by Process.
 type ProcessResult struct {
 	Receipts types.Receipts
 	Requests [][]byte
 	Logs     []*types.Log
 	GasUsed  uint64
+
+	Rejected []RejectedTx
 
 	// BAL is only meaningful for post-Amsterdam blocks. Please ensure
 	// fork validation is performed before accessing it.

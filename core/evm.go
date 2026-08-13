@@ -38,6 +38,14 @@ type ChainContext interface {
 	Engine() consensus.Engine
 }
 
+// BlockHashProvider may be implemented by a ChainContext whose block hashes are
+// not reachable by walking the parent links, for instance because they are
+// supplied out of band. When implemented, it replaces the default ancestry walk
+// performed by GetHashFn.
+type BlockHashProvider interface {
+	BlockHashFn(ref *types.Header) func(n uint64) common.Hash
+}
+
 // NewEVMBlockContext creates a new context for use in the EVM.
 func NewEVMBlockContext(header *types.Header, chain ChainContext, author *common.Address) vm.BlockContext {
 	var (
@@ -67,10 +75,14 @@ func NewEVMBlockContext(header *types.Header, chain ChainContext, author *common
 		slotNum = *header.SlotNumber
 	}
 
+	getHash := GetHashFn(header, chain)
+	if provider, ok := chain.(BlockHashProvider); ok {
+		getHash = provider.BlockHashFn(header)
+	}
 	return vm.BlockContext{
 		CanTransfer:      CanTransfer,
 		Transfer:         Transfer,
-		GetHash:          GetHashFn(header, chain),
+		GetHash:          getHash,
 		Coinbase:         beneficiary,
 		BlockNumber:      new(big.Int).Set(header.Number),
 		Time:             header.Time,

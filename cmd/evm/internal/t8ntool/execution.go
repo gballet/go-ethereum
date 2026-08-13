@@ -20,22 +20,20 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	stdmath "math"
 	"math/big"
 	"os"
+	"sort"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/consensus/ethash"
-	"github.com/ethereum/go-ethereum/consensus/misc"
 	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/types/bal"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto/keccak"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -141,20 +139,11 @@ type rejectedTx struct {
 
 // Apply applies a set of transactions to a pre-state
 func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, txIt txIterator, miningReward int64) (*state.StateDB, *ExecutionResult, []byte, error) {
-	// Capture errors for BLOCKHASH operation, if we haven't been supplied the
-	// required blockhashes
-	var hashError error
-	getHash := func(num uint64) common.Hash {
-		if pre.Env.BlockHashes == nil {
-			hashError = fmt.Errorf("getHash(%d) invoked, no blockhashes provided", num)
-			return common.Hash{}
-		}
-		h, ok := pre.Env.BlockHashes[math.HexOrDecimal64(num)]
-		if !ok {
-			hashError = fmt.Errorf("getHash(%d) invoked, blockhash for that block not provided", num)
-		}
-		return h
-	}
+	var (
+		blockHash   = common.Hash{0x13, 0x37}
+		rejectedTxs []*rejectedTx
+		includedTxs types.Transactions
+	)
 	var (
 		statedb *state.StateDB
 
@@ -171,50 +160,17 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 	} else {
 		statedb = MakePreState(rawdb.NewMemoryDatabase(), pre.Pre, isEIP4762)
 	}
-	var (
-		signer      = types.MakeSigner(chainConfig, new(big.Int).SetUint64(pre.Env.Number), pre.Env.Timestamp)
-		gaspool     = core.NewGasPool(pre.Env.GasLimit)
-		blockHash   = common.Hash{0x13, 0x37}
-		rejectedTxs []*rejectedTx
-		includedTxs types.Transactions
-		blobGasUsed = uint64(0)
-		receipts    = make(types.Receipts, 0)
-
-		// TODO return blockAccessList as a part of result
-		blockAccessList = bal.NewConstructionBlockAccessList()
-	)
-	vmContext := vm.BlockContext{
-		CanTransfer:      core.CanTransfer,
-		Transfer:         core.Transfer,
-		Coinbase:         pre.Env.Coinbase,
-		BlockNumber:      new(big.Int).SetUint64(pre.Env.Number),
-		Time:             pre.Env.Timestamp,
-		Difficulty:       pre.Env.Difficulty,
-		GasLimit:         pre.Env.GasLimit,
-		GetHash:          getHash,
-		CostPerStateByte: params.CostPerStateByte,
-	}
-	if pre.Env.SlotNumber != nil {
-		vmContext.SlotNum = *pre.Env.SlotNumber
-	}
-	// If currentBaseFee is defined, add it to the vmContext.
-	if pre.Env.BaseFee != nil {
-		vmContext.BaseFee = new(big.Int).Set(pre.Env.BaseFee)
-	}
-	// If random is defined, add it to the vmContext.
-	if pre.Env.Random != nil {
-		rnd := common.BigToHash(pre.Env.Random)
-		vmContext.Random = &rnd
-	}
 	// Calculate the BlobBaseFee
-	var excessBlobGas uint64
+	var (
+		excessBlobGas uint64
+		blobBaseFee   *big.Int
+	)
 	if pre.Env.ExcessBlobGas != nil {
 		excessBlobGas = *pre.Env.ExcessBlobGas
-		header := &types.Header{
+		blobBaseFee = eip4844.CalcBlobFee(chainConfig, &types.Header{
 			Time:          pre.Env.Timestamp,
 			ExcessBlobGas: pre.Env.ExcessBlobGas,
-		}
-		vmContext.BlobBaseFee = eip4844.CalcBlobFee(chainConfig, header)
+		})
 	} else {
 		// If it is not explicitly defined, but we have the parent values, we try
 		// to calculate it ourselves.
@@ -228,32 +184,21 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 				BaseFee:       pre.Env.ParentBaseFee,
 				SlotNumber:    pre.Env.SlotNumber,
 			}
-			header := &types.Header{
+			excessBlobGas = eip4844.CalcExcessBlobGas(chainConfig, parent, pre.Env.Timestamp)
+			blobBaseFee = eip4844.CalcBlobFee(chainConfig, &types.Header{
 				Time:          pre.Env.Timestamp,
 				ExcessBlobGas: &excessBlobGas,
-			}
-			excessBlobGas = eip4844.CalcExcessBlobGas(chainConfig, parent, header.Time)
-			vmContext.BlobBaseFee = eip4844.CalcBlobFee(chainConfig, header)
+			})
 		}
 	}
-	// If DAO is supported/enabled, we need to handle it here. In geth 'proper', it's
-	// done in StateProcessor.Process(block, ...), right before transactions are applied.
-	if chainConfig.DAOForkSupport &&
-		chainConfig.DAOForkBlock != nil &&
-		chainConfig.DAOForkBlock.Cmp(new(big.Int).SetUint64(pre.Env.Number)) == 0 {
-		misc.ApplyDAOHardFork(statedb)
-	}
-	evm := vm.NewEVM(vmContext, statedb, chainConfig, vmConfig)
-	if beaconRoot := pre.Env.ParentBeaconBlockRoot; beaconRoot != nil {
-		core.ProcessBeaconBlockRoot(*beaconRoot, evm, blockAccessList)
-	}
-	if pre.Env.BlockHashes != nil && chainConfig.IsPrague(new(big.Int).SetUint64(pre.Env.Number), pre.Env.Timestamp) {
-		var (
-			prevNumber = pre.Env.Number - 1
-			prevHash   = pre.Env.BlockHashes[math.HexOrDecimal64(prevNumber)]
-		)
-		core.ProcessParentBlockHash(prevHash, evm, blockAccessList)
-	}
+	// Decode the transactions. The ones that cannot be part of a block at all are
+	// rejected here, before the processor ever sees them, so their position in
+	// the input list is recorded now.
+	var (
+		txs            types.Transactions
+		inputIndex     []int
+		candidateBlobs uint64
+	)
 	for i := 0; txIt.Next(); i++ {
 		tx, err := txIt.Tx()
 		if err != nil {
@@ -261,116 +206,107 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 			rejectedTxs = append(rejectedTxs, &rejectedTx{i, err.Error()})
 			continue
 		}
-		if tx.Type() == types.BlobTxType && vmContext.BlobBaseFee == nil {
-			errMsg := "blob tx used but field env.ExcessBlobGas missing"
-			log.Warn("rejected tx", "index", i, "hash", tx.Hash(), "error", errMsg)
-			rejectedTxs = append(rejectedTxs, &rejectedTx{i, errMsg})
-			continue
-		}
-		msg, err := core.TransactionToMessage(tx, signer, pre.Env.BaseFee)
-		if err != nil {
-			log.Warn("rejected tx", "index", i, "hash", tx.Hash(), "error", err)
-			rejectedTxs = append(rejectedTxs, &rejectedTx{i, err.Error()})
-			continue
-		}
-		txBlobGas := uint64(0)
 		if tx.Type() == types.BlobTxType {
-			txBlobGas = uint64(params.BlobTxBlobGasPerBlob * len(tx.BlobHashes()))
+			if blobBaseFee == nil {
+				errMsg := "blob tx used but field env.ExcessBlobGas missing"
+				log.Warn("rejected tx", "index", i, "hash", tx.Hash(), "error", errMsg)
+				rejectedTxs = append(rejectedTxs, &rejectedTx{i, errMsg})
+				continue
+			}
+			txBlobGas := uint64(params.BlobTxBlobGasPerBlob * len(tx.BlobHashes()))
 			max := eip4844.MaxBlobGasPerBlock(chainConfig, pre.Env.Timestamp)
-			if used := blobGasUsed + txBlobGas; used > max {
+			if used := candidateBlobs + txBlobGas; used > max {
 				err := fmt.Errorf("blob gas (%d) would exceed maximum allowance %d", used, max)
 				log.Warn("rejected tx", "index", i, "err", err)
 				rejectedTxs = append(rejectedTxs, &rejectedTx{i, err.Error()})
 				continue
 			}
+			candidateBlobs += txBlobGas
 		}
-		statedb.SetTxContext(tx.Hash(), len(receipts), uint32(len(receipts)+1))
+		txs = append(txs, tx)
+		inputIndex = append(inputIndex, i)
+	}
+	// Assemble the block the processor runs on. The difficulty is forced to a
+	// non-nil value because the block context derives the randomness from it;
+	// the result still reports whatever the environment supplied.
+	difficulty := pre.Env.Difficulty
+	if difficulty == nil {
+		difficulty = new(big.Int)
+	}
+	header := &types.Header{
+		Coinbase:         pre.Env.Coinbase,
+		Difficulty:       difficulty,
+		Number:           new(big.Int).SetUint64(pre.Env.Number),
+		GasLimit:         pre.Env.GasLimit,
+		Time:             pre.Env.Timestamp,
+		BaseFee:          pre.Env.BaseFee,
+		SlotNumber:       pre.Env.SlotNumber,
+		ParentBeaconRoot: pre.Env.ParentBeaconBlockRoot,
+	}
+	if pre.Env.BlockHashes != nil {
+		header.ParentHash = pre.Env.BlockHashes[math.HexOrDecimal64(pre.Env.Number-1)]
+	}
+	if pre.Env.Random != nil {
+		header.MixDigest = common.BigToHash(pre.Env.Random)
+	}
+	if blobBaseFee != nil {
+		header.ExcessBlobGas = &excessBlobGas
+	}
+	block := types.NewBlock(header, &types.Body{
+		Transactions: txs,
+		Withdrawals:  pre.Env.Withdrawals,
+	}, nil, trie.NewStackTrie(nil))
 
-		var (
-			snapshot = statedb.Snapshot()
-			gp       = gaspool.Snapshot()
-		)
-		receipt, bal, err := core.ApplyTransactionWithEVM(msg, gaspool, statedb, vmContext.BlockNumber, blockHash, pre.Env.Timestamp, tx, evm)
-		if err != nil {
-			statedb.RevertToSnapshot(snapshot)
-			log.Info("rejected tx", "index", i, "hash", tx.Hash(), "from", msg.From, "error", err)
-			rejectedTxs = append(rejectedTxs, &rejectedTx{i, err.Error()})
-			gaspool.Set(gp)
-			continue
+	// Run the block. Unlike a chain block, a t8n input is an unvalidated list of
+	// transactions, so the processor is told to skip and report the ones that
+	// cannot be applied rather than declaring the whole block invalid.
+	chain := &t8nChain{
+		config: chainConfig,
+		engine: newT8nEngine(statedb, rules, miningReward, &pre.Env, isEIP4762, isAmsterdam),
+		header: header,
+		hashes: pre.Env.BlockHashes,
+	}
+	vmConfig.ContinueOnInvalidTx = true
+	result, err := core.NewStateProcessor(chain).Process(context.Background(), block, statedb, nil, nil, vmConfig, nil)
+	if err != nil {
+		return nil, nil, nil, NewError(ErrorEVM, err)
+	}
+	if chain.hashError != nil {
+		return nil, nil, nil, NewError(ErrorMissingBlockhash, chain.hashError)
+	}
+	// t8n has no real block, so the receipts keep reporting the placeholder hash
+	// the tool has always used. It is not part of the consensus encoding.
+	receipts := result.Receipts
+	for _, receipt := range receipts {
+		receipt.BlockHash = blockHash
+		for _, l := range receipt.Logs {
+			l.BlockHash = blockHash
 		}
 		if receipt.Logs == nil {
 			receipt.Logs = []*types.Log{}
 		}
-		includedTxs = append(includedTxs, tx)
-		if hashError != nil {
-			return nil, nil, nil, NewError(ErrorMissingBlockhash, hashError)
-		}
-		blobGasUsed += txBlobGas
-		receipts = append(receipts, receipt)
-		blockAccessList.Merge(bal)
 	}
-	statedb.IntermediateRoot(rules)
-
-	// TODO(rjl493456442) call engine.Finalize() instead
-	// Add mining reward? (-1 means rewards are disabled)
-	if miningReward >= 0 {
-		// Add mining reward. The mining reward may be `0`, which only makes a difference in the cases
-		// where
-		// - the coinbase self-destructed, or
-		// - there are only 'bad' transactions, which aren't executed. In those cases,
-		//   the coinbase gets no txfee, so isn't created, and thus needs to be touched
-		var (
-			blockReward = big.NewInt(miningReward)
-			minerReward = new(big.Int).Set(blockReward)
-			perOmmer    = new(big.Int).Rsh(blockReward, 5)
-		)
-		for _, ommer := range pre.Env.Ommers {
-			// Add 1/32th for each ommer included
-			minerReward.Add(minerReward, perOmmer)
-			// Add (8-delta)/8
-			reward := big.NewInt(8)
-			reward.Sub(reward, new(big.Int).SetUint64(ommer.Delta))
-			reward.Mul(reward, blockReward)
-			reward.Rsh(reward, 3)
-			statedb.AddBalance(ommer.Address, uint256.MustFromBig(reward), tracing.BalanceIncreaseRewardMineUncle)
-		}
-		statedb.AddBalance(pre.Env.Coinbase, uint256.MustFromBig(minerReward), tracing.BalanceIncreaseRewardMineBlock)
+	// Translate the rejections back to positions in the input list, so they read
+	// the same whether they were caught before or during execution.
+	skipped := make(map[int]bool, len(result.Rejected))
+	for _, r := range result.Rejected {
+		skipped[r.Index] = true
+		rejectedTxs = append(rejectedTxs, &rejectedTx{inputIndex[r.Index], r.Err})
 	}
-	// Apply withdrawals
-	for _, w := range pre.Env.Withdrawals {
-		// Amount is in gwei, turn into wei
-		amount := new(big.Int).Mul(new(big.Int).SetUint64(w.Amount), big.NewInt(params.GWei))
-		prev := statedb.AddBalance(w.Address, uint256.MustFromBig(amount), tracing.BalanceIncreaseWithdrawal)
-
-		if isEIP4762 {
-			statedb.AccessEvents().AddAccount(w.Address, true, stdmath.MaxUint64)
-		}
-		if isAmsterdam {
-			if w.Amount == 0 {
-				// Zero amount withdrawal, account is accessed potential
-				// without state changes.
-				blockAccessList.AccountRead(w.Address)
-			} else {
-				// Non-zero amount withdrawal, account is accessed with
-				// a balance change.
-				blockAccessList.BalanceChange(uint32(len(receipts)+1), w.Address, new(uint256.Int).Add(&prev, uint256.MustFromBig(amount)))
-			}
+	sort.Slice(rejectedTxs, func(i, j int) bool { return rejectedTxs[i].Index < rejectedTxs[j].Index })
+	for i, tx := range txs {
+		if !skipped[i] {
+			includedTxs = append(includedTxs, tx)
 		}
 	}
-
-	// Gather the execution-layer triggered requests.
-	var allLogs []*types.Log
+	var blobGasUsed uint64
 	for _, receipt := range receipts {
-		allLogs = append(allLogs, receipt.Logs...)
+		blobGasUsed += receipt.BlobGasUsed
 	}
-	requests, bal, err := core.PostExecution(context.Background(), chainConfig, vmContext.BlockNumber, vmContext.Time, allLogs, evm, uint32(len(receipts)+1))
-	if err != nil {
-		return nil, nil, nil, NewError(ErrorEVM, fmt.Errorf("failed to process post-execution: %v", err))
-	}
-	blockAccessList.Merge(bal)
+	requests, blockAccessList := result.Requests, result.Bal
 
 	// Commit block
-	root, err := statedb.Commit(rules, vmContext.BlockNumber.Uint64())
+	root, err := statedb.Commit(rules, pre.Env.Number)
 	if err != nil {
 		return nil, nil, nil, NewError(ErrorEVM, fmt.Errorf("could not commit state: %v", err))
 	}
@@ -382,15 +318,15 @@ func (pre *Prestate) Apply(vmConfig vm.Config, chainConfig *params.ChainConfig, 
 		LogsHash:    rlpHash(statedb.Logs()),
 		Receipts:    receipts,
 		Rejected:    rejectedTxs,
-		Difficulty:  (*math.HexOrDecimal256)(vmContext.Difficulty),
-		GasUsed:     (math.HexOrDecimal64)(gaspool.Used()),
-		BaseFee:     (*math.HexOrDecimal256)(vmContext.BaseFee),
+		Difficulty:  (*math.HexOrDecimal256)(pre.Env.Difficulty),
+		GasUsed:     (math.HexOrDecimal64)(result.GasUsed),
+		BaseFee:     (*math.HexOrDecimal256)(pre.Env.BaseFee),
 	}
 	if pre.Env.Withdrawals != nil {
 		h := types.DeriveSha(types.Withdrawals(pre.Env.Withdrawals), trie.NewStackTrie(nil))
 		execRs.WithdrawalsRoot = &h
 	}
-	if vmContext.BlobBaseFee != nil {
+	if blobBaseFee != nil {
 		execRs.CurrentExcessBlobGas = (*math.HexOrDecimal64)(&excessBlobGas)
 		execRs.CurrentBlobGasUsed = (*math.HexOrDecimal64)(&blobGasUsed)
 	}

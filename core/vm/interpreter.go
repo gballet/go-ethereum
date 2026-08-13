@@ -33,6 +33,7 @@ type Config struct {
 	EnablePreimageRecording  bool  // Enables recording of SHA3/keccak preimages
 	ExtraEips                []int // Additional EIPS that are to be enabled
 	DisableParallelExecution bool  // Disable parallel block processing
+	ContinueOnInvalidTx bool
 }
 
 // ScopeContext contains the things that are per-call, such as stack and memory,

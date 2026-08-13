@@ -65,7 +65,7 @@ func (p *StateProcessor) chainConfig() *params.ChainConfig {
 // returns the amount of gas that was used in the process. If any of the
 // transactions failed to execute due to insufficient gas it will return an error.
 func (p *StateProcessor) Process(ctx context.Context, block *types.Block, statedb *state.StateDB, jumpDestCache vm.JumpDestCache, precompileCache *vm.PrecompileCache, cfg vm.Config, execIndex *atomic.Int64) (*ProcessResult, error) {
-	if supportsParallelExecution(block, p.chainConfig(), statedb.Witness() != nil, cfg.Tracer != nil, cfg.DisableParallelExecution) {
+	if supportsParallelExecution(block, p.chainConfig(), statedb.Witness() != nil, cfg.Tracer != nil, cfg.DisableParallelExecution || cfg.ContinueOnInvalidTx) {
 		return p.processParallel(ctx, block, statedb, jumpDestCache, precompileCache, cfg)
 	}
 	var (
@@ -104,9 +104,10 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 		evm.SetPrecompileCache(precompileCache)
 	}
 	// Run the pre-execution system calls
-	blockAccessList.Merge(PreExecution(ctx, block.BeaconRoot(), parent, config, evm, block.Number(), block.Time()))
+	blockAccessList.Merge(PreExecution(ctx, block.BeaconRoot(), block.ParentHash(), config, evm, block.Number(), block.Time()))
 
 	// Iterate over and process the individual transactions
+	var rejected []RejectedTx
 	for i, tx := range block.Transactions() {
 		// Publish the progress, letting the prefetcher skip caught up work.
 		if execIndex != nil {
@@ -114,24 +115,43 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 		}
 		msg, err := TransactionToMessage(tx, signer, header.BaseFee)
 		if err != nil {
-			return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
+			if !cfg.ContinueOnInvalidTx {
+				return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
+			}
+			rejected = append(rejected, RejectedTx{Index: i, Err: err.Error()})
+			continue
 		}
-		statedb.SetTxContext(tx.Hash(), i, uint32(i+1))
+		index := len(receipts)
+		statedb.SetTxContext(tx.Hash(), index, uint32(index+1))
 		_, _, spanEnd := telemetry.StartSpan(ctx, "core.ApplyTransactionWithEVM",
 			telemetry.StringAttribute("tx.hash", tx.Hash().Hex()),
 			telemetry.IntAttribute("tx.index", i),
 		)
+		var (
+			snapshot   int
+			gpSnapshot *GasPool
+		)
+		if cfg.ContinueOnInvalidTx {
+			snapshot, gpSnapshot = statedb.Snapshot(), gp.Snapshot()
+		}
 		receipt, bal, err := ApplyTransactionWithEVM(msg, gp, statedb, blockNumber, blockHash, context.Time, tx, evm)
 		if err != nil {
 			spanEnd(&err)
-			return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
+			if !cfg.ContinueOnInvalidTx {
+				return nil, fmt.Errorf("could not apply tx %d [%v]: %w", i, tx.Hash().Hex(), err)
+			}
+			statedb.RevertToSnapshot(snapshot)
+			gp.Set(gpSnapshot)
+			rejected = append(rejected, RejectedTx{Index: i, Err: err.Error()})
+			continue
 		}
 		receipts = append(receipts, receipt)
 		allLogs = append(allLogs, receipt.Logs...)
 		blockAccessList.Merge(bal)
 		spanEnd(nil)
 	}
-	requests, bal, err := PostExecution(ctx, config, block.Number(), block.Time(), allLogs, evm, uint32(len(block.Transactions())+1))
+	blockAccessIndex := uint32(len(receipts) + 1)
+	requests, bal, err := PostExecution(ctx, config, block.Number(), block.Time(), allLogs, evm, blockAccessIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -141,19 +161,20 @@ func (p *StateProcessor) Process(ctx context.Context, block *types.Block, stated
 	// (e.g. block rewards).
 	//
 	// TODO(rjl493456442) integrate it into the PostExecution.
-	p.chain.Engine().Finalize(p.chain, header, tracingStateDB, block.Body(), uint32(len(block.Transactions())+1), blockAccessList)
+	p.chain.Engine().Finalize(p.chain, header, tracingStateDB, block.Body(), blockAccessIndex, blockAccessList)
 
 	return &ProcessResult{
 		Receipts: receipts,
 		Requests: requests,
 		Logs:     allLogs,
 		GasUsed:  gp.Used(),
+		Rejected: rejected,
 		Bal:      blockAccessList,
 	}, nil
 }
 
 // PreExecution processes pre-execution state changes and system calls.
-func PreExecution(ctx context.Context, beaconRoot *common.Hash, parent *types.Header, config *params.ChainConfig, evm *vm.EVM, number *big.Int, time uint64) *bal.ConstructionBlockAccessList {
+func PreExecution(ctx context.Context, beaconRoot *common.Hash, parentHash common.Hash, config *params.ChainConfig, evm *vm.EVM, number *big.Int, time uint64) *bal.ConstructionBlockAccessList {
 	_, _, spanEnd := telemetry.StartSpan(ctx, "core.preExecution")
 	defer spanEnd(nil)
 
@@ -167,7 +188,7 @@ func PreExecution(ctx context.Context, beaconRoot *common.Hash, parent *types.He
 	}
 	// EIP-2935
 	if config.IsPrague(number, time) || config.IsUBT(number, time) {
-		ProcessParentBlockHash(parent.Hash(), evm, blockAccessList)
+		ProcessParentBlockHash(parentHash, evm, blockAccessList)
 	}
 	return blockAccessList
 }
