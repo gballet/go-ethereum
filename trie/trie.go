@@ -876,7 +876,11 @@ func (t *Trie) walk(n node, path []byte, fn func([]byte, []byte) error) (WalkSta
 		}
 		return stats, nil
 	case hashNode:
-		resolved, err := t.resolveAndTrack(n, path)
+		blob, err := t.reader.Node(path, common.BytesToHash(n))
+		if err != nil {
+			return WalkStats{}, err
+		}
+		resolved, err := decodeNodeUnsafe(n, blob)
 		if err != nil {
 			return WalkStats{}, err
 		}
