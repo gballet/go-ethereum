@@ -17,6 +17,8 @@
 package core
 
 import (
+	"runtime"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/bitutil"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -32,10 +34,11 @@ type receiptDigest struct {
 
 // receiptPipeline turns the receipts of a block into their digest on a
 // goroutine of its own, fed as each transaction finishes so the hashing
-// overlaps the transactions still to run. Only the goroutine processing the
-// block may drive it.
+// overlaps the transactions still to run. When the runtime has a single P,
+// there is nothing to overlap with and the receipts are digested inline as
+// they are added. Only the goroutine processing the block may drive it.
 type receiptPipeline struct {
-	feed   chan *types.Receipt
+	feed   chan *types.Receipt // nil when digesting inline
 	done   chan struct{}
 	closed bool
 
@@ -43,7 +46,11 @@ type receiptPipeline struct {
 	// filter already computed.
 	bloomed bool
 
-	// digest is the result. It is only valid once done is closed.
+	bloom    types.Bloom
+	receipts types.Receipts
+	stream   *types.ListHashStream
+
+	// digest is the result. It is only valid once the pipeline is joined.
 	digest receiptDigest
 }
 
@@ -52,43 +59,56 @@ type receiptPipeline struct {
 // uses it rather than hashing the logs again.
 func newReceiptPipeline(txs int, bloomed bool) *receiptPipeline {
 	p := &receiptPipeline{
-		feed:    make(chan *types.Receipt, txs),
-		done:    make(chan struct{}),
-		bloomed: bloomed,
+		bloomed:  bloomed,
+		receipts: make(types.Receipts, 0, txs),
+		stream:   types.NewListHashStream(trie.NewStackTrie(nil)),
 	}
-	go p.run(txs)
+	if runtime.GOMAXPROCS(0) > 1 {
+		p.feed = make(chan *types.Receipt, txs)
+		p.done = make(chan struct{})
+		go p.run()
+	}
 	return p
 }
 
 // run consumes the receipts of the block and computes their digest.
-func (p *receiptPipeline) run(txs int) {
+func (p *receiptPipeline) run() {
 	defer close(p.done)
 
-	var (
-		bloom    types.Bloom
-		receipts = make(types.Receipts, 0, txs)
-		stream   = types.NewListHashStream(trie.NewStackTrie(nil))
-	)
 	for receipt := range p.feed {
-		if !p.bloomed {
-			receipt.Bloom = types.CreateBloom(receipt)
-		}
-		if len(receipt.Logs) != 0 {
-			bitutil.ORBytes(bloom[:], bloom[:], receipt.Bloom[:])
-		}
-		// The receipt encoding covers the bloom, so the trie is fed after it.
-		receipts = append(receipts, receipt)
-		stream.Update(receipts)
+		p.digestReceipt(receipt)
 	}
+	p.finish()
+}
+
+// digestReceipt folds a receipt into the bloom filter and the receipt trie.
+func (p *receiptPipeline) digestReceipt(receipt *types.Receipt) {
+	if !p.bloomed {
+		receipt.Bloom = types.CreateBloom(receipt)
+	}
+	if len(receipt.Logs) != 0 {
+		bitutil.ORBytes(p.bloom[:], p.bloom[:], receipt.Bloom[:])
+	}
+	// The receipt encoding covers the bloom, so the trie is fed after it.
+	p.receipts = append(p.receipts, receipt)
+	p.stream.Update(p.receipts)
+}
+
+// finish computes the digest once all receipts have been folded in.
+func (p *receiptPipeline) finish() {
 	p.digest = receiptDigest{
-		bloom: bloom,
-		root:  stream.Hash(),
+		bloom: p.bloom,
+		root:  p.stream.Hash(),
 	}
 }
 
 // add hands a receipt over. It must not be touched again until the pipeline
 // has been joined, the pipeline fills in its bloom filter.
 func (p *receiptPipeline) add(receipt *types.Receipt) {
+	if p.feed == nil {
+		p.digestReceipt(receipt)
+		return
+	}
 	p.feed <- receipt
 }
 
@@ -98,7 +118,9 @@ func (p *receiptPipeline) add(receipt *types.Receipt) {
 func (p *receiptPipeline) close() {
 	if !p.closed {
 		p.closed = true
-		close(p.feed)
+		if p.feed != nil {
+			close(p.feed)
+		}
 	}
 }
 
@@ -106,7 +128,11 @@ func (p *receiptPipeline) close() {
 // it was given.
 func (p *receiptPipeline) join() receiptDigest {
 	p.close()
-	<-p.done
+	if p.done != nil {
+		<-p.done
+	} else {
+		p.finish()
+	}
 	return p.digest
 }
 

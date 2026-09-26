@@ -1,4 +1,4 @@
-// Copyright 2025 The go-ethereum Authors
+// Copyright 2026 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -14,14 +14,20 @@
 // You should have received a copy of the GNU Lesser General Public License
 // along with the go-ethereum library. If not, see <http://www.gnu.org/licenses/>.
 
-//go:build !example && !ziren && !wasm && !womir && !zisk
-// +build !example,!ziren,!wasm,!womir,!zisk
+//go:build zisk
 
 package main
 
-// getInput is a stub implementation for when no platform-specific build tags are set.
-// This allows golangci-lint to typecheck the code without errors.
-// The actual implementations are provided in platform-specific files.
+import "unsafe"
+
+// ziskInputAddr is where the ZisK zkVM maps the program input: an 8-byte
+// little-endian length followed by the data. The 8 bytes before it are the
+// free-input register, not part of the input.
+const ziskInputAddr uintptr = 0x40000008
+
+// getInput returns the RLP-encoded payload from the ZisK input region, without
+// copying it.
 func getInput() []byte {
-	panic("stub")
+	length := *(*uint64)(unsafe.Pointer(ziskInputAddr))
+	return unsafe.Slice((*byte)(unsafe.Pointer(ziskInputAddr+8)), length)
 }

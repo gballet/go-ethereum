@@ -34,6 +34,10 @@ GOOS=linux GOARCH=mipsle GOMIPS=softfloat go build -tags "ziren" ./cmd/keeper
 
 As an example runner, refer to https://gist.github.com/gballet/7b669a99eb3ab2b593324e3a76abd23d
 
+### ZisK zkVM Implementation
+
+ZisK is a RISC-V based zkvm without an operating system. Keeper is built for it as an OpenBSD program with a replacement libc, see [zisk/README.md](zisk/README.md).
+
 ## Creating a Custom Platform Implementation
 
 To add support for a new platform (e.g., "myplatform"), create a new file with the appropriate build tag:

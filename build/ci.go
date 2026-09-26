@@ -31,7 +31,7 @@ Available commands are:
 	install    [ -arch architecture ] [ -cc compiler ] [ packages... ] -- builds packages and executables
 	test       [ -coverage ] [ packages... ]                           -- runs the tests
 
-	keeper     [ -dlgo ]
+	keeper     [ -dlgo ] [ -cachedir dir ]
 	keeper-archive [ -signer key-envvar ] [ -signify key-envvar ] [ -upload dest ]
 
 	archive    [ -arch architecture ] [ -type zip|tar ] [ -signer key-envvar ] [ -signify key-envvar ] [ -upload dest ] -- archives build artifacts
@@ -80,12 +80,15 @@ var (
 
 	// Keeper build targets with their configurations
 	keeperTargets = []struct {
-		Name   string
-		GOOS   string
-		GOARCH string
-		CC     string
-		Tags   string
-		Env    map[string]string
+		Name     string
+		GOOS     string
+		GOARCH   string
+		CC       string
+		Tags     string
+		Toolexec string   // go build -toolexec program, relative to cmd/keeper
+		Flags    []string // additional go build flags
+		Zig      bool     // whether the build uses zig, passed in $ZIG
+		Env      map[string]string
 	}{
 		{
 			Name:   "ziren",
@@ -101,6 +104,20 @@ var (
 			GOOS:   "wasip1",
 			GOARCH: "wasm",
 			Tags:   "womir",
+		},
+		{
+			// Links against a libc for the zkvm instead of OpenBSD's, built
+			// and linked with zig. See cmd/keeper/zisk.
+			Name:     "zisk",
+			GOOS:     "openbsd",
+			GOARCH:   "riscv64",
+			Tags:     "zisk",
+			Toolexec: "zisk/toolexec.sh",
+			// ZisK rejects c.fldsp with ft0 as destination, which Go 1.27
+			// emits once compressed instructions are enabled.
+			Flags: []string{"-gcflags=all=-d=compressinstructions=0", "-asmflags=all=-d=compressinstructions=0"},
+			Zig:   true,
+			Env:   map[string]string{"CGO_ENABLED": "0"},
 		},
 		{
 			Name:   "wasm-js",
@@ -311,7 +328,10 @@ func doInstall(cmdline []string) {
 
 // doInstallKeeper builds keeper binaries for all supported targets.
 func doInstallKeeper(cmdline []string) {
-	var dlgo = flag.Bool("dlgo", false, "Download Go and build with it")
+	var (
+		dlgo     = flag.Bool("dlgo", false, "Download Go and build with it")
+		cachedir = flag.String("cachedir", "./build/cache", "directory for caching downloads")
+	)
 
 	flag.CommandLine.Parse(cmdline)
 	env := build.Env()
@@ -323,6 +343,7 @@ func doInstallKeeper(cmdline []string) {
 		tc.Root = build.DownloadGo(csdb)
 	}
 
+	var zig string // downloaded on first use
 	for _, target := range keeperTargets {
 		log.Printf("Building keeper-%s", target.Name)
 
@@ -339,6 +360,20 @@ func doInstallKeeper(cmdline []string) {
 		gobuild := tc.Go("build", buildFlags(env, true, []string{target.Tags}, targetOS)...)
 		gobuild.Dir = "./cmd/keeper"
 		gobuild.Args = append(gobuild.Args, "-v")
+		if target.Toolexec != "" {
+			toolexec, err := filepath.Abs(filepath.Join(gobuild.Dir, target.Toolexec))
+			if err != nil {
+				log.Fatal(err)
+			}
+			gobuild.Args = append(gobuild.Args, "-toolexec", toolexec)
+		}
+		gobuild.Args = append(gobuild.Args, target.Flags...)
+		if target.Zig {
+			if zig == "" {
+				zig = downloadZig(*cachedir)
+			}
+			gobuild.Env = append(gobuild.Env, "ZIG="+zig)
+		}
 
 		for key, value := range target.Env {
 			gobuild.Env = append(gobuild.Env, key+"="+value)
@@ -350,6 +385,34 @@ func doInstallKeeper(cmdline []string) {
 		args = append(args, ".")
 		build.MustRun(&exec.Cmd{Path: gobuild.Path, Args: args, Env: gobuild.Env, Dir: gobuild.Dir})
 	}
+}
+
+// downloadZig downloads and unpacks zig, used as C compiler and linker by some
+// keeper targets. It returns the absolute path of the zig executable.
+func downloadZig(cachedir string) string {
+	csdb := download.MustLoadChecksums("build/checksums.txt")
+	version, err := csdb.FindVersion("zig")
+	if err != nil {
+		log.Fatal(err)
+	}
+	arch := map[string]string{"amd64": "x86_64", "arm64": "aarch64", "riscv64": "riscv64"}[runtime.GOARCH]
+	osname := map[string]string{"linux": "linux", "darwin": "macos", "freebsd": "freebsd"}[runtime.GOOS]
+	if arch == "" || osname == "" {
+		log.Fatalf("no zig release for %s/%s", runtime.GOOS, runtime.GOARCH)
+	}
+	base := fmt.Sprintf("zig-%s-%s-%s", arch, osname, version)
+	archivePath := filepath.Join(cachedir, base+".tar.xz")
+	if err := csdb.DownloadFileFromKnownURL(archivePath); err != nil {
+		log.Fatal(err)
+	}
+	// build.ExtractArchive does not handle xz, the only format zig is
+	// released in for these platforms.
+	build.MustRunCommand("tar", "-xJf", archivePath, "-C", cachedir)
+	zig, err := filepath.Abs(filepath.Join(cachedir, base, "zig"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	return zig
 }
 
 // buildFlags returns the go tool flags for building. targetOS is the OS we

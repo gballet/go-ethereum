@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"runtime"
 	"slices"
 	"sort"
 	"sync"
@@ -953,12 +954,15 @@ func (s *StateDB) IntermediateRoot(rules params.Rules) common.Hash {
 			s.prefetcher = nil // Pre-byzantium, unset any used up prefetcher
 		}()
 	}
-	// Process all storage updates concurrently. The state object update root
-	// method will internally call a blocking trie fetch from the prefetcher,
-	// so there's no need to explicitly wait for the prefetchers to finish.
+	// Process all storage updates concurrently, unless the runtime has a
+	// single P and goroutines would only add overhead. The state object update
+	// root method will internally call a blocking trie fetch from the
+	// prefetcher, so there's no need to explicitly wait for the prefetchers to
+	// finish.
 	var (
-		start   = time.Now()
-		workers errgroup.Group
+		start    = time.Now()
+		workers  errgroup.Group
+		parallel = runtime.GOMAXPROCS(0) > 1
 	)
 	if s.db.Type().Is(TypeUBT) {
 		// Bypass per-account updateTrie() for binary trie. In binary trie mode
@@ -1011,7 +1015,7 @@ func (s *StateDB) IntermediateRoot(rules params.Rules) common.Hash {
 				continue
 			}
 			obj := s.stateObjects[addr] // closure for the task runner below
-			workers.Go(func() error {
+			update := func() error {
 				obj.updateRoot()
 
 				// If witness building is enabled and the state object has a trie,
@@ -1020,7 +1024,12 @@ func (s *StateDB) IntermediateRoot(rules params.Rules) common.Hash {
 					s.witness.AddState(obj.trie.Witness(), obj.addrHash())
 				}
 				return nil
-			})
+			}
+			if parallel {
+				workers.Go(update)
+			} else {
+				update()
+			}
 		}
 	}
 	// If witness building is enabled, gather all the read-only accesses.

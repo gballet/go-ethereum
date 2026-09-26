@@ -142,3 +142,14 @@ b87bc134dee55576a842141bf0ed27761c635d746780fce5dee038c6dd16554f  protoc-gen-go.
 63d400167e75ab9f6690688f6fdc6a9455aa20bc1faa71e32149dbd322f7f198  protoc-gen-go.v1.34.2.linux.arm64.tar.gz
 56e7675816db6e62be4f833a51544d5716b8420c462515579e05ca8444ab06ed  protoc-gen-go.v1.34.2.windows.386.zip
 abafd39612177dd4e9a65207cadd5374a9352d8611e8e040f8462fcfa3010daf  protoc-gen-go.v1.34.2.windows.amd64.zip
+
+# version:zig 0.16.0
+# https://ziglang.org/download/
+# https://ziglang.org/download/0.16.0/
+70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00  zig-x86_64-linux-0.16.0.tar.xz
+ea4b09bfb22ec6f6c6ceac57ab63efb6b46e17ab08d21f69f3a48b38e1534f17  zig-aarch64-linux-0.16.0.tar.xz
+bc069b0f2f568f54bafbdfc1d65b12fd386ed6a652044a37aee6a4f72f14076e  zig-riscv64-linux-0.16.0.tar.xz
+0387557ed1877bc6a2e1802c8391953baddba76081876301c522f52977b52ba7  zig-x86_64-macos-0.16.0.tar.xz
+b23d70deaa879b5c2d486ed3316f7eaa53e84acf6fc9cc747de152450d401489  zig-aarch64-macos-0.16.0.tar.xz
+390379bfaf6b89b001c6bb4035b8fcbc5c12193fd9fd5048c3a0fe39e5d1cf72  zig-x86_64-freebsd-0.16.0.tar.xz
+0a441f50696a34cfb9f9a0b3c510fd49a56b18b364e03c26525cb7999959c969  zig-aarch64-freebsd-0.16.0.tar.xz

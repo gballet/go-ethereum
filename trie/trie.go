@@ -21,6 +21,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"runtime"
 	"slices"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -859,8 +860,9 @@ func (t *Trie) hashRoot() []byte {
 	if t.root == nil {
 		return types.EmptyRootHash.Bytes()
 	}
-	// If the number of changes is below 100, we let one thread handle it
-	h := newHasher(t.unhashed >= 100)
+	// If the number of changes is below 100, or the runtime has a single P,
+	// we let one thread handle it
+	h := newHasher(t.unhashed >= 100 && runtime.GOMAXPROCS(0) > 1)
 	defer func() {
 		returnHasherToPool(h)
 		t.unhashed = 0
