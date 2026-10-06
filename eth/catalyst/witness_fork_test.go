@@ -121,6 +121,24 @@ var witnessForks = []witnessFork{
 		},
 	},
 	{
+		name: "balancer",
+		activate: func(cfg *params.ChainConfig, at uint64) {
+			cfg.ShanghaiTime, cfg.CancunTime, cfg.PragueTime = &at, &at, &at
+			cfg.BalancerTime = &at
+		},
+		version:    engine.PayloadV3,
+		beaconRoot: true,
+		fcu: func(api *ConsensusAPI, state engine.ForkchoiceStateV1, attrs *engine.PayloadAttributes) (engine.ForkChoiceResponse, error) {
+			return api.ForkchoiceUpdatedWithWitnessV3(context.Background(), state, attrs)
+		},
+		newPayload: func(api *ConsensusAPI, e *engine.ExecutionPayloadEnvelope) (engine.PayloadStatusV1, error) {
+			return api.NewPayloadWithWitnessV4(context.Background(), *e.ExecutionPayload, []common.Hash{}, &witnessBeaconRoot, requestsOf(e))
+		},
+		stateless: func(api *ConsensusAPI, e *engine.ExecutionPayloadEnvelope, w hexutil.Bytes) (engine.StatelessPayloadStatusV1, error) {
+			return api.ExecuteStatelessPayloadV4(*e.ExecutionPayload, []common.Hash{}, &witnessBeaconRoot, requestsOf(e), w)
+		},
+	},
+	{
 		name: "amsterdam",
 		activate: func(cfg *params.ChainConfig, at uint64) {
 			cfg.ShanghaiTime, cfg.CancunTime, cfg.PragueTime = &at, &at, &at

@@ -312,6 +312,15 @@ func TestT8n(t *testing.T) {
 			output:      t8nOutput{alloc: false, result: false},
 			expExitCode: 3,
 		},
+		{ // Gnosis: withdrawals go through the withdrawal contract instead of being
+			// credited, the base fee goes to the fee collector, no mining reward.
+			base: "./testdata/36",
+			input: t8nInput{
+				"alloc.json", "txs.json", "env.json", "GnosisShanghai", "",
+			},
+			output: t8nOutput{alloc: true, result: true},
+			expOut: "exp.json",
+		},
 	} {
 		args := []string{"t8n"}
 		args = append(args, tc.output.get()...)

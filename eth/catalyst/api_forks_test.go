@@ -93,6 +93,19 @@ var engineForks = []engineFork{
 		newPayload: newPayloadV4,
 	},
 	{
+		name: "balancer",
+		activate: func(cfg *params.ChainConfig, at uint64) {
+			cfg.ShanghaiTime, cfg.CancunTime, cfg.PragueTime = &at, &at, &at
+			cfg.BalancerTime = &at
+		},
+		beaconRoot: true,
+		fcu:        fcuV3,
+		getPayload: func(api *ConsensusAPI, id engine.PayloadID) (*engine.ExecutionPayloadEnvelope, error) {
+			return api.GetPayloadV4(id)
+		},
+		newPayload: newPayloadV4,
+	},
+	{
 		// Osaka reuses prague's fcu and newPayload but is the only fork that
 		// getPayloadV5 admits, so it is not redundant with prague here the way
 		// it is for the witness endpoints.

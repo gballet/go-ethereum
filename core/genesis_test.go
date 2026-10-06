@@ -95,6 +95,37 @@ func testSetupGenesis(t *testing.T, scheme string) {
 			wantConfig: customg.Config,
 		},
 		{
+			// A node restarted on a Gnosis datadir without the network flag
+			// passes no genesis: the built-in config must still replace the
+			// stored one so that newly scheduled forks reach it.
+			name: "gnosis block in DB with stale config, genesis == nil",
+			fn: func(db ethdb.Database) (*params.ChainConfig, common.Hash, *params.ConfigCompatError, error) {
+				tdb := triedb.NewDatabase(db, newDbConfig(scheme))
+				old := DefaultGnosisGenesisBlock()
+				cfg := *old.Config
+				cfg.BalancerTime, cfg.OsakaTime = nil, nil
+				old.Config = &cfg
+				old.MustCommit(db, tdb)
+				return SetupGenesisBlock(db, tdb, nil)
+			},
+			wantHash:   params.GnosisGenesisHash,
+			wantConfig: params.GnosisChainConfig,
+		},
+		{
+			name: "chiado block in DB with stale config, genesis == nil",
+			fn: func(db ethdb.Database) (*params.ChainConfig, common.Hash, *params.ConfigCompatError, error) {
+				tdb := triedb.NewDatabase(db, newDbConfig(scheme))
+				old := DefaultChiadoGenesisBlock()
+				cfg := *old.Config
+				cfg.OsakaTime = nil
+				old.Config = &cfg
+				old.MustCommit(db, tdb)
+				return SetupGenesisBlock(db, tdb, nil)
+			},
+			wantHash:   params.ChiadoGenesisHash,
+			wantConfig: params.ChiadoChainConfig,
+		},
+		{
 			name: "custom block in DB, genesis == sepolia",
 			fn: func(db ethdb.Database) (*params.ChainConfig, common.Hash, *params.ConfigCompatError, error) {
 				tdb := triedb.NewDatabase(db, newDbConfig(scheme))

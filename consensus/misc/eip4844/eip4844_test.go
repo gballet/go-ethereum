@@ -149,6 +149,57 @@ func TestCalcBlobFeePostOsaka(t *testing.T) {
 	}
 }
 
+// TestCalcBlobFeeGnosis checks that the blob base fee is floored at the
+// chain's configured minimum blob gas price (1 gwei on Gnosis) instead of the
+// Ethereum default of 1 wei.
+func TestCalcBlobFeeGnosis(t *testing.T) {
+	config := params.GnosisChainConfig
+	tests := []struct {
+		name          string
+		time          uint64
+		excessBlobGas uint64
+		blobfee       int64
+	}{
+		{"cancun, no excess", *config.CancunTime, 0, 1_000_000_000},
+		{"prague, no excess", *config.PragueTime, 0, 1_000_000_000},
+		{"osaka, no excess", *config.OsakaTime, 0, 1_000_000_000},
+		// e * minimum, as approximated by the EIP-4844 fake exponential.
+		{"osaka, excess equal to update fraction", *config.OsakaTime, config.BlobScheduleConfig.Prague.UpdateFraction, 2_718_281_828},
+	}
+	for _, tt := range tests {
+		header := &types.Header{Time: tt.time, ExcessBlobGas: &tt.excessBlobGas}
+		if have := CalcBlobFee(config, header); have.Int64() != tt.blobfee {
+			t.Errorf("%s: blobfee mismatch: have %v want %v", tt.name, have, tt.blobfee)
+		}
+	}
+}
+
+// TestCalcExcessBlobGasGnosisReservePrice checks that the EIP-7918 reserve
+// price comparison uses the chain's minimum blob gas price. With Gnosis' 1 gwei
+// floor, the blob price exceeds the reserve price at a 1 gwei base fee and the
+// regular EIP-4844 formula applies; with the 1 wei default it would not.
+func TestCalcExcessBlobGasGnosisReservePrice(t *testing.T) {
+	var (
+		excess = uint64(params.BlobTxBlobGasPerBlob) // one blob above target
+		used   = uint64(params.BlobTxBlobGasPerBlob) // exactly at target
+		parent = &types.Header{
+			ExcessBlobGas: &excess,
+			BlobGasUsed:   &used,
+			BaseFee:       big.NewInt(params.GWei),
+		}
+		gnosis = params.GnosisChainConfig
+		time   = *gnosis.OsakaTime
+	)
+	if have, want := CalcExcessBlobGas(gnosis, parent, time), excess; have != want {
+		t.Errorf("gnosis: excess blob gas mismatch: have %d want %d", have, want)
+	}
+	noMin := *gnosis
+	noMin.MinBlobGasPrice = nil
+	if have, want := CalcExcessBlobGas(&noMin, parent, time), excess+used/2; have != want {
+		t.Errorf("default minimum: excess blob gas mismatch: have %d want %d", have, want)
+	}
+}
+
 func TestFakeExponential(t *testing.T) {
 	tests := []struct {
 		factor      int64
